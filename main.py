@@ -4,7 +4,7 @@ pygame.init()
 FPS = 120
 RESLUTION = [800,500]
 
-servTest = server.Server("127.0.0.1")
+servTest = server.Server("169.254.178.71")
 
 main = pygame.display.set_mode(RESLUTION)
 pygame.display.set_caption("REMOTE")
@@ -18,10 +18,6 @@ while run:
             run = False
     servTest.loop()
     main.fill((0,0,0))
-
-    for i,b in enumerate(servTest.users):
-        a = servTest.users[b]
-        main.blit(fontTest.render( str(i)+": "+a.ip+" - "+str(a.ping) ,16,(255,255,255)),[10,10+(i*12)])
 
     pygame.display.flip()
     clock.tick(FPS)

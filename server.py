@@ -11,9 +11,9 @@ class Player: #Class used to store a player
         self.ip = ip
         self.tsock = sock
         self.usock = usock
-        self.tick = 25 #Default
+        self.tick = 22 #Default
         self.minTick = 10 #Minimum tick that tick can be lowered too
-        self.maxTick = 30 #Maximum tick that tick can be highered too
+        self.maxTick = 25 #Maximum tick that tick can be highered too
         self.__tickSend = time.time()+(1/self.tick)
         self.__pingTime = time.time()+PING_INTERVAL
         self.__buffer = [] #Data to send to the user over TCP
@@ -76,11 +76,10 @@ class Server: #Class for a server
     def loopUDP(self): #This function must be called continuesly in order to update the UDP server
         read,write,err = select.select([self.usock],[],[],0) #Get all events to do with the socket
         for sock in read:
-            if sock==self.usock: #A new message is availible to be read
-                dataRaw,con = sock.recvfrom(BUF_SIZE)
-                if dataRaw: #Succsessfuly received
-                    data = pickle.loads(dataRaw) #Load the data received
-                    print("Got data (UDP)",data,con)
+            dataRaw,con = sock.recvfrom(BUF_SIZE)
+            if dataRaw and con[0] in self.users: #Succsessfuly received and is a valid user
+                data = pickle.loads(dataRaw) #Load the data received
+                #Code to react to UDP receiving data will be here
     def loopTCP(self): #This function must be called continuesly in order to update the TCP server
         read,write,err = select.select(self.tlist,[],[],0) #Get all events to do with the socket
         for sock in read:
@@ -97,4 +96,5 @@ class Server: #Class for a server
                     if data=="p": #A ping was received
                         self.users[sock.getpeername()[0]].receivedPing()
                     else:
-                        self.users[sock.getpeername()[0]].sendTCP(data)
+                        #Code for receiving TCP data will be here
+                        pass
