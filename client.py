@@ -1,6 +1,6 @@
 import socket,select,pickle,time
 
-selfIp = "169.254.178.71" #socket.gethostbyname(socket.gethostname()) #"169.254.178.71"
+selfIp = socket.gethostbyname(socket.gethostname()) #"169.254.178.71"
 TCP_BUF_SIZE = 4046
 UDP_BUF_SIZE = 512
 
