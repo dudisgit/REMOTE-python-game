@@ -1,7 +1,6 @@
-import socket,select,pickle
-from tkinter import * #TEMPORY
+import socket,select,pickle,time
 
-selfIp = "169.254.178.71"
+selfIp = "169.254.178.71" #socket.gethostbyname(socket.gethostname()) #"169.254.178.71"
 TCP_BUF_SIZE = 4046
 UDP_BUF_SIZE = 512
 
@@ -70,6 +69,7 @@ class Client:
         self.SYNC = {} #A list of variables that gets synced with the server
         self.__SYNCBefore = {} #A list to detect changes in SYNC
         self.TRIGGER = {} #A list containing pointers to functions if the server calls them
+        self.loading = True #Game is loading
         self.__serverIp = serverIp #IP of the server
         self.__tcpPort = tcpPort
         self.__udpPort = udpPort
@@ -89,8 +89,19 @@ class Client:
         self.udpLoop()
         self.tcpLoop()
         self.detectAndApplySYNC()
+    def __sendUDP(self,mes): #Sends a message over UDP
+        self.__usock.sendto(pickle.dumps(mes),(self.__serverIp,self.__udpPort))
+    def __sendTCP(self,mes): #Sends a message over TCP
+        self.__tsock.sendall(pickle.dumps(mes))
     def serverShutdown(self): #The server has shutdown!
         print("Lost connection to server!")
+        print("Attempting to connect...")
+        try:
+            self.__tsock.connect((serverIp,tcpPort))
+        except:
+            self.failConnect = True
+        else:
+            print("Connected!")
     def setVariable(self,lis,path,value): #Set a varable using a path list
         if not path[0] in lis:
             if len(path)==1:
@@ -172,9 +183,9 @@ class Client:
                 else:
                     sendUDP.append(a)
             if len(sendTCP)!=0:
-                self.__tsock.sendall(pickle.dumps(sendTCP))
+                self.__sendTCP(sendTCP)
             if len(sendUDP)!=0:
-                self.__usock.sendto(pickle.dumps(sendUDP),(self.__serverIp,self.__udpPort))
+                self.__sendUDP(sendUDP)
             self.__SYNCBefore = varInitial(self.SYNC) #Apply the changes so further changes in SYNC can be detected.
     def doCommand(self,data,tcpSent=False): #Called either from UDP or TCP connections. Their transmission data is the same format!
         if type(data)!=list:
@@ -214,6 +225,13 @@ class Client:
                     else:
                         self.setVariable(self.SYNC,data[2:],data[1])
                         self.setVariable(self.__SYNCBefore,data[2:],data[1])
+            elif data[0][0]=="t": #A trigger was sent to call a function
+                if data[0][1:] in self.TRIGGER:
+                    self.TRIGGER[data[0][1:]](*tuple(data[1:]))
+            elif data[0][0]=="L": #Stop loading the game
+                self.loading = False
+    def sendTrigger(self,funcName,*args):
+        self.__sendTCP([["t"+funcName]+list(args)])
     def receive(self,data,tcpSent=False):
         if len(data)==0:
             return False
@@ -222,7 +240,6 @@ class Client:
                 self.doCommand(a,tcpSent)
         else:
             self.doCommand(data,tcpSent)
-        print(self.SYNC)
     def udpLoop(self): #Loop for udp connection
         read,write,err = select.select([self.__usock],[],[],0)
         for sock in read:
@@ -232,6 +249,7 @@ class Client:
                     data = pickle.loads(dataRaw)
                 except: #Break out the loop of the data is corrupted
                     break
+                self.loading = False
                 self.receive(data)
     def tcpLoop(self): #Loop for tcp connection
         read,write,err = select.select([self.__tsock],[],[],0)
@@ -246,30 +264,8 @@ class Client:
                 except:
                     break
                 if data=="p": #Was pinged
-                    self.__tsock.sendall(pickle.dumps("p"))
+                    self.__sendTCP("p")
+                elif data=="l": #Start the game loading
+                    self.loading = True
                 else:
                     self.receive(data,True)
-
-def tmpU():
-    test.SYNC["Test"]+=1
-def tmpD():
-    test.SYNC["Test"]-=1
-
-main = Tk()
-but1 = Button(main,text="Up",command=tmpU)
-but1.pack()
-but2 = Button(main,text="Down",command=tmpD)
-but2.pack()
-val = Label(main,text="SYNC")
-val.pack()
-main.update()
-
-test = Client("169.254.21.86")
-if test.failConnect:
-    print("Failed to connect!")
-else:
-    print("Conntected!")
-    while True:
-        test.loop()
-        main.update()
-        val.config(text=str(test.SYNC))

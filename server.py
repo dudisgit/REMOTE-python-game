@@ -28,6 +28,8 @@ class Player: #Class used to store a player
         self.__buffer2 = [] #Data to send to the user over UDP
         self.__pingBefore = -1 #Time the ping was sent at
         self.ping = 0 #The current ping for the user
+    def sendTrigger(self,funcName,*args): #Call a function on the client
+        self.__buffer.append([["t"+funcName]+list(args)])
     def receivedPing(self): #Called when the user sent a message back because of a ping
         if self.__pingBefore!=-1:
             SEND = (time.time()-self.__pingBefore)/2
@@ -54,6 +56,9 @@ class Player: #Class used to store a player
         elif len(self.updateSlow)!=0 and time.time()>self.updateSlowTimer:
             self.updateSlowTimer = time.time()+SLOW_UPDATE_SPEED
             self.tsock.send(pickle.dumps(self.updateSlow.pop(0)))
+            if len(self.updateSlow)==0:
+                self.__tickSend = time.time()+(1/self.tick)
+                self.sendTCP(["L"])
         if time.time()>self.__pingTime:
             self.__pingTime = time.time()+PING_INTERVAL
             self.__pingBefore = time.time()
@@ -119,12 +124,11 @@ def detectChanges(before,after): #Detects all the changes between one variable a
         return "value change"
     return None #No changes atall
 
-
 class Server: #Class for a server
-    def __init__(self,LINK,ip=socket.gethostbyname(socket.gethostname())):
-        self.LINK = LINK
+    def __init__(self,ip=socket.gethostbyname(socket.gethostname())):
         self.__ip = ip
         self.SYNC = {} #This contains a list of all the variables to synk with clients
+        self.TRIGGER = {} #A dictionary of functions to be called by clients
         self.__SYNCBefore = {} #To detect changes in "SYNC"
         self.__frequent = [] #A list of frequently changes variables, use MAX_FREQUENT to increase size
         self.__UpdateFrequent = time.time()+FREQUENT_TIME #Time given to update all clients with frequently changed variables
@@ -144,7 +148,6 @@ class Server: #Class for a server
     def __clientDisconnect(self,sock): #A client disconnected
         self.users.pop(sock.getpeername()[0])
         self.__tlist.remove(sock)
-        print("Disconnect ",sock.getpeername())
     def getValue(self,path,currentList): #Returns the value at the specified path (path is a list)
         if type(currentList[path[0]])==dict:
             return self.getValue(path[1:],currentList[path[0]])
@@ -197,7 +200,7 @@ class Server: #Class for a server
                         if b[0].upper()==b[0]: #Is TCP
                             tcp = True
                             break
-                if not path in self.__frequent and len(path)!=0: #Add the variable to a frequency list
+                if not path in self.__frequent and len(path)!=0 and not tcp: #Add the variable to a frequency list
                     #If the variable is placed in here it will be updated fully in a given time slice
                     self.__frequent.append(path)
                     if len(self.__frequent)>MAX_FREQUENT:
@@ -225,6 +228,8 @@ class Server: #Class for a server
         self.__usock.close()
         self.__tsock.close()
     def setVariable(self,lis,path,value): #Set a varable using a path list
+        if len(path)==0:
+            return None
         if not path[0] in lis:
             if len(path)==1:
                 lis[path[0]] = value
@@ -244,7 +249,7 @@ class Server: #Class for a server
         else:
             if path[0] in lis:
                 lis.pop(path[0])
-    def doCommand(self,data,tcpSent=False): #Called either from UDP or TCP connections. Their transmission data is the same format!
+    def doCommand(self,data,sock,tcpSent=False): #Called either from UDP or TCP connections. Their transmission data is the same format!
         if type(data)!=list:
             return False
         if type(data[0])==str: #A trigger or update communication
@@ -276,12 +281,14 @@ class Server: #Class for a server
                         self.setVariable(self.SYNC,data[2:],data[1]==1)
                     else:
                         self.setVariable(self.SYNC,data[2:],data[1])
-    def receive(self,data,tcpSent=False):
+            elif data[0][0]=="t": #A trigger was sent to call a function
+                if data[0][1:] in self.TRIGGER:
+                    self.TRIGGER[data[0][1:]](*tuple([sock]+data[1:]))
+    def receive(self,data,sock,tcpSent=False):
         if len(data)==0:
             return False
         for a in data:
-            self.doCommand(a,tcpSent)
-        print(self.SYNC)
+            self.doCommand(a,sock,tcpSent)
     def loop(self): #Must be called continualy
         self.loopUDP()
         self.loopTCP()
@@ -302,16 +309,16 @@ class Server: #Class for a server
                 else:
                     #Code to react to UDP receiving data will be here
                     self.users[con[0]].sender = True
-                    self.receive(data)
+                    self.receive(data,sock)
     def loopTCP(self): #This function must be called continuesly in order to update the TCP server
         read,write,err = select.select(self.__tlist,[],[],0) #Get all events to do with the socket
         for sock in read:
             if sock==self.__tsock: #A new connection has came in
                 con,addr = self.__tsock.accept()
                 self.__tlist.append(con)
-                print("New connection (TCP)",addr) #Will be removed
                 self.users[addr[0]] = Player(addr[0],con,self.__usock)
-                self.users[addr[0]].updateSlow = self.sensify(detectChanges({},self.SYNC),False) #Send the whole SYNC list to the user
+                if len(self.SYNC)!=0:
+                    self.users[addr[0]].updateSlow = ["l"]+self.sensify(detectChanges({},self.SYNC),False) #Send the whole SYNC list to the user
             else: #A message was received
                 try:
                     dataRaw = sock.recv(TCP_BUF_SIZE)
@@ -329,5 +336,14 @@ class Server: #Class for a server
                         else:
                             #Code for receiving TCP data will be here
                             self.users[sock.getpeername()[0]].sender = True
-                            self.receive(data,True)
+                            self.receive(data,sock,True)
 
+def enError(err):
+    print("Error, ",err)
+
+if __name__=="__main__": #If not imported the run as a server without a game running in the background.
+    ERROR = enError
+    IP = socket.gethostbyname(socket.gethostname())
+    serv = Server(IP)
+    while True:
+        serv.loop()
