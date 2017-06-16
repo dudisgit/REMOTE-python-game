@@ -10,8 +10,9 @@ def ERROR(*info): #This function is called whenever an unexspected error occures
 server.ERROR = ERROR
 LINK = {} #This is a global variable for allowing controll over the whole program through one variable. Every class in this program should have a link to this!
 LINK["errorDisplay"] = ERROR
-LINK["server"] = server.Server(LINK,"169.254.21.86")
-LINK["server"].SYNC["test"] = 32
+LINK["server"] = server.Server(LINK)#,"169.254.144.159")
+LINK["server"].SYNC["test"] = 32.5
+
 
 
 main = pygame.display.set_mode(RESLUTION)

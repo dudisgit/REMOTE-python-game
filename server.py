@@ -7,6 +7,8 @@ UDP_BUF_SIZE = 512
 MAX_PLAYER = 60
 PING_INTERVAL = 5 #Seconds to send a ping interval again
 SLOW_UPDATE_SPEED = 0.3 #Seconds between sending a slow update packet, (initaly syncing variables when joining a server or changing map) TCP connection.
+MAX_FREQUENT = 12 #Max number of variables allowed in the frequently changed list, increasing may resolve sync issues but would also slow network down
+FREQUENT_TIME = 5 #Seconds to update all users with frequently changed variables
 ERROR = None #Function to call when an error happens
 
 class Player: #Class used to store a player
@@ -124,6 +126,8 @@ class Server: #Class for a server
         self.__ip = ip
         self.SYNC = {} #This contains a list of all the variables to synk with clients
         self.__SYNCBefore = {} #To detect changes in "SYNC"
+        self.__frequent = [] #A list of frequently changes variables, use MAX_FREQUENT to increase size
+        self.__UpdateFrequent = time.time()+FREQUENT_TIME #Time given to update all clients with frequently changed variables
         self.users = {} #A list of users connected
         #UDP socket
         self.__usock = socket.socket(socket.AF_INET,socket.SOCK_DGRAM) #Set up a UDP socket
@@ -186,11 +190,18 @@ class Server: #Class for a server
             sendTCP = [] #A list containing all the TCP data to send
             for a in sendChange: #Loop through the changes and detect if a message is TCP or UDP
                 tcp = False
+                path = [] #Path to the variable being edited/deleted
                 for i,b in enumerate(a):
                     if ((a[0][0]=="n" or a[0][0]=="s") and i>1) or a[0][0]=="d":
+                        path.append(b)
                         if b[0].upper()==b[0]: #Is TCP
                             tcp = True
                             break
+                if not path in self.__frequent and len(path)!=0: #Add the variable to a frequency list
+                    #If the variable is placed in here it will be updated fully in a given time slice
+                    self.__frequent.append(path)
+                    if len(self.__frequent)>MAX_FREQUENT:
+                        self.__frequent.pop(0)
                 if tcp:
                     sendTCP.append(a)
                 else:
@@ -202,6 +213,14 @@ class Server: #Class for a server
                     if len(sendUDP)!=0:
                         self.users[a].sendUDP(sendUDP)
             self.__SYNCBefore = varInitial(self.SYNC) #Apply the changes so further changes in SYNC can be detected.
+    def uploadFrequent(self): #Sends frequently changed variables full value to all players if timer has expired
+        if time.time()>self.__UpdateFrequent:
+            self.__UpdateFrequent = time.time()+FREQUENT_TIME
+            msg = []
+            for a in self.__frequent:
+                msg.append(["s",self.getValue(a,self.SYNC)]+a)
+            for a in self.users:
+                self.users[a].sendTCP(msg)
     def close(self): #Closes all sockets
         self.__usock.close()
         self.__tsock.close()
@@ -267,6 +286,7 @@ class Server: #Class for a server
         self.loopUDP()
         self.loopTCP()
         self.detectAndApplySYNC()
+        self.uploadFrequent()
         for a in self.users:
             self.users[a].loop()
             self.users[a].sender = False

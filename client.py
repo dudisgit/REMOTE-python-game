@@ -251,9 +251,9 @@ class Client:
                     self.receive(data,True)
 
 def tmpU():
-    test.SYNC["test"]+=1
+    test.SYNC["Test"]+=1
 def tmpD():
-    test.SYNC["test"]-=1
+    test.SYNC["Test"]-=1
 
 main = Tk()
 but1 = Button(main,text="Up",command=tmpU)
