@@ -7,7 +7,7 @@ UDP_BUF_SIZE = 512
 MAX_PLAYER = 60
 PING_INTERVAL = 5 #Seconds to send a ping interval again
 SLOW_UPDATE_SPEED = 0.3 #Seconds between sending a slow update packet, (initaly syncing variables when joining a server or changing map) TCP connection.
-MAX_FREQUENT = 12 #Max number of variables allowed in the frequently changed list, increasing may resolve sync issues but would also slow network down
+MAX_FREQUENT = 5 #Max number of variables allowed in the frequently changed list, increasing may resolve sync issues but would also slow network down
 FREQUENT_TIME = 5 #Seconds to update all users with frequently changed variables
 ERROR = None #Function to call when an error happens
 
