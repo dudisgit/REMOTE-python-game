@@ -32,7 +32,7 @@ class Listbox: #An object that houses a list of other widgets in a scrollbar men
         self.__scroll.loop(mouse,kBuf)
         for a in self.objs:
             a.loop([mouse[0],mouse[1]-self.pos[0],mouse[2]-self.pos[1]],kBuf)
-        if len(self.objs)!=0 and self.__lighten: #Loop only if the listbox contains items
+        if len(self.objs)!=0 and self.__lighten and len(self.objs)*35>self.bound[1]: #Loop only if the listbox contains items
             for event in kBuf: #Capture keyboard events
                 if event.type == 6: #Mouse wheel
                     if event.button==4: #Mouse wheel up
@@ -43,6 +43,8 @@ class Listbox: #An object that houses a list of other widgets in a scrollbar men
                         self.__scroll.scroll += 50/(len(self.objs)*35)
                         if self.__scroll.scroll>1:
                             self.__scroll.scroll = 1
+        elif len(self.objs)*35<=self.bound[1]:
+            self.__scroll.scroll = 0
     def render(self,x=None,y=None,scalex=None,scaley=None,surf=None): #Render the listbox onto the surface
         if x is None:
             x = self.pos[0]
@@ -56,13 +58,13 @@ class Listbox: #An object that houses a list of other widgets in a scrollbar men
         siz = ((len(self.objs)-1)*35)-self.bound[1] #Total size of all the contents inside
         self.screen.fill((0,0,0)) #Empty the surface
         for i,a in enumerate(self.objs): #Render all the widgets contained
-            a.pos[1] = ((i-1)*35)-(self.__scroll.scroll*siz)
+            a.pos[1] = (i*35)-(self.__scroll.scroll*siz)
             a.render(a.pos[0],a.pos[1],scalex,scaley,self.screen)
         surf.blit(self.screen,[x,y]) #Apply the surface to the main surface
         #Edit options and render scrollbar.
-        self.__scroll.pos = [x+(self.bound[1]*scalex)-20,y] #Position setting
+        self.__scroll.pos = [x+(self.bound[0]*scalex)-20,y] #Position setting
         self.__scroll.bound[1] = self.bound[1]-4 #Height setting
-        self.__scroll.render(x+(self.bound[1]*scalex)-22,y+2,scalex,scaley,surf) #Rendering
+        self.__scroll.render(x+(self.bound[0]*scalex)-22,y+2,scalex,scaley,surf) #Rendering
 
 class TextEntry: #Feild to enter text into
     def __init__(self,x,y,LINK,length=50,resize=True,backgroundText="",enterFunc=None):
@@ -478,12 +480,12 @@ class Button:
                     if not self.__call is None:
                         self.__call(self.__LINK)
                     else:
-                        self.__LINK["errorDisplay"]("button "+self.__text+" is not bound to any functions!")
+                        self.__LINK["errorDisplay"]("button '"+self.__text+"' is not bound to any functions!")
                 except:
                     if self.__LINK["DEV"]:
                         raise
                     else:
-                        self.__LINK["errorDisplay"]("button "+self.__text+" encountered an error while running the function",sys.exc_info())
+                        self.__LINK["errorDisplay"]("button '"+self.__text+"' encountered an error while running the function",sys.exc_info())
             else:
                 self.__holding = False
     def render(self,x=None,y=None,scalex=None,scaley=None,surf=None): #Render the widget
