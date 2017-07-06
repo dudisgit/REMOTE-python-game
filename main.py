@@ -21,7 +21,9 @@ def loadScreen(name): #Loads a screen
         ERROR("Attempt to load a screen that doesen't exist '"+name+"'")
 
 class NULLENT: #Null entity for keeping the game running when an entity doesen't exist
-    def __init__(self,x,y,LINK):
+    def __init__(self,x,y,LINK,ID):
+        self.ID = ID
+        self.settings = {}
         self.pos = [x,y]
         self.size = [50,50]
         self.LINK = LINK
@@ -69,7 +71,8 @@ for a in files:
         LINK["content"][a[:-4]] = pygame.image.load("content/"+a)
         LINK["content"][a[:-4]].set_colorkey((0,0,0))
 LINK["cont"] = {} #This is used for storing "content" in LINK but is resized every frame.
-
+#Maps
+LINK["maps"] = os.listdir("maps")
 
 loadScreen("mapEdit")
 

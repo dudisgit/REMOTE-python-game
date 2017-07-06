@@ -3,15 +3,23 @@ import pygame
 import entities.base as base
 
 class Main(base.Main):
-    def __init__(self,x,y,LINK):
+    def __init__(self,x,y,LINK,ID):
         self.init(x,y,LINK) #Init on the base class, __init__ is not called because its used for error detection.
+        self.ID = ID
         self.settings["god"] = True
         self.linkable = ["power"] #A list of names that can connect to this entity
         self.__sShow = True #Show in games scematic view
         self.__inRoom = False #Is true if the generator is inside a room
+        self.hintMessage = "A generator powers electronics around the ship and can be accessed using a drone or a ship upgrade. \nIt can power other stuff like doors, rooms, airlocks, etc"
     def __ChangeGod(self,LINK,state): #switches godmode on/off on the generator
         self.settings["god"] = state == True
+    def SaveFile(self): #Give all infomation about this object ready to save to a file
+        return ["generator",self.ID,self.pos,self.settings["god"]]
+    def LoadFile(self,data,idRef): #Load from a file
+        self.pos = data[2]
+        self.settings["god"] = data[3]
     def rightInit(self,surf): #Initialize context menu for map designer
+        self.HINT = False
         self.__surface = pygame.Surface((210,100)) #Surface to render too
         self.__lastRenderPos = [0,0] #Last rendering position
         self.__but1 = self.LINK["screenLib"].Button(5,5,self.LINK,"Delete",lambda LINK: self.delete()) #Delete button
@@ -46,6 +54,10 @@ class Main(base.Main):
         self.__check1 = None
     def editMove(self,ents): #Generator is being moved
         self.__inRoom = type(self.insideRoom(ents)) != bool #Is true if the generator is currently inside a room
+    def giveError(self,ents): #Scans and gives an error out
+        if type(self.insideRoom(ents)) == bool:
+            return "No room (generator)"
+        return False
     def sRender(self,x,y,scale,surf=None,edit=False): #Render in scematic view
         if surf is None:
             surf = self.LINK["main"]
@@ -54,3 +66,5 @@ class Main(base.Main):
                 surf.blit(self.getImage("generatorOn"),(x,y))
             else: #else a red.
                 surf.blit(self.getImage("generatorDead"),(x,y))
+        if self.HINT:
+            self.renderHint(surf,self.hintMessage,[x,y])

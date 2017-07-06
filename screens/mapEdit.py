@@ -1,8 +1,8 @@
 #Map editor module
-import pygame
+import pygame, math, time, sys, pickle
 
-ZOOM_SPEED = 1.2
-BLOCK_SIZE = 50
+ZOOM_SPEED = 1.2 #Zooming speed
+BLOCK_SIZE = 50 #Very important you don't change this.
 
 class DumpButton: #Used for entity selecting buttons to have functions to call to
     def __init__(self,backLink,name):
@@ -10,11 +10,13 @@ class DumpButton: #Used for entity selecting buttons to have functions to call t
         self.__name = name
     def call(self,LINK):
         self.__back.addItem(self.__name)
+    def call2(self,LINK):
+        self.__back.setMapName(self.__name)
 
 class Main:
     def __init__(self,LINK):
         self.__LINK = LINK
-        self.__ents = [LINK["ents"]["room"].Main(BLOCK_SIZE,BLOCK_SIZE,LINK)] #All entities in the screen
+        self.__ents = [] #All entities in the screen
         self.__renderFunc = LINK["render"].Scematic(LINK,True) #Class to render entities
         self.__reslution = LINK["reslution"] #Reslution of the editor
         self.__renderFunc.ents = self.__ents #Make sure the rendering class gets updates from this one through a pointer
@@ -25,10 +27,12 @@ class Main:
                 self.__buttonObjs.append(DumpButton(self,a+"")) #Give the button a class to call to
                 self.__entSelect.addItem(LINK["screenLib"].Button,a,self.__buttonObjs[-1].call) #Add the new button
         self.__label = LINK["screenLib"].Label(10,self.__reslution[1]-340,LINK,"Spawning menu") #Label to describe entity selecting window
-        self.__fileMenu = LINK["screenLib"].Button(10,self.__reslution[1]-380,LINK,"File") #File menu
+        self.__fileMenu = LINK["screenLib"].Button(10,self.__reslution[1]-380,LINK,"File",self.FileMenuInit) #File menu
         self.__mouseStart = [0,0] #Used for detecting distances between mosue and the object being selected.
         self.__scroll = [0,0] #Scroll amount through the map
         self.__action = [-1,[]] #Action taking place, e.g. moving an object
+        self.__AddedEnts = [] #Used to give hints when adding entities
+        self.__Hinting = 0 #Start of hinting
         #Types of actions:
         #   1 - Creating a new object
         #   2 - Linking an object to anouther
@@ -38,8 +42,45 @@ class Main:
         self.__roomScale = False #If the item is currently being resized (room only)
         self.__scrolling = False #If the user is currently scrolling accross the map
         self.__scrollClick = False #Detects changes in right click or middle button
+        self.__FileMenu = False #Inside the file menu
+        self.__GlobalID = 0 #A global ID given to all entities, this helps with linking them together.
         self.__mouseSave = [0,0] #Used to save the mouse position for rendering
         self.__zoom = 1 #Zoom amount
+    def setMapName(self,name): #Loads map <name>
+        self.__NameInput.text = name+""
+    def renderHint(self,surf,message,pos): #Render a hint box
+        screenRes = self.__LINK["reslution"] #Screen reslution
+        boxPos = [pos[0]+10,pos[1]+10] #Position of the box
+        boxWidth = screenRes[0]/2 #Width of the box will be half the screen width
+        boxHeight = 0
+        mes = message.split(" ") #Split the message up by spaces
+        charLength = 10 #Length of 1 charicter (constant)
+        font = self.__LINK["font24"] #Font to use when rendering
+        adding = "" #Text being added to that line
+        drawWord = [] #Store all the text in a list to be rendered
+        for word in mes: #Loop through all text samples and build a list of strings that are cut off when they get to the end and start on the next element
+            if (len(adding)+len(word))*charLength > boxWidth or "\n" in word: #Length would be above the length of the box or the message requested a new line using "\n"
+                drawWord.append(adding+"")
+                if "\n" in word: #Remove the "\n"
+                    spl = word.split("\n")
+                    spl.remove("")
+                    adding = spl[0]+" "
+                else:
+                    adding = word+" "
+                boxHeight += 20
+            else:
+                adding += word+" "
+        if len(adding)!=0: #If any are left then add them onto the end
+            drawWord.append(adding+"")
+            boxHeight+=20
+        boxHeight+=20
+        boxPos[1] = pos[1]-boxHeight-10 #Re-calculate the box position depening on the text height
+        pygame.draw.rect(surf,(0,0,0),[boxPos[0]-4,boxPos[1]-4,boxWidth,boxHeight+8]) #Black box background
+        mult = abs(math.cos(time.time()*3)) #Box flashing
+        pygame.draw.rect(surf,(255*mult,255*mult,0),[boxPos[0]-4,boxPos[1]-4,boxWidth,boxHeight+8],3) #Flashing box
+        surf.blit(font.render("Press enter or space to continue",16,(255*mult,255*mult,0)),[boxPos[0],boxPos[1]+boxHeight-16])
+        for i,a in enumerate(drawWord): #Draw all the text calculated above
+            surf.blit(font.render(a,16,(0,255,0)),[boxPos[0],boxPos[1]+(i*20)])
     def linkItem(self,item,linkName): #Links one item to anouther if they have the same connection type
         if self.__action[0]==-1:
             self.__action[0] = 2
@@ -47,8 +88,12 @@ class Main:
     def addItem(self,name): #Adds a new item to the map
         if self.__action[0]==-1: #No actions are being done
             self.__action[0] = 1
-            self.__ents.append(self.__LINK["ents"][name].Main(0,0,self.__LINK))
+            self.__ents.append(self.__LINK["ents"][name].Main(0,0,self.__LINK,self.__GlobalID+0))
+            self.__GlobalID += 1
             self.__action[1] = [self.__ents[-1]]
+            if not name in self.__AddedEnts:
+                self.__AddedEnts.append(name+"")
+                self.__ents[-1].HINT = True
     def findEnt(self,posx,posy): #Returns the entitie at the position [posx,posy]
         #This will select rooms last!
         rEnt = -1 #Room entity
@@ -68,6 +113,25 @@ class Main:
             self.__LINK["errorDisplay"]("Tried to create entity but doesen't exist '"+name+"'")
         return self.__LINK["null"]
     def loop(self,mouse,kBuf): #Event loop for screen
+        if self.__Hinting != 4:
+            for a in kBuf:
+                if a.type == pygame.KEYDOWN:
+                    if a.key == pygame.K_SPACE or a.key == pygame.K_RETURN:
+                        self.__Hinting += 1
+                        break
+            return 0
+        if self.__FileMenu:
+            self.__SaveButton.loop(mouse,kBuf)
+            self.__MapSelect.loop(mouse,kBuf)
+            self.__NameInput.loop(mouse,kBuf)
+            self.__LoadButton.loop(mouse,kBuf)
+            if self.__FileMenu:
+                self.__ResetButton.loop(mouse,kBuf)
+            if self.__FileMenu:
+                self.__BackButton.loop(mouse,kBuf)
+            if self.__FileMenu:
+                self.__MenuButton.loop(mouse,kBuf)
+            return 0
         self.__mouseSave = [mouse[1],mouse[2]] #Saves the mouse cursor position for use with rendering
         self.__entSelect.loop(mouse,kBuf) #Event loop for entity selecting window
         self.__fileMenu.loop(mouse,kBuf) #Event loop for file button
@@ -81,6 +145,11 @@ class Main:
                 self.__active = -1
             if self.__activeDrag != -1:
                 self.__activeDrag = -1
+        if self.__active != -1:
+            dat = self.__ents[self.__active].rightPos()
+            outside = not (mouse[1]>dat[0] and mouse[2]>dat[1] and mouse[1]<dat[0]+dat[2] and mouse[2]<dat[1]+dat[3])
+        else:
+            outside = True #Outside the context/options box
         for a in rem: #Remove the items that want to be deleted
             self.__ents.remove(a)
         snap = [round(mouse[1]/BLOCK_SIZE/self.__zoom)*BLOCK_SIZE*self.__zoom,round(mouse[2]/BLOCK_SIZE/self.__zoom)*BLOCK_SIZE*self.__zoom] #Snap position of the mouse
@@ -89,15 +158,16 @@ class Main:
             self.__scrollClick = (mouse[3] or mouse[4])
             if self.__scrollClick:
                 ent = self.findEnt((mouse[1]+self.__scroll[0])/self.__zoom,(mouse[2]+self.__scroll[1])/self.__zoom) #Find what entity the mouse is inside
-                if type(ent) == bool and self.__activeDrag == -1: #Not inside one, must be trying to scroll
-                    if not insideSelect:
-                        self.__mouseStart = [mouse[1]+0,mouse[2]+0]
-                        self.__scrolling = True
-                else: #Open a context menu on the entity
-                    if self.__active !=-1: #Unload the last context menu if it has allredey been opened
-                        self.__ents[self.__active].rightUnload()
-                    self.__active = ent + 0
-                    self.__ents[ent].rightInit(self.__LINK["main"])
+                if outside:
+                    if (type(ent) == bool or mouse[3]) and self.__activeDrag == -1: #Not inside one, must be trying to scroll
+                        if not insideSelect:
+                            self.__mouseStart = [mouse[1]+0,mouse[2]+0]
+                            self.__scrolling = True
+                    elif mouse[4]: #Open a context menu on the entity
+                        if self.__active !=-1: #Unload the last context menu if it has allredey been opened
+                            self.__ents[self.__active].rightUnload()
+                        self.__active = ent + 0
+                        self.__ents[ent].rightInit(self.__LINK["main"])
             else:
                 self.__scrolling = False
         if self.__active != -1:
@@ -134,7 +204,7 @@ class Main:
                                     self.__LINK["errorDisplay"]("Entity '"+str(self.__action[1][0])+"' does not have the link setting of '"+self.__action[1][1]+"'")
                     self.__action[0] = -1
                     self.__action[1] = []
-                else: #Detect if the user is trying to drag anouther entity around
+                elif outside: #Detect if the user is trying to drag anouther entity around
                     mPos = [(mouse[1]+self.__scroll[0])/self.__zoom,(mouse[2]+self.__scroll[1])/self.__zoom] #Mouse position local to entity positions
                     itm = self.findEnt(mPos[0],mPos[1])
                     self.__roomScale = False
@@ -174,9 +244,144 @@ class Main:
                 self.__action[1][0].pos = [round((mouse[1]+self.__scroll[0])/self.__zoom/BLOCK_SIZE)*BLOCK_SIZE,
                                             round((mouse[2]+self.__scroll[1])/self.__zoom/BLOCK_SIZE)*BLOCK_SIZE]
                 self.__action[1][0].editMove(self.__ents)
+    def FileMenuReset(self,*args): #Reset scroll position
+        self.__scroll = [0,0]
+        self.FileMenuEnd()
+    def saveAs(self,name): #Saves a file as a name
+        Build = [self.__GlobalID+0]
+        errs = []
+        for a in self.__ents:
+            Build.append(a.SaveFile())
+            err = a.giveError(self.__ents)
+            if type(err) == str and not err in errs:
+                errs.append(err+"")
+        try:
+            file = open("maps/"+name,"wb")
+        except:
+            self.__LINK["errorDisplay"]("Failed to save file!",sys.exc_info())
+            return 0
+        file.write(pickle.dumps(Build))
+        file.close()
+        if self.__FileMenu:
+            if len(errs)!=0:
+                self.__WarnLabel.text = "Saved but with errors: "+str(errs)
+                self.__WarnLabel.flickr()
+            else:
+                self.__WarnLabel.text = "Saved file sucsessfuly"
+            for a in self.__ents: #Check all objects for colosions
+                a.editMove(self.__ents)
+    def openAs(self,name): #Opens a file as a name
+        try:
+            file = open("maps/"+name,"rb")
+        except:
+            self.__LINK["errorDisplay"]("Failed to open file!",sys.exc_info())
+            return 0
+        try:
+            data = pickle.loads(file.read())
+        except:
+            self.__LINK["errorDisplay"]("Failed to pickle load file")
+            file.close()
+            return 0
+        self.__GlobalID = data[0]+0
+        self.__ents = []
+        idRef = {}
+        for a in data[1:]:
+            self.__ents.append(self.getEnt(a[0])(a[2][0],a[2][1],self.__LINK,a[1]+0))
+            idRef[a[1]+0] = self.__ents[-1]
+        for i,a in enumerate(data[1:]):
+            self.__ents[i].LoadFile(a,idRef)
+        self.__renderFunc.ents = self.__ents #Make sure the rendering class gets updates from this one through a pointer
+        file.close()
+        if self.__FileMenu:
+            self.__WarnLabel.text = "Opened file sucsessfuly"
+        for a in self.__ents: #Check all objects for colosions
+            a.editMove(self.__ents)
+    def FileMenuEnd(self,*args): #End the file menu
+        self.__LoadButton = None
+        self.__SaveButton = None
+        self.__BackButton = None
+        self.__ResetButton = None
+        self.__MenuButton = None
+        self.__NameInput = None
+        self.__MapSelect = None
+        self.__WarnLabel = None
+        self.__MapDump = []
+        self.__FileMenu = False
+    def SaveFileButton(self,*args):
+        text = self.__NameInput.text
+        if "\\" in text or "/" in text:
+            self.__WarnLabel.text = "File name contains invalid charicters!"
+            self.__WarnLabel.flickr()
+            text = ""
+        else:
+            if "." in text:
+                if text.count(".")!=1:
+                    self.__WarnLabel.text = "Invalid number of dots ('.')"
+                    self.__WarnLabel.flickr()
+                    text = ""
+            else:
+                text = text+".map"
+        if len(text)!=0:
+            try:
+                self.saveAs(text)
+            except:
+                self.__LINK["errorDisplay"]("Failed to run save function",sys.exc_info())
+            if not text in self.__LINK["maps"]:
+                self.__LINK["maps"].append(text+"")
+    def OpenFileButton(self,*args):
+        text = self.__NameInput.text
+        if "\\" in text or "/" in text:
+            self.__WarnLabel.text = "File name contains invalid charicters!"
+            self.__WarnLabel.flickr()
+            text = ""
+        else:
+            if "." in text:
+                if text.count(".")!=1:
+                    self.__WarnLabel.text = "Invalid number of dots ('.')"
+                    self.__WarnLabel.flickr()
+                    text = ""
+            else:
+                text = text+".map"
+        if len(text)!=0:
+            if not text in self.__LINK["maps"]:
+                self.__WarnLabel.text = "Map does not exist, if you dragged it in then restart the game!"
+                self.__WarnLabel.flickr()
+                text=""
+        if len(text)!=0:
+            try:
+                self.openAs(text)
+            except:
+                self.__LINK["errorDisplay"]("Failed to run open function",sys.exc_info())
+            self.FileMenuEnd()
+    def FileMenuInit(self,*args): #Initialize file menu
+        self.__FileMenu = True
+        self.__LoadButton = self.__LINK["screenLib"].Button(10,10,self.__LINK,"Open",self.OpenFileButton)
+        self.__SaveButton = self.__LINK["screenLib"].Button(80,10,self.__LINK,"Save",self.SaveFileButton)
+        self.__ResetButton = self.__LINK["screenLib"].Button(150,10,self.__LINK,"Reset scroll position",self.FileMenuReset)
+        self.__BackButton = self.__LINK["screenLib"].Button(400,10,self.__LINK,"Back to editor",self.FileMenuEnd)
+        self.__MenuButton = self.__LINK["screenLib"].Button(570,10,self.__LINK,"Back to main menu")
+        self.__NameInput = self.__LINK["screenLib"].TextEntry(10,50,self.__LINK,self.__reslution[0]-25,False,"File name")
+        self.__MapSelect = self.__LINK["screenLib"].Listbox(10,130,self.__LINK,[self.__reslution[0]-25,self.__reslution[1]-145])
+        self.__WarnLabel = self.__LINK["screenLib"].Label(10,90,self.__LINK,"File menu")
+        self.__MapDump = []
+        for a in self.__LINK["maps"]:
+            self.__MapDump.append(DumpButton(self,a))
+            self.__MapSelect.addItem(self.__LINK["screenLib"].Button,a,self.__MapDump[-1].call2)
+    def renderFileMenu(self,surf): #Render the file menu
+        self.__LoadButton.render(self.__LoadButton.pos[0],self.__LoadButton.pos[1],1,1,surf)
+        self.__SaveButton.render(self.__SaveButton.pos[0],self.__SaveButton.pos[1],1,1,surf)
+        self.__NameInput.render(self.__NameInput.pos[0],self.__NameInput.pos[1],1,1,surf)
+        self.__ResetButton.render(self.__ResetButton.pos[0],self.__ResetButton.pos[1],1,1,surf)
+        self.__MapSelect.render(self.__MapSelect.pos[0],self.__MapSelect.pos[1],1,1,surf)
+        self.__BackButton.render(self.__BackButton.pos[0],self.__BackButton.pos[1],1,1,surf)
+        self.__MenuButton.render(self.__MenuButton.pos[0],self.__MenuButton.pos[1],1,1,surf)
+        self.__WarnLabel.render(self.__WarnLabel.pos[0],self.__WarnLabel.pos[1],1,1,surf)
     def render(self,surf=None): #Renders everything
         if surf is None:
             surf = self.__LINK["main"]
+        if self.__FileMenu:
+            self.renderFileMenu(surf)
+            return 0
         pygame.draw.line(surf,(255,255,0),[-self.__scroll[0]-(10*self.__zoom),-self.__scroll[1]],[-self.__scroll[0]+(10*self.__zoom),-self.__scroll[1]])
         pygame.draw.line(surf,(255,255,0),[-self.__scroll[0],-self.__scroll[1]-(10*self.__zoom)],[-self.__scroll[0],-self.__scroll[1]+(10*self.__zoom)])
         self.__renderFunc.render(self.__scroll[0],self.__scroll[1],self.__zoom)
@@ -196,3 +401,11 @@ class Main:
         self.__entSelect.render(self.__entSelect.pos[0],self.__entSelect.pos[1],1,1,surf)
         self.__label.render(self.__label.pos[0],self.__label.pos[1],1,1,surf)
         self.__fileMenu.render(self.__fileMenu.pos[0],self.__fileMenu.pos[1],1,1,surf)
+        if self.__Hinting == 0: #Render file menu hint
+            self.renderHint(surf,"This is the file menu, click it to save, open, exit and reset scrolling position",[self.__fileMenu.pos[0]+60,self.__fileMenu.pos[1]+20])
+        elif self.__Hinting == 1: #Render entity adding hint
+            self.renderHint(surf,"You can add new entities using this menu here, click on an entity and click where you want it",[self.__entSelect.pos[0]+120,self.__entSelect.pos[1]+120])
+        elif self.__Hinting == 2: #Render controlls hint
+            self.renderHint(surf,"You can move and resize objects using the left mouse button. \nRight click to open the context/options menu of an entity, to close simply click (mouse 1) on anouther entity. \nHold mouse 2 (right click) to scroll around.",[self.__reslution[0]/3,180])
+        elif self.__Hinting == 3: #Hints hint
+            self.renderHint(surf,"Most objects you spawn will want to be inside of rooms. Objects that don't are rooms, doors, and airlocks. Entities that encounter errors will be highlighted RED \nWhen spawning entities for the first time, you will get a hint box. To close this simply open the objects context/option menu by right clicking on it.",[self.__reslution[0]/3,240])

@@ -3,14 +3,34 @@ import pygame
 import entities.base as base
 
 class Main(base.Main):
-    def __init__(self,x,y,LINK):
+    def __init__(self,x,y,LINK,ID):
         self.init(x,y,LINK) #Init on the base class, __init__ is not called because its used for error detection.
+        self.ID = ID
         self.settings["open"] = False #Door is opened or closed
         self.settings["attack"] = True #Door is attackable
         self.settings["power"] = [] #Contains a list of generators the door is powered by
         self.settings["lr"] = True #This determines the direction of the door (Left right / Up down)
         self.__sShow = True #Show in games scematic view
         self.__inRoom = False #Is true if the door is inside a room
+        self.hintMessage = "A door must be placed between two rooms. It can be opened or closed as long as its powered by a generator or room. \nIf linked to a generator, the rooms next to it will not power it!"
+    def SaveFile(self): #Give all infomation about this object ready to save to a file
+        pows = []
+        for i,a in enumerate(self.settings["power"]):
+            try:
+                pows.append(a.ID)
+            except:
+                self.LINK["errorDisplay"]("Saving power link "+str(i)+"(index) in door "+str(self.ID)+"(ID) failed.")
+        return ["door",self.ID,self.pos,self.settings["open"],self.settings["attack"],self.settings["lr"],pows]
+    def LoadFile(self,data,idRef): #Load from a file
+        self.pos = data[2]
+        self.settings["open"] = data[3]
+        self.settings["attack"] = data[4]
+        self.settings["lr"] = data[5]
+        for a in data[6]:
+            if a in idRef:
+                self.settings["power"].append(idRef[a])
+            else:
+                self.LINK["errorDisplay"]("Loading power link "+str(a)+"(ID) failed in door "+str(self.ID)+"(ID).")
     def __ChangeState(self,LINK,state): #switches door state
         self.settings["open"] = state == True
     def __ChangeDirection(self,LINK,state): #switches doors state
@@ -22,18 +42,17 @@ class Main(base.Main):
     def __UnlinkAll(self,LINK): #Deletes all links on this entity
         self.settings["power"] = []
     def rightInit(self,surf): #Initialize context menu for map designer
-        self.__surface = pygame.Surface((210,215)) #Surface to render too
+        self.HINT = False
+        self.__surface = pygame.Surface((210,180)) #Surface to render too
         self.__lastRenderPos = [0,0] #Last rendering position
         self.__but1 = self.LINK["screenLib"].Button(5,5,self.LINK,"Delete",lambda LINK: self.delete()) #Delete button
         self.__check1 = self.LINK["screenLib"].CheckButton(5,40,self.LINK,"Open/Close",self.settings["open"],self.__ChangeState) #Door state checkbox
-        self.__check2 = self.LINK["screenLib"].CheckButton(5,75,self.LINK,"Direction",self.settings["lr"],self.__ChangeDirection) #Door direction checkbox
-        self.__check3 = self.LINK["screenLib"].CheckButton(5,145,self.LINK,"Attackable",self.settings["attack"],self.__ChangeAttack) #Door attack checkbox
-        self.__but2 = self.LINK["screenLib"].Button(5,110,self.LINK,"Link power",self.__LinkTo) #Link button
-        self.__but3 = self.LINK["screenLib"].Button(5,180,self.LINK,"Unlink all",self.__UnlinkAll)
+        self.__check3 = self.LINK["screenLib"].CheckButton(5,75,self.LINK,"Attackable",self.settings["attack"],self.__ChangeAttack) #Door attack checkbox
+        self.__but2 = self.LINK["screenLib"].Button(5,145,self.LINK,"Link power",self.__LinkTo) #Link button
+        self.__but3 = self.LINK["screenLib"].Button(5,110,self.LINK,"Unlink all",self.__UnlinkAll)
     def rightLoop(self,mouse,kBuf): #Event loop for the widgets inside the context menu
         self.__but1.loop([mouse[0],mouse[1]-self.__lastRenderPos[0],mouse[2]-self.__lastRenderPos[1]]+mouse[3:],kBuf)
         self.__check1.loop([mouse[0],mouse[1]-self.__lastRenderPos[0],mouse[2]-self.__lastRenderPos[1]]+mouse[3:],kBuf)
-        self.__check2.loop([mouse[0],mouse[1]-self.__lastRenderPos[0],mouse[2]-self.__lastRenderPos[1]]+mouse[3:],kBuf)
         self.__check3.loop([mouse[0],mouse[1]-self.__lastRenderPos[0],mouse[2]-self.__lastRenderPos[1]]+mouse[3:],kBuf)
         self.__but2.loop([mouse[0],mouse[1]-self.__lastRenderPos[0],mouse[2]-self.__lastRenderPos[1]]+mouse[3:],kBuf)
         self.__but3.loop([mouse[0],mouse[1]-self.__lastRenderPos[0],mouse[2]-self.__lastRenderPos[1]]+mouse[3:],kBuf)
@@ -46,12 +65,11 @@ class Main(base.Main):
             windowPos[0] = self.LINK["reslution"][0]-150
         if windowPos[1]<10:
             windowPos[1] = 10
-        if windowPos[1]>self.LINK["reslution"][1]-240:
-            windowPos[1] = self.LINK["reslution"][1]-240
+        if windowPos[1]>self.LINK["reslution"][1]-190:
+            windowPos[1] = self.LINK["reslution"][1]-190
         self.__surface.fill((0,0,0)) #Empty the context menu surface
         self.__but1.render(self.__but1.pos[0],self.__but1.pos[1],1,1,self.__surface) #Render delete button
         self.__check1.render(self.__check1.pos[0],self.__check1.pos[1],1,1,self.__surface) #Render checkbutton
-        self.__check2.render(self.__check2.pos[0],self.__check2.pos[1],1,1,self.__surface) #Render checkbutton
         self.__check3.render(self.__check3.pos[0],self.__check3.pos[1],1,1,self.__surface) #Render checkbutton
         self.__but2.render(self.__but2.pos[0],self.__but2.pos[1],1,1,self.__surface) #Render link button
         self.__but3.render(self.__but3.pos[0],self.__but3.pos[1],1,1,self.__surface) #Render unlink button
@@ -68,7 +86,6 @@ class Main(base.Main):
         self.__check1 = None
         self.__but2 = None
         self.__but3 = None
-        self.__check2 = None
         self.__check3 = None
     def editMove(self,ents): #Room is being moved
         self.__inRoom = type(self.insideRoom(ents)) != bool
@@ -80,6 +97,26 @@ class Main(base.Main):
             self.settings["lr"] = True
         elif type(self.insideRoom(ents,[self.pos[0]+75,self.pos[1]+25],[0,0])) != bool:
             self.settings["lr"] = True
+    def giveError(self,ents): #Scans and gives an error out
+        if type(self.insideRoom(ents)) != bool: #Check if inside a room
+            return "Inside room (door)"
+        #Check if next to a room
+        romConnect = False
+        save = self.settings["lr"] == True
+        self.settings["lr"] = False
+        self.editMove(ents)
+        if self.settings["lr"] != False:
+            romConnect = True
+        else:
+            self.settings["lr"] = True
+            self.editMove(ents)
+            if self.settings["lr"]!=True:
+                romConnect = True
+        self.settings["lr"] = save == True
+        #Check if connected to a room
+        if not romConnect:
+            return "No room (door)"
+        return False
     def sRender(self,x,y,scale,surf=None,edit=False): #Render in scematic view
         if surf is None:
             surf = self.LINK["main"]
@@ -109,3 +146,5 @@ class Main(base.Main):
                 surf.blit(pygame.transform.rotate(self.getImage("doorClosed"+dead),90),(x,y))
             else:
                 surf.blit(self.getImage("doorClosed"+dead),(x,y))
+        if self.HINT:
+            self.renderHint(surf,self.hintMessage,[x,y])

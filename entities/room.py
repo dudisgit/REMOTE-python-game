@@ -3,19 +3,39 @@ import pygame
 import entities.base as base
 
 class Main(base.Main):
-    def __init__(self,x,y,LINK):
+    def __init__(self,x,y,LINK,ID):
         self.init(x,y,LINK) #Init on the base class, __init__ is not called because its used for error detection.
+        self.ID = ID
         self.settings["radiation"] = False
         self.settings["power"] = [] #List of generators room is linked to
         self.__sShow = True #Show in games scematic view
         self.__inRoom = False #Is true if the room is inside anouther room
+        self.hintMessage = "A room is a space the drone can move about in, you can resize it using the slanted line at the bottom right"
     def __ChangeRadiation(self,LINK,state): #switches radiation on/off
         self.settings["radiation"] = state == True
     def __LinkTo(self,LINK): #"Link to" button was pressed
         LINK["currentScreen"].linkItem(self,"power") #A bit bodgy but this can only be called in the map designer.
     def __UnlinkAll(self,LINK): #Deletes all links on this entity
         self.settings["power"] = []
+    def SaveFile(self): #Give all infomation about this object ready to save to a file
+        pows = []
+        for i,a in enumerate(self.settings["power"]):
+            try:
+                pows.append(a.ID)
+            except:
+                self.LINK["errorDisplay"]("Saving power link "+str(i)+"(index) in room "+str(self.ID)+"(ID) failed.")
+        return ["room",self.ID,self.pos,self.size,self.settings["radiation"],pows]
+    def LoadFile(self,data,idRef): #Load from a file
+        self.pos = data[2]
+        self.size = data[3]
+        self.settings["radiation"] = data[4]
+        for a in data[5]:
+            if a in idRef:
+                self.settings["power"].append(idRef[a])
+            else:
+                self.LINK["errorDisplay"]("Loading power link "+str(a)+"(ID) failed in room "+str(self.ID)+"(ID).")
     def rightInit(self,surf): #Initialize context menu for map designer
+        self.HINT = False
         self.__surface = pygame.Surface((210,145)) #Surface to render too
         self.__lastRenderPos = [0,0] #Last rendering position
         self.__but1 = self.LINK["screenLib"].Button(5,5,self.LINK,"Delete",lambda LINK: self.delete()) #Delete button
@@ -64,6 +84,14 @@ class Main(base.Main):
                 break
         else:
             self.__inRoom = False
+    def giveError(self,ents): #Scans and gives an error out
+        ins = self.findInsideOrNextTo(ents,[self])
+        for ent in ins:
+            if type(ent)==Main:
+                return "Room colide"
+        if len(self.settings["power"])==0:
+            return "No power (room)"
+        return False
     def sRender(self,x,y,scale,surf=None,edit=False): #Render in scematic view
         if surf is None:
             surf = self.LINK["main"]
@@ -93,3 +121,5 @@ class Main(base.Main):
                     rem.append(a)
             for a in rem: #Remote entities that have been deleted
                 self.settings["power"].remove(a)
+        if self.HINT:
+            self.renderHint(surf,self.hintMessage,[x,y])
