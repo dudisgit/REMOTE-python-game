@@ -48,6 +48,10 @@ class Main:
         self.__zoom = 1 #Zoom amount
     def setMapName(self,name): #Loads map <name>
         self.__NameInput.text = name+""
+    def noDefault(self): #Makes all airlocks 'defualt' False
+        for a in self.__ents:
+            if type(a)==self.getEnt("airlock"):
+                a.settings["default"] = False
     def renderHint(self,surf,message,pos): #Render a hint box
         screenRes = self.__LINK["reslution"] #Screen reslution
         boxPos = [pos[0]+10,pos[1]+10] #Position of the box
@@ -250,11 +254,17 @@ class Main:
     def saveAs(self,name): #Saves a file as a name
         Build = [self.__GlobalID+0]
         errs = []
+        hasEntrance = False
         for a in self.__ents:
             Build.append(a.SaveFile())
             err = a.giveError(self.__ents)
             if type(err) == str and not err in errs:
                 errs.append(err+"")
+            if type(a)==self.getEnt("airlock"):
+                if a.settings["default"]:
+                    hasEntrance = True
+        if not hasEntrance:
+            errs.append("No default airlock")
         try:
             file = open("maps/"+name,"wb")
         except:
@@ -354,6 +364,9 @@ class Main:
                 self.__LINK["errorDisplay"]("Failed to run open function",sys.exc_info())
             self.FileMenuEnd()
     def FileMenuInit(self,*args): #Initialize file menu
+        if self.__active != -1:
+            self.__ents[self.__active].rightUnload()
+            self.__active = -1
         self.__FileMenu = True
         self.__LoadButton = self.__LINK["screenLib"].Button(10,10,self.__LINK,"Open",self.OpenFileButton)
         self.__SaveButton = self.__LINK["screenLib"].Button(80,10,self.__LINK,"Save",self.SaveFileButton)

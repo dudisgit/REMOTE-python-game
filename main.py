@@ -73,6 +73,19 @@ for a in files:
 LINK["cont"] = {} #This is used for storing "content" in LINK but is resized every frame.
 #Maps
 LINK["maps"] = os.listdir("maps")
+#Upgrades
+files = os.listdir("upgrades")
+LINK["upgrade"] = {} #Drone upgrades
+LINK["shipUp"] = {} #Ship upgrades
+for a in files:
+    if a[-3:]==".py":
+        itm = importlib.import_module("upgrades."+a[:-3])
+        if a=="base.py":
+            LINK["upgrade"][a[:-3]] = itm
+        elif itm.Main(LINK).droneUpgrade:
+            LINK["upgrade"][a[:-3]] = itm
+        else:
+            LINK["shipUp"][a[:-3]] = itm
 
 loadScreen("mapEdit")
 

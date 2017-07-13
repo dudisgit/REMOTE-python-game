@@ -10,6 +10,8 @@ class Main(object):
     def init(self,x,y,LINK): #Called to initialize variables
         self.pos = [x,y] #Position of the entity
         self.size = [50,50] #Size of the entity
+        self.angle = 0 #Angle of the entitity
+        self.alive = True #Is the entitiy alive (Should only be used for destructable entities)
         self.settings = {} #Settings of the entity, this is a vital part since this is what is saved to the file along with position and size.
         self.linkable = [] #A list containing items describing what entity can link to this one.
         self.REQUEST_DELETE = False #If the entity is requesting to be deleted
@@ -41,7 +43,7 @@ class Main(object):
         if name in self.LINK["cont"]:
             return self.LINK["cont"][name]
         self.LINK["errorDisplay"]("missing image '"+name+"'")
-        gen = pygame.Surface((512,512))
+        gen = pygame.Surface((140,60))
         font = pygame.font.SysFont("impact",16)
         gen.blit(font.render("Error, missing image",16,(255,255,255)),[0,0])
         return gen
@@ -104,6 +106,10 @@ class Main(object):
         return [self.__lastRenderPos[0]+0,self.__lastRenderPos[1]+0]+list(self.__surface.get_size())
     def canShow(self): #Return wether the entitie should show on a scematic view in the game (doesen't apply to map editor)
         return self.__sShow == True
+    def drawRotate(self,applySurf,x,y,surf,angle): #This function will rotate a surface round its center and draw it to the screen.
+        siz = list(surf.get_size())
+        sub = [abs(math.sin(angle/90*math.pi)*siz[0]/5),abs(math.sin(angle/90*math.pi)*siz[1]/5)]
+        applySurf.blit(pygame.transform.rotate(surf,angle),(x-sub[0],y-sub[1]))
     def delete(self): #Deletes the entity.
         self.REQUEST_DELETE = True
 

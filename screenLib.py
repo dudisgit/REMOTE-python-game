@@ -25,25 +25,29 @@ class Listbox: #An object that houses a list of other widgets in a scrollbar men
         self.__lighten = False #Highlighting the box when the mouse hoveres over.
     def addItem(self,itm,*pars): #Add a new widget to the listbox
         self.objs.append(itm(0,len(self.objs)*35,self.__LINK,*pars)) #Add to the list
-        self.__scroll.size = len(self.objs)*35 #Set the size of the scrollbar.
+        self.__scroll.size = (len(self.objs)+1)*35 #Set the size of the scrollbar.
         return len(self.objs)-1 #Return the index of the object
     def loop(self,mouse,kBuf): #Pretty much an event loop, this gets called frequently and will update the widgets if a mouse event occures
         self.__lighten = mouse[1]>self.pos[0] and mouse[2]>self.pos[1] and mouse[1]<self.pos[0]+self.bound[0] and mouse[2]<self.pos[1]+self.bound[1]
         self.__scroll.loop(mouse,kBuf)
+        ms = [mouse[0],mouse[1]-self.pos[0],mouse[2]-self.pos[1]]
+        if not self.__lighten:
+            ms[1] = 0
+            ms[2] = 0
         for a in self.objs:
-            a.loop([mouse[0],mouse[1]-self.pos[0],mouse[2]-self.pos[1]],kBuf)
-        if len(self.objs)!=0 and self.__lighten and len(self.objs)*35>self.bound[1]: #Loop only if the listbox contains items
+            a.loop(ms,kBuf)
+        if len(self.objs)!=0 and self.__lighten and (len(self.objs)+1)*35>self.bound[1]: #Loop only if the listbox contains items
             for event in kBuf: #Capture keyboard events
                 if event.type == 6: #Mouse wheel
                     if event.button==4: #Mouse wheel up
-                        self.__scroll.scroll -= 50/(len(self.objs)*35)
+                        self.__scroll.scroll -= 50/((len(self.objs)+1)*35)
                         if self.__scroll.scroll<0:
                             self.__scroll.scroll = 0
                     elif event.button==5: #Mouse wheel down
-                        self.__scroll.scroll += 50/(len(self.objs)*35)
+                        self.__scroll.scroll += 50/((len(self.objs)+1)*35)
                         if self.__scroll.scroll>1:
                             self.__scroll.scroll = 1
-        elif len(self.objs)*35<=self.bound[1]:
+        elif (len(self.objs)+1)*35<=self.bound[1]:
             self.__scroll.scroll = 0
     def render(self,x=None,y=None,scalex=None,scaley=None,surf=None): #Render the listbox onto the surface
         if x is None:
@@ -55,7 +59,7 @@ class Listbox: #An object that houses a list of other widgets in a scrollbar men
             pygame.draw.rect(surf,(120,120,0),[x,y,self.bound[0]*scalex,self.bound[1]*scaley],5)
         else:
             pygame.draw.rect(surf,(120,120,0),[x,y,self.bound[0]*scalex,self.bound[1]*scaley],3)
-        siz = ((len(self.objs)-1)*35)-self.bound[1] #Total size of all the contents inside
+        siz = (len(self.objs)*35)-self.bound[1] #Total size of all the contents inside
         self.screen.fill((0,0,0)) #Empty the surface
         for i,a in enumerate(self.objs): #Render all the widgets contained
             a.pos[1] = (i*35)-(self.__scroll.scroll*siz)
@@ -207,6 +211,15 @@ class ComboBox:
         if mouse[0]!=self.__click:
             self.__click = mouse[0] == True
             if mouse[0]:
+                if self.__active == self.__lighten and self.__lighten:
+                    if mouse[2]>self.pos[1]+(self.bound[1]/2):
+                        self.select += 1
+                        if self.select >= len(self.items):
+                            self.select = len(self.items)-1
+                    else:
+                        self.select -= 1
+                        if self.select<0:
+                            self.select = 0
                 self.__active = self.__lighten == True
         if self.__active and len(self.items)!=0:
             for event in kBuf: #Deal with keyboard events
