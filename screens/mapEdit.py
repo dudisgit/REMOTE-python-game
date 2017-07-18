@@ -22,6 +22,8 @@ class Main:
         self.__renderFunc.ents = self.__ents #Make sure the rendering class gets updates from this one through a pointer
         self.__entSelect = LINK["screenLib"].Listbox(10,self.__reslution[1]-300,LINK,[160,290]) #Entity selecting window
         self.__buttonObjs = [] #Used to store button classes inside
+        if len(LINK["ents"])==0:
+            LINK["errorDisplay"]("No entities exist")
         for a in LINK["ents"]: #Fill the entity selecting window with items
             if a!="base": #This entity is restricted and is not allowed to be spawned
                 self.__buttonObjs.append(DumpButton(self,a+"")) #Give the button a class to call to
@@ -46,7 +48,7 @@ class Main:
         self.__GlobalID = 0 #A global ID given to all entities, this helps with linking them together.
         self.__mouseSave = [0,0] #Used to save the mouse position for rendering
         self.__zoom = 1 #Zoom amount
-    def setMapName(self,name): #Loads map <name>
+    def setMapName(self,name): #Loads map <name> into the text feild
         self.__NameInput.text = name+""
     def noDefault(self): #Makes all airlocks 'defualt' False
         for a in self.__ents:
@@ -90,9 +92,12 @@ class Main:
             self.__action[0] = 2
             self.__action[1] = [item,linkName]
     def addItem(self,name): #Adds a new item to the map
+        if not name in self.__LINK["ents"]:
+            self.__LINK["errorDisplay"]("Tried to add an entity but it doesen't exist.")
         if self.__action[0]==-1: #No actions are being done
             self.__action[0] = 1
             self.__ents.append(self.__LINK["ents"][name].Main(0,0,self.__LINK,self.__GlobalID+0))
+            self.__LINK["log"]("Created new entity '"+name+"'")
             self.__GlobalID += 1
             self.__action[1] = [self.__ents[-1]]
             if not name in self.__AddedEnts:
@@ -117,14 +122,16 @@ class Main:
             self.__LINK["errorDisplay"]("Tried to create entity but doesen't exist '"+name+"'")
         return self.__LINK["null"]
     def loop(self,mouse,kBuf): #Event loop for screen
-        if self.__Hinting != 4:
+        if self.__Hinting != 4: #In hint
             for a in kBuf:
                 if a.type == pygame.KEYDOWN:
                     if a.key == pygame.K_SPACE or a.key == pygame.K_RETURN:
                         self.__Hinting += 1
                         break
+            if self.__Hinting == 4:
+                self.__LINK["log"]("Finished hints")
             return 0
-        if self.__FileMenu:
+        if self.__FileMenu: #In file menu
             self.__SaveButton.loop(mouse,kBuf)
             self.__MapSelect.loop(mouse,kBuf)
             self.__NameInput.loop(mouse,kBuf)
@@ -145,7 +152,10 @@ class Main:
                 rem.append(a)
         if len(rem)!=0: #Make sure nothing is selected when deleting occoures
             if self.__active != -1:
-                self.__ents[self.__active].rightUnload()
+                try:
+                    self.__ents[self.__active].rightUnload()
+                except:
+                    self.__LINK["errorDisplay"]("Failed to run unload function when closing menu",sys.exc_info())
                 self.__active = -1
             if self.__activeDrag != -1:
                 self.__activeDrag = -1
@@ -163,19 +173,37 @@ class Main:
             if self.__scrollClick:
                 ent = self.findEnt((mouse[1]+self.__scroll[0])/self.__zoom,(mouse[2]+self.__scroll[1])/self.__zoom) #Find what entity the mouse is inside
                 if outside:
+                    if (ent != self.__active or type(ent)==bool) and self.__active != -1 and mouse[4]:
+                        try:
+                            self.__ents[self.__active].rightUnload()
+                        except:
+                            self.__LINK["errorDisplay"]("Failed to run unload function when closing menu",sys.exc_info())
+                        self.__active = -1
                     if (type(ent) == bool or mouse[3]) and self.__activeDrag == -1: #Not inside one, must be trying to scroll
                         if not insideSelect:
                             self.__mouseStart = [mouse[1]+0,mouse[2]+0]
                             self.__scrolling = True
                     elif mouse[4]: #Open a context menu on the entity
                         if self.__active !=-1: #Unload the last context menu if it has allredey been opened
-                            self.__ents[self.__active].rightUnload()
+                            try:
+                                self.__ents[self.__active].rightUnload()
+                            except:
+                                self.__LINK["errorDisplay"]("Failed to run unload function when closing menu",sys.exc_info())
                         self.__active = ent + 0
-                        self.__ents[ent].rightInit(self.__LINK["main"])
+                        self.__LINK["log"]("Opening context/options menu on entitiy "+str(self.__ents[ent])+" ID: "+str(self.__ents[ent].ID))
+                        try:
+                            self.__ents[ent].rightInit(self.__LINK["main"])
+                        except:
+                            self.__LINK["errorDisplay"]("Failed to run open menu",sys.exc_info())
+                            self.__active = -1
             else:
                 self.__scrolling = False
         if self.__active != -1:
-            self.__ents[self.__active].rightLoop(mouse,kBuf)
+            try:
+                self.__ents[self.__active].rightLoop(mouse,kBuf)
+            except:
+                self.__LINK["errorDisplay"]("Failed to run event loop on menu",sys.exc_info())
+                self.__active = -1
         if self.__scrolling: #User is scrolling
             self.__scroll[0]-=mouse[1]-self.__mouseStart[0]
             self.__scroll[1]-=mouse[2]-self.__mouseStart[1]
@@ -197,6 +225,10 @@ class Main:
                     if self.__action[0] == 1: #Add new entity
                         for a in self.__ents: #Check all objects for colosions
                             a.editMove(self.__ents)
+                        if self.__active != -1:
+                            self.__ents[self.__active].rightUnload()
+                        self.__active = self.__ents.index(self.__action[1][0])
+                        self.__action[1][0].rightInit(self.__LINK["main"])
                     elif self.__action[0] == 2: #Link an entity
                         ent = self.findEnt((mouse[1]+self.__scroll[0])/self.__zoom,(mouse[2]+self.__scroll[1])/self.__zoom)
                         if type(ent)!=bool: #Found an entity
@@ -211,6 +243,12 @@ class Main:
                 elif outside: #Detect if the user is trying to drag anouther entity around
                     mPos = [(mouse[1]+self.__scroll[0])/self.__zoom,(mouse[2]+self.__scroll[1])/self.__zoom] #Mouse position local to entity positions
                     itm = self.findEnt(mPos[0],mPos[1])
+                    if (itm != self.__active or type(itm)==bool) and self.__active != -1:
+                        try:
+                            self.__ents[self.__active].rightUnload()
+                        except:
+                            self.__LINK["errorDisplay"]("Failed to run unload function when closing menu",sys.exc_info())
+                        self.__active = -1
                     self.__roomScale = False
                     if type(itm) == int: #Found an entity
                         self.__activeDrag = itm+0
@@ -256,8 +294,15 @@ class Main:
         errs = []
         hasEntrance = False
         for a in self.__ents:
-            Build.append(a.SaveFile())
-            err = a.giveError(self.__ents)
+            try:
+                Build.append(a.SaveFile())
+            except:
+                self.__LINK["errorDisplay"]("Error when saving entitiy ",a,sys.exc_info())
+            try:
+                err = a.giveError(self.__ents)
+            except:
+                self.__LINK["errorDisplay"]("Error when gathering entitiy errors in entitiy ",a,sys.exc_info())
+                err = "Script error"
             if type(err) == str and not err in errs:
                 errs.append(err+"")
             if type(a)==self.getEnt("airlock"):
@@ -272,6 +317,7 @@ class Main:
             return 0
         file.write(pickle.dumps(Build))
         file.close()
+        self.__LINK["log"]("Saved file "+name+" sucsessfuly!")
         if self.__FileMenu:
             if len(errs)!=0:
                 self.__WarnLabel.text = "Saved but with errors: "+str(errs)
@@ -299,9 +345,13 @@ class Main:
             self.__ents.append(self.getEnt(a[0])(a[2][0],a[2][1],self.__LINK,a[1]+0))
             idRef[a[1]+0] = self.__ents[-1]
         for i,a in enumerate(data[1:]):
-            self.__ents[i].LoadFile(a,idRef)
+            try:
+                self.__ents[i].LoadFile(a,idRef)
+            except:
+                self.__LINK["errorDisplay"]("Error when loading entity ",a,sys.exc_info())
         self.__renderFunc.ents = self.__ents #Make sure the rendering class gets updates from this one through a pointer
         file.close()
+        self.__LINK["log"]("Opened file sucsessfuly!")
         if self.__FileMenu:
             self.__WarnLabel.text = "Opened file sucsessfuly"
         for a in self.__ents: #Check all objects for colosions
@@ -317,6 +367,7 @@ class Main:
         self.__WarnLabel = None
         self.__MapDump = []
         self.__FileMenu = False
+        self.__LINK["log"]("Closed file menu")
     def SaveFileButton(self,*args):
         text = self.__NameInput.text
         if "\\" in text or "/" in text:
@@ -380,6 +431,7 @@ class Main:
         for a in self.__LINK["maps"]:
             self.__MapDump.append(DumpButton(self,a))
             self.__MapSelect.addItem(self.__LINK["screenLib"].Button,a,self.__MapDump[-1].call2)
+        self.__LINK["log"]("Opened file menu")
     def renderFileMenu(self,surf): #Render the file menu
         self.__LoadButton.render(self.__LoadButton.pos[0],self.__LoadButton.pos[1],1,1,surf)
         self.__SaveButton.render(self.__SaveButton.pos[0],self.__SaveButton.pos[1],1,1,surf)

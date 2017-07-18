@@ -14,23 +14,12 @@ def ADDLOG(mes): #Used to show logs (used for console)
 def loadScreen(name): #Loads a screen
     global currentScreen
     if name in LINK["screens"]:
-        currentScreen = LINK["screens"][name].Main(LINK)
-        LINK["currentScreen"] = currentScreen
         ADDLOG("Loading screen - "+name)
+        currentScreen = LINK["screens"][name].Main(LINK)
+        ADDLOG("Loaded!")
+        LINK["currentScreen"] = currentScreen
     else:
         ERROR("Attempt to load a screen that doesen't exist '"+name+"'")
-
-class NULLENT: #Null entity for keeping the game running when an entity doesen't exist
-    def __init__(self,x,y,LINK,ID):
-        self.ID = ID
-        self.settings = {}
-        self.pos = [x,y]
-        self.size = [50,50]
-        self.LINK = LINK
-    def editMove(*args):
-        pass
-    def sRender(*args):
-        pass
 
 LINK = {} #This is a global variable for allowing controll over the whole program through one variable. Every class in this program should have a link to this!
 LINK["errorDisplay"] = ERROR
@@ -40,7 +29,6 @@ LINK["loadScreen"] = loadScreen
 LINK["render"] = render
 LINK["screenLib"] = screenLib
 LINK["log"] = ADDLOG
-LINK["null"] = NULLENT
 
 main = pygame.display.set_mode(RESLUTION)
 pygame.display.set_caption("REMOTE")
@@ -87,7 +75,34 @@ for a in files:
         else:
             LINK["shipUp"][a[:-3]] = itm
 
-loadScreen("mapEdit")
+class NULLENT(LINK["ents"]["base"].Main): #Null entity for keeping the game running when an entity doesen't exist
+    def __init__(self,x,y,LINK,ID):
+        self.init(x,y,LINK)
+        self.ID = ID
+        self.settings = {}
+        self.pos = [x,y]
+        self.size = [50,50]
+        self.LINK = LINK
+        self.HINT = True
+    def editMove(*args):
+        pass
+    def SaveFile(self):
+        return []
+    def rightInit(self,surf):
+        self.__surface = pygame.Surface((50,50))
+        self.__lastRenderPos = [0,0]
+    def rightLoop(self,mouse,kBuf):
+        pass
+    def rightUnload(self):
+        self.__surface = None
+        self.__lastRenderPos = None
+    def rightRender(self):
+        pass
+    def sRender(self,x,y,scale,surf=None,edit=False):
+        self.renderHint(surf,"Null entity, please remove.",[x,y])
+LINK["null"] = NULLENT
+
+#loadScreen("mapEdit")
 
 run = True
 lastTime = time.time()-0.1
@@ -105,10 +120,16 @@ while run:
     mouseRaw = pygame.mouse.get_pressed()
     mouse = [mouseRaw[0]]+list(pygame.mouse.get_pos())+[mouseRaw[1],mouseRaw[2]]
     if not currentScreen is None:
-        currentScreen.loop(mouse,KeyEvent)
+        try:
+            currentScreen.loop(mouse,KeyEvent)
+        except:
+            ERROR("Error inside screen event loop",sys.exc_info())
     main.fill((0,0,0))
     if not currentScreen is None:
-        currentScreen.render(main)
+        try:
+            currentScreen.render(main)
+        except:
+            ERROR("Error when rendering screen",sys.exc_info())
     pygame.display.flip()
     clock.tick(FPS)
 pygame.quit()

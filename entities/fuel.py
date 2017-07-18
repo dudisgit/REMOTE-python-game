@@ -19,7 +19,6 @@ class Main(base.Main):
     def __ChangeGod(self,LINK,state):
         self.settings["god"] = state == True
     def rightInit(self,surf): #Initialize context menu for map designer
-        self.HINT = False
         self.__surface = pygame.Surface((210,80)) #Surface to render too
         self.__lastRenderPos = [0,0] #Last rendering position
         self.__but1 = self.LINK["screenLib"].Button(5,5,self.LINK,"Delete",lambda LINK: self.delete()) #Delete button
@@ -50,6 +49,7 @@ class Main(base.Main):
         surf.blit(self.__surface,self.__lastRenderPos) #Draw all results to the screen
     def rightUnload(self): #This delets the pygame surface and widget classes. This is mainly so theirs no memory leaks.
         self.__surface = None
+        self.HINT = False
         self.__but1 = None
         self.__check1 = None
     def editMove(self,ents): #Fuel outlet is being moved

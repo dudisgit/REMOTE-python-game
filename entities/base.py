@@ -7,6 +7,8 @@ def nothing(*args): #Does nothing
 class Main(object):
     def __init__(self,x,y,LINK,ID):
         LINK["errorDisplay"]("Base entitie was created but shouldn't be. This class is for inheriting uses only!")
+        self.init(x,y,LINK)
+        self.ID = ID
     def init(self,x,y,LINK): #Called to initialize variables
         self.pos = [x,y] #Position of the entity
         self.size = [50,50] #Size of the entity
