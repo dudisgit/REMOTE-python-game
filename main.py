@@ -102,7 +102,8 @@ class NULLENT(LINK["ents"]["base"].Main): #Null entity for keeping the game runn
         self.renderHint(surf,"Null entity, please remove.",[x,y])
 LINK["null"] = NULLENT
 
-#loadScreen("mapEdit")
+loadScreen("game")
+currentScreen.open("Testing map.map")
 
 run = True
 lastTime = time.time()-0.1
@@ -121,7 +122,7 @@ while run:
     mouse = [mouseRaw[0]]+list(pygame.mouse.get_pos())+[mouseRaw[1],mouseRaw[2]]
     if not currentScreen is None:
         try:
-            currentScreen.loop(mouse,KeyEvent)
+            currentScreen.loop(mouse,KeyEvent,lag)
         except:
             ERROR("Error inside screen event loop",sys.exc_info())
     main.fill((0,0,0))

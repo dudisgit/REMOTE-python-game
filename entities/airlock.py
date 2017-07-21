@@ -3,9 +3,10 @@ import pygame
 import entities.base as base
 
 class Main(base.Main):
-    def __init__(self,x,y,LINK,ID):
+    def __init__(self,x,y,LINK,ID,number=-1):
         self.init(x,y,LINK) #Init on the base class, __init__ is not called because its used for error detection.
         self.ID = ID
+        self.number = number #The door number this door is
         self.settings["open"] = False #Door is opened or closed
         self.settings["power"] = [] #Contains a list of generators the door is powered by
         self.settings["dir"] = 0 #This determines the direction of the airlock

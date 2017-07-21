@@ -17,4 +17,4 @@ class Scematic:
             self.__scaleChange = scale+0
         for a in self.ents:
             if a.canShow() or self.__edit:
-                a.sRender((a.pos[0]*scale)-x,(a.pos[1]*scale)-y,scale,surf,True)
+                a.sRender((a.pos[0]*scale)-x,(a.pos[1]*scale)-y,scale,surf,self.__edit)
