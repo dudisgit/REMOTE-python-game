@@ -12,6 +12,7 @@ class Main(base.Main):
         self.settings["dir"] = 0 #This determines the direction of the airlock
         self.settings["fail"] = False #If the airlock should be allowed to fail
         self.settings["default"] = False #Is the default airlock for ships
+        self.powered = False #Is the airlock powered
         self.__sShow = True #Show in games scematic view
         self.__inRoom = False #Is true if the door is inside a room
         self.hintMessage = "An airlock is like a door but must not conenct two rooms but rather one room to outerspace. \nAn airlock can be made default by using its context/options menu. \nAn airlock also does not need its own power."
@@ -133,17 +134,25 @@ class Main(base.Main):
                     surf.blit(pygame.transform.rotate(self.getImage("ship"),90),(x+(50*scale),y-(83*scale)))
                 elif self.settings["dir"] == 3: #Right
                     surf.blit(pygame.transform.rotate(self.getImage("ship"),270),(x-(250*scale),y-(125*scale)))
-        if self.settings["open"]:
-            if self.settings["dir"]>=2:
+        if self.alive and not self.powered: #If the door is not powered
+            dead = "Power"
+        if self.settings["open"]: #Airlock is open
+            pygame.draw.rect(surf,(150,150,150),[x,y,self.size[0]*scale,self.size[1]*scale]) #Draw grey background when door is open
+            if self.settings["dir"]>=2: #Left to right
                 surf.blit(pygame.transform.rotate(self.getImage("doorAirOpen"+dead),270),(x,y-(25*scale)))
                 surf.blit(pygame.transform.rotate(self.getImage("doorAirOpen"+dead),90),(x,y+(25*scale)))
-            else:
+            else: #Up to down
                 surf.blit(self.getImage("doorOpen"+dead),(x-(25*scale),y))
                 surf.blit(pygame.transform.flip(self.getImage("doorAirOpen"+dead),True,False),(x+(25*scale),y))
-        else:
-            if self.settings["dir"]>=2:
+        else: #Airlock is closed
+            if self.settings["dir"]>=2: #Lef to right
                 surf.blit(pygame.transform.rotate(self.getImage("doorAirClosed"+dead),90),(x,y))
-            else:
+            else: #Up to down
                 surf.blit(self.getImage("doorAirClosed"+dead),(x,y))
+        if self.number != -1: #Draw the number the airlock is
+            textSurf = self.LINK["font16"].render("A"+str(self.number),16,(255,255,255)) #Create a surface that is the rendered text
+            textSize = list(textSurf.get_size()) #Get the size of the text rendered
+            pygame.draw.rect(surf,(0,0,0),[x+(((self.size[0]/2)-(textSize[0]/2))*scale),y+((self.size[1]/4)*scale)]+textSize) #Draw a black background for the text to be displayed infront of
+            surf.blit(textSurf,(x+(((self.size[0]/2)-(textSize[0]/2))*scale),y+((self.size[1]/4)*scale))) #Render text
         if self.HINT:
             self.renderHint(surf,self.hintMessage,[x,y])

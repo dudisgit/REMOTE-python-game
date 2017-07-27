@@ -52,9 +52,12 @@ class Main(base.Main):
     def sRender(self,x,y,scale,surf=None,edit=False): #Render in scematic view
         if surf is None:
             surf = self.LINK["main"]
-        if self.__inRoom:
+        if edit:
+            if self.__inRoom:
+                surf.blit(self.getImage("vent"),(x,y))
+            else:
+                surf.blit(self.getImage("ventDead"),(x,y))
+        else:
             surf.blit(self.getImage("vent"),(x,y))
-        elif edit:
-            surf.blit(self.getImage("ventDead"),(x,y))
         if self.HINT:
             self.renderHint(surf,self.hintMessage,[x,y])

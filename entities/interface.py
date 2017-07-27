@@ -110,5 +110,7 @@ class Main(base.Main):
                 surf.blit(self.getImage("interface"),(x,y))
             else:
                 surf.blit(self.getImage("interfaceDead"),(x,y))
+        else:
+            surf.blit(self.getImage("interface"),(x,y))
         if self.HINT:
             self.renderHint(surf,self.hintMessage,[x,y])

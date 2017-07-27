@@ -121,7 +121,7 @@ class Main:
         else: #Raise an error and return a null entity
             self.__LINK["errorDisplay"]("Tried to create entity but doesen't exist '"+name+"'")
         return self.__LINK["null"]
-    def loop(self,mouse,kBuf): #Event loop for screen
+    def loop(self,mouse,kBuf,lag): #Event loop for screen
         if self.__Hinting != 4: #In hint
             for a in kBuf:
                 if a.type == pygame.KEYDOWN:

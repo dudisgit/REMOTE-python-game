@@ -9,6 +9,7 @@ class Main(base.Main):
         self.settings["god"] = True #Turret is indestructable
         self.settings["power"] = [] #Contains a list of generators the turret is powered by
         self.settings["inter"] = [] #Contains a list of interfaces the turret is controlled by
+        self.turretActive = False #Is the turret currently active
         self.__sShow = True #Show in games scematic view
         self.__inRoom = False #Is true if the turret is inside a room
         self.hintMessage = "A turret is a player controlled ship defence, the player can turn on/off turrets using an interface whilst the turret is powered. \nWhen active it will kill anything in the room (including the player)"
@@ -132,5 +133,10 @@ class Main(base.Main):
                 surf.blit(self.getImage("turret"),(x,y))
             else:
                 surf.blit(self.getImage("turretDead"),(x,y))
+        else:
+            if self.turretActive:
+                surf.blit(self.getImage("turretActive"),(x,y))
+            else:
+                surf.blit(self.getImage("turret"),(x,y))
         if self.HINT:
             self.renderHint(surf,self.hintMessage,[x,y])

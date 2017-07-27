@@ -74,14 +74,20 @@ class Main(base.Main):
     def sRender(self,x,y,scale,surf=None,edit=False): #Render in scematic view
         if surf is None:
             surf = self.LINK["main"]
-        if self.__inRoom:
-            surf.blit(self.getImage("upgradeEmpty"),(x,y))
+        if edit:
+            if self.__inRoom:
+                surf.blit(self.getImage("upgradeEmpty"),(x,y))
+                if self.settings["upgrade"]!="Empty":
+                    if self.settings["perm"]:
+                        surf.blit(self.getImage("upgrade"),(x,y))
+                    else:
+                        self.drawRotate(surf,x,y,self.getImage("upgrade"),self.angle)
+            else:
+                surf.blit(self.getImage("upgradeWarning"),(x,y))
+        else:
             if self.settings["upgrade"]!="Empty":
-                if self.settings["perm"]:
-                    surf.blit(self.getImage("upgrade"),(x,y))
-                else:
-                    self.drawRotate(surf,x,y,self.getImage("upgrade"),self.angle)
-        elif edit:
-            surf.blit(self.getImage("upgradeWarning"),(x,y))
+                surf.blit(self.getImage("upgrade"),(x,y))
+            else:
+                surf.blit(self.getImage("upgradeEmpty"),(x,y))
         if self.HINT:
             self.renderHint(surf,self.hintMessage,[x,y])

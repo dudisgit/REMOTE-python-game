@@ -2,7 +2,7 @@ import pygame,client,time,screenLib,math,os,sys,render,importlib
 pygame.init()
 
 FPS = 30
-RESLUTION = [800,500]
+RESLUTION = [1000,700]
 
 def ERROR(*info): #This function is called whenever an unexspected error occures. It is mainly so it can be displayed on the screen without the game crashing
     print("Err: ",info) #Tempory
@@ -37,6 +37,14 @@ currentScreen = None
 LINK["currentScreen"] = currentScreen
 LINK["main"] = main
 LINK["font24"] = pygame.font.Font("comandFont.ttf",24)
+LINK["font16"] = pygame.font.Font("comandFont.ttf",16)
+LINK["font42"] = pygame.font.Font("comandFont.ttf",42)
+LINK["controll"] = {} #Used to let controlls for the game be changable
+LINK["controll"]["up"] = pygame.K_UP #Up arrow key
+LINK["controll"]["down"] = pygame.K_DOWN #Down arrow key
+LINK["controll"]["left"] = pygame.K_LEFT #Left arrow key
+LINK["controll"]["right"] = pygame.K_RIGHT #Right arrow key
+
 
 #Load all content from the folders...
 #Screens
@@ -103,12 +111,12 @@ class NULLENT(LINK["ents"]["base"].Main): #Null entity for keeping the game runn
 LINK["null"] = NULLENT
 
 loadScreen("game")
-currentScreen.open("Testing map.map")
+currentScreen.open("Full map.map")
 
 run = True
 lastTime = time.time()-0.1
 while run:
-    lag = (time.time()-lastTime)*FPS
+    lag = (time.time()-lastTime)*30
     lastTime = time.time()
     KeyEvent = [] #A list of key events to send to all users
     for event in pygame.event.get():
@@ -124,12 +132,16 @@ while run:
         try:
             currentScreen.loop(mouse,KeyEvent,lag)
         except:
+            if LINK["DEV"]:
+                raise
             ERROR("Error inside screen event loop",sys.exc_info())
     main.fill((0,0,0))
     if not currentScreen is None:
         try:
             currentScreen.render(main)
         except:
+            if LINK["DEV"]:
+                raise
             ERROR("Error when rendering screen",sys.exc_info())
     pygame.display.flip()
     clock.tick(FPS)

@@ -2,6 +2,7 @@
 import pygame, time, pickle
 
 SCROLL_SPEED = 2 #Scematic scroll speed
+CONSOLE_SIZE = [440,205] #Size of the console
 
 class Main:
     def __init__(self,LINK):
@@ -9,6 +10,7 @@ class Main:
         self.Map = [] #Used to store the map inside
         self.Ref = {} #Used as a reference for other objects to find a selection of objects faster.
         self.__renderFunc = LINK["render"].Scematic(LINK,False) #Class to render entities
+        self.__command = LINK["render"].CommandLine(LINK,3) #Class to render command line
         self.__reslution = LINK["reslution"] #Reslution of the game
         self.__renderFunc.ents = self.Map #Make sure the rendering class gets updates from this one through a pointer
         self.scematic = True #If viewing in scematic view
@@ -26,14 +28,14 @@ class Main:
                 self.__HoldKeys[event.key] = False
         if self.scematic: #Is currently in the scematic view
             #Move the scematic view if the arrow keys are being held or pressed.
-            if self.__isKeyDown(pygame.K_UP):
-                self.__scemPos[1] -= SCROLL_SPEED
-            if self.__isKeyDown(pygame.K_DOWN):
-                self.__scemPos[1] += SCROLL_SPEED
-            if self.__isKeyDown(pygame.K_LEFT):
-                self.__scemPos[0] -= SCROLL_SPEED
-            if self.__isKeyDown(pygame.K_RIGHT):
-                self.__scemPos[0] += SCROLL_SPEED
+            if self.__isKeyDown(self.__LINK["controll"]["up"]):
+                self.__scemPos[1] -= SCROLL_SPEED*lag
+            if self.__isKeyDown(self.__LINK["controll"]["down"]):
+                self.__scemPos[1] += SCROLL_SPEED*lag
+            if self.__isKeyDown(self.__LINK["controll"]["left"]):
+                self.__scemPos[0] -= SCROLL_SPEED*lag
+            if self.__isKeyDown(self.__LINK["controll"]["right"]):
+                self.__scemPos[0] += SCROLL_SPEED*lag
     def getEnt(self,name): #Returns the entity with the name
         if name in self.__LINK["ents"]: #Does the entity exist?
             return self.__LINK["ents"][name].Main #Return the sucsessful entity
@@ -85,8 +87,9 @@ class Main:
         self.__renderFunc.ents = self.Map #Make sure the rendering class gets updates from this one through a pointer
         file.close()
         self.__LINK["log"]("Opened file sucsessfuly!")
-    def render(self,surf=None):
+    def render(self,surf=None): #Render everything.
         if surf is None:
             surf = self.__LINK["main"]
         if self.scematic: #Is inside the scematic view
-            self.__renderFunc.render(self.__scemPos[0],self.__scemPos[1],0.5,surf) #Render the map.
+            self.__renderFunc.render(self.__scemPos[0],self.__scemPos[1],0.8,surf) #Render the map.
+        self.__command.render(self.__reslution[0]-CONSOLE_SIZE[0]-20,self.__reslution[1]-CONSOLE_SIZE[1]-20,CONSOLE_SIZE[0],CONSOLE_SIZE[1],surf) #Render command line

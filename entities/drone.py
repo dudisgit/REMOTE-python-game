@@ -35,6 +35,7 @@ class Main(base.Main):
             if a[0]!="":
                 self.upgrades.append(self.LINK["upgrade"][a[0]].Main)
                 self.upgrades[-1].damage = a[1]+0
+        self.angle = random.randint(0,360)
     def __AddUpgrade(self,LINK): #Adds a new empty upgrade slot to the drone
         if len(self.__upgrades)>=5: #Maximum limit to the amount of upgrade slots allowed to be on a drone
             return 0
@@ -192,5 +193,10 @@ class Main(base.Main):
                     surf.blit(self.getImage("droneNormal"),(x,y))
             else:
                 surf.blit(self.getImage("droneDisabled"),(x,y))
+        else:
+            if self.settings["health"] == 0:
+                self.drawRotate(surf,x,y,self.getImage("droneDead"),self.angle)
+            else:
+                self.drawRotate(surf,x,y,self.getImage("droneDisabled"),self.angle)
         if self.HINT:
             self.renderHint(surf,self.hintMessage,[x,y])

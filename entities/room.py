@@ -9,6 +9,10 @@ class Main(base.Main):
         self.number = number #The room number this room is.
         self.settings["radiation"] = False
         self.settings["power"] = [] #List of generators room is linked to
+        self.powered = False#If the room is being powered
+        self.poweredBefore = False #Has the room been powered before?
+        self.radiation = False #Is the room full of radiation
+        self.air = True #Is their air in the room
         self.__sShow = True #Show in games scematic view
         self.__inRoom = False #Is true if the room is inside anouther room
         self.hintMessage = "A room is a space the drone can move about in, you can resize it using the slanted line at the bottom right"
@@ -96,7 +100,7 @@ class Main(base.Main):
     def sRender(self,x,y,scale,surf=None,edit=False): #Render in scematic view
         if surf is None:
             surf = self.LINK["main"]
-        if self.settings["radiation"] and edit:
+        if (self.settings["radiation"] and edit) or self.radiation: #Draw slanting lines for radiation
             for i in range(-int(self.size[1]/25)+1,int(self.size[0]/25)):
                 if i<0:
                     ad1 = abs(i)*25*scale
@@ -107,10 +111,32 @@ class Main(base.Main):
                 else:
                     ad2 = 0
                 pygame.draw.line(surf,(200,0,0),[x+(i*25*scale)+ad1,y+ad1],[x+(((i*25)+self.size[1])*scale)-ad2,y+(self.size[1]*scale)-ad2])
-        if self.__inRoom: #If inside a room in the map editor, used to raise error
+        if not self.air: #Draw slanting lines for no air
+            for i in range(-int(self.size[1]/25)+1,int(self.size[0]/25)):
+                if i<0:
+                    ad1 = abs(i)*25*scale
+                else:
+                    ad1 = 0
+                if i>int(self.size[0]/25)-int(self.size[1]/25):
+                    ad2 = abs(i-(int(self.size[0]/25)-int(self.size[1]/25)))*25*scale
+                else:
+                    ad2 = 0
+                pygame.draw.line(surf,(200,200,200),[x+(self.size[0]*scale)-((i*25*scale)+ad1),y+ad1],[x+(self.size[0]/2)-((((i*25)+self.size[1])*scale)-ad2),y+(self.size[1]*scale)-ad2])
+        if self.__inRoom and edit: #If inside a room in the map editor, used to raise error
             pygame.draw.rect(surf,(200,0,0),[x,y,self.size[0]*scale,self.size[1]*scale],int(5*scale))
+        elif self.powered:
+            pygame.draw.rect(surf,(0,200,0),[x,y,self.size[0]*scale,self.size[1]*scale],int(5*scale))
+            for x2 in range(int(self.size[0]/25)):
+                pygame.draw.line(surf,(0,200,0),[x+(x2*25*scale),y],[x+(x2*25*scale),y+(self.size[1]*scale)])
+            for y2 in range(int(self.size[1]/25)):
+                pygame.draw.line(surf,(0,200,0),[x,y+(y2*25*scale)],[x+(self.size[0]*scale),y+(y2*25*scale)])
         else:
             pygame.draw.rect(surf,(200,200,200),[x,y,self.size[0]*scale,self.size[1]*scale],int(5*scale))
+            if self.poweredBefore:
+                for x2 in range(int(self.size[0]/25)):
+                    pygame.draw.line(surf,(200,200,200),[x+(x2*25*scale),y],[x+(x2*25*scale),y+(self.size[1]*scale)])
+                for y2 in range(int(self.size[1]/25)):
+                    pygame.draw.line(surf,(200,200,200),[x,y+(y2*25*scale)],[x+(self.size[0]*scale),y+(y2*25*scale)])
         if edit:
             pygame.draw.line(surf,(255,255,255),[x+(self.size[0]*scale),y+((self.size[1]-25)*scale)],[x+((self.size[0]-25)*scale),y+(self.size[1]*scale)],int(5*scale))
             scrolPos = [(self.pos[0]*scale)-x,(self.pos[1]*scale)-y] #Calculate the scroll position
@@ -122,5 +148,15 @@ class Main(base.Main):
                     rem.append(a)
             for a in rem: #Remote entities that have been deleted
                 self.settings["power"].remove(a)
+        elif self.number != -1: #Draw the room number
+            if self.powered: #Is the room being powered
+                textSurf = self.LINK["font42"].render("R"+str(self.number),16,(0,100,0)) #Create a surface that is the rendered text
+            else:
+                textSurf = self.LINK["font42"].render("R"+str(self.number),16,(100,100,100)) #Create a surface that is the rendered text
+            textSize = list(textSurf.get_size()) #Get the size of the text rendered
+            pygame.draw.rect(surf,(0,0,0),[x+(((self.size[0]/2)-(textSize[0]/2))*scale),y+((self.size[1]/4)*scale)]+textSize) #Draw a black background for the text to be displayed infront of
+            surf.blit(textSurf,(x+(((self.size[0]/2)-(textSize[0]/2))*scale),y+((self.size[1]/4)*scale))) #Render text
+        if self.radiation or not self.air: #Draw warning sign
+            surf.blit(self.getImage("warning"),(x+int((self.size[0]/2)*scale)-(25*scale),y+int((self.size[1]/2)*scale)-(25*scale)))
         if self.HINT:
             self.renderHint(surf,self.hintMessage,[x,y])

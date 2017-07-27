@@ -11,6 +11,7 @@ class Main(base.Main):
         self.settings["attack"] = True #Door is attackable
         self.settings["power"] = [] #Contains a list of generators the door is powered by
         self.settings["lr"] = True #This determines the direction of the door (Left right / Up down)
+        self.powered = False #If the door is powered on not
         self.__sShow = True #Show in games scematic view
         self.__inRoom = False #Is true if the door is inside a room
         self.hintMessage = "A door must be placed between two rooms. It can be opened or closed as long as its powered by a generator or room. \nIf linked to a generator, the rooms next to it will not power it!"
@@ -121,7 +122,7 @@ class Main(base.Main):
     def sRender(self,x,y,scale,surf=None,edit=False): #Render in scematic view
         if surf is None:
             surf = self.LINK["main"]
-        if self.__inRoom:
+        if self.__inRoom and edit:
             dead = "Dead"
         else:
             dead = ""
@@ -135,17 +136,25 @@ class Main(base.Main):
                     rem.append(a)
             for a in rem: #Loop through all the entities wanted to be deleted
                 self.settings["power"].remove(a)
-        if self.settings["open"]:
-            if self.settings["lr"]:
+        if self.alive and not self.powered: #If the door is not powered
+            dead = "Power"
+        if self.settings["open"]: #Door is open
+            pygame.draw.rect(surf,(150,150,150),[x,y,self.size[0]*scale,self.size[1]*scale]) #Draw grey background when door is open
+            if self.settings["lr"]: #Left to right
                 surf.blit(pygame.transform.rotate(self.getImage("doorOpen"+dead),270),(x,y-(25*scale)))
                 surf.blit(pygame.transform.rotate(self.getImage("doorOpen"+dead),90),(x,y+(25*scale)))
-            else:
+            else: #Up to down
                 surf.blit(self.getImage("doorOpen"+dead),(x-(25*scale),y))
                 surf.blit(pygame.transform.flip(self.getImage("doorOpen"+dead),True,False),(x+(25*scale),y))
-        else:
-            if self.settings["lr"]:
+        else: #Door is closed
+            if self.settings["lr"]: #Left to right
                 surf.blit(pygame.transform.rotate(self.getImage("doorClosed"+dead),90),(x,y))
-            else:
+            else: #Up to down
                 surf.blit(self.getImage("doorClosed"+dead),(x,y))
+        if self.number != -1: #Draw the number the door is
+            textSurf = self.LINK["font16"].render("D"+str(self.number),16,(255,255,255)) #Create a surface that is the rendered text
+            textSize = list(textSurf.get_size()) #Get the size of the text rendered
+            pygame.draw.rect(surf,(0,0,0),[x+(((self.size[0]/2)-(textSize[0]/2))*scale),y+((self.size[1]/4)*scale)]+textSize) #Draw a black background for the text to be displayed infront of
+            surf.blit(textSurf,(x+(((self.size[0]/2)-(textSize[0]/2))*scale),y+((self.size[1]/4)*scale))) #Render text
         if self.HINT:
             self.renderHint(surf,self.hintMessage,[x,y])

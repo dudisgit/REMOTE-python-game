@@ -7,6 +7,7 @@ class Main(base.Main):
         self.init(x,y,LINK) #Init on the base class, __init__ is not called because its used for error detection.
         self.ID = ID
         self.settings["god"] = True
+        self.active = False #Is the generator currently on
         self.linkable = ["power"] #A list of names that can connect to this entity
         self.__sShow = True #Show in games scematic view
         self.__inRoom = False #Is true if the generator is inside a room
@@ -66,5 +67,10 @@ class Main(base.Main):
                 surf.blit(self.getImage("generatorOn"),(x,y))
             else: #else a red.
                 surf.blit(self.getImage("generatorDead"),(x,y))
+        else:
+            if self.active:
+                surf.blit(self.getImage("generatorOn"),(x,y))
+            else:
+                surf.blit(self.getImage("generatorOff"),(x,y))
         if self.HINT:
             self.renderHint(surf,self.hintMessage,[x,y])
