@@ -17,6 +17,8 @@ class Main(base.Main):
         self.pos = data[2]
         self.settings["perm"] = data[3]
         self.settings["upgrade"] = data[4]
+    def loop(self,lag):
+        pass
     def __ChangePerm(self,LINK,state): #Change if the upgrade slot should be perminantly installed or not
         self.settings["perm"] = state == True
         self.angle = random.randint(0,360)

@@ -7,7 +7,7 @@ DEFAULT_SIZE = 3 #Defualt upgrade slots for a drone
 class Main(base.Main):
     def __init__(self,x,y,LINK,ID):
         self.init(x,y,LINK) #Init on the base class, __init__ is not called because its used for error detection.
-        self.ID = ID
+        self.ID = ID # Id of the drone, -1 if the drone is player controlled.
         self.settings["health"] = random.randint(10,40) #Health of the drone
         self.settings["maxHealth"] = 100 #Maximum health of the drone
         self.settings["angle"] = 0 #Angle of the drone
@@ -15,6 +15,7 @@ class Main(base.Main):
         self.settings["upgrades"] = [] #Default upgrades that should be loaded onto the drone for the first time it is spawned.
         for i in range(DEFAULT_SIZE): #Fill the upgrade slots with empty upgrades
             self.settings["upgrades"].append(["",0])
+        self.colisionType = 1 #Circle colision
         self.upgrades = [] #Upgrade objects inside the drone.
         self.__sShow = True #Show in games scematic view
         self.__inRoom = False #Is true if the drone is inside a room
@@ -36,6 +37,17 @@ class Main(base.Main):
                 self.upgrades.append(self.LINK["upgrade"][a[0]].Main)
                 self.upgrades[-1].damage = a[1]+0
         self.angle = random.randint(0,360)
+    def loop(self,lag):
+        pass
+    def turn(self,DIR): #Turn the drone is a specific direction
+        self.angle += DIR
+        self.angle = self.angle%360 #Make sure the angle is between 0 and 360
+    def go(self,DIR): #Move forward/backward
+        bpos = [self.pos[0]+0,self.pos[1]+0] #Before position
+        self.pos[0]+=math.sin(self.angle/180*math.pi)*DIR*-1
+        self.pos[1]+=math.cos(self.angle/180*math.pi)*DIR*-1
+        self.applyPhysics() #Apply hit-box detection
+        self.changeMesh(bpos) #Move the drone to anouther MESH
     def __AddUpgrade(self,LINK): #Adds a new empty upgrade slot to the drone
         if len(self.__upgrades)>=5: #Maximum limit to the amount of upgrade slots allowed to be on a drone
             return 0
@@ -188,15 +200,17 @@ class Main(base.Main):
         if edit:
             if self.__inRoom:
                 if self.settings["health"] == 0:
-                    surf.blit(self.getImage("droneDead"),(x,y))
+                    surf.blit(self.getImage("droneDead"),(x-(25*scale),y-(25*scale)))
                 else:
-                    surf.blit(self.getImage("droneNormal"),(x,y))
+                    surf.blit(self.getImage("droneNormal"),(x-(25*scale),y-(25*scale)))
             else:
-                surf.blit(self.getImage("droneDisabled"),(x,y))
+                surf.blit(self.getImage("droneDisabled"),(x-(25*scale),y-(25*scale)))
         else:
             if self.settings["health"] == 0:
-                self.drawRotate(surf,x,y,self.getImage("droneDead"),self.angle)
+                self.drawRotate(surf,x-(25*scale),y-(25*scale),self.getImage("droneDead"),self.angle)
+            elif self.ID == -1 and self.settings["health"]!=0: # Is a player drone
+                self.drawRotate(surf,x-(25*scale),y-(25*scale),self.getImage("droneNormal"),self.angle)
             else:
-                self.drawRotate(surf,x,y,self.getImage("droneDisabled"),self.angle)
+                self.drawRotate(surf,x-(25*scale),y-(25*scale),self.getImage("droneDisabled"),self.angle)
         if self.HINT:
             self.renderHint(surf,self.hintMessage,[x,y])

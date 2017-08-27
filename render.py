@@ -19,6 +19,15 @@ class Scematic:
             if a.canShow() or self.__edit:
                 a.sRender((a.pos[0]*scale)-x,(a.pos[1]*scale)-y,scale,surf,self.__edit)
 
+def drawDevMesh(x,y,scale,surf,LINK): #Used in development only, this will draw a pixel grid for MESH
+    for xp in LINK["mesh"]:
+        for yp in LINK["mesh"][xp]:
+            pygame.draw.rect(surf,(255,0,255),[(xp*scale*125)-x,(yp*scale*125)-y,125*scale,125*scale],1)
+            surf.blit(LINK["font24"].render(str(len(LINK["mesh"][xp][yp])),16,(255,0,255)),[(xp*scale*125)-x,(yp*scale*125)-y])
+            mid = [(xp*scale*125)-x+(62*scale),(yp*scale*125)-y+(62*scale)]
+            for a in LINK["mesh"][xp][yp]:
+                pygame.draw.line(surf, (255,0,255), mid, [(a.pos[0]*scale)-x,(a.pos[1]*scale)-y])
+
 class CommandLine: #A command line interface with tabs
     def __init__(self,LINK,drones=3):
         self.__LINK = LINK

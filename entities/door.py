@@ -33,6 +33,8 @@ class Main(base.Main):
                 self.settings["power"].append(idRef[a])
             else:
                 self.LINK["errorDisplay"]("Loading power link "+str(a)+"(ID) failed in door "+str(self.ID)+"(ID).")
+    def loop(self,lag):
+        pass
     def __ChangeState(self,LINK,state): #switches door state
         self.settings["open"] = state == True
     def __ChangeDirection(self,LINK,state): #switches doors state
@@ -139,13 +141,13 @@ class Main(base.Main):
         if self.alive and not self.powered: #If the door is not powered
             dead = "Power"
         if self.settings["open"]: #Door is open
-            pygame.draw.rect(surf,(150,150,150),[x,y,self.size[0]*scale,self.size[1]*scale]) #Draw grey background when door is open
             if self.settings["lr"]: #Left to right
                 surf.blit(pygame.transform.rotate(self.getImage("doorOpen"+dead),270),(x,y-(25*scale)))
                 surf.blit(pygame.transform.rotate(self.getImage("doorOpen"+dead),90),(x,y+(25*scale)))
             else: #Up to down
                 surf.blit(self.getImage("doorOpen"+dead),(x-(25*scale),y))
                 surf.blit(pygame.transform.flip(self.getImage("doorOpen"+dead),True,False),(x+(25*scale),y))
+            pygame.draw.rect(surf,(150,150,150),[x,y,self.size[0]*scale,self.size[1]*scale]) #Draw grey background when door is open
         else: #Door is closed
             if self.settings["lr"]: #Left to right
                 surf.blit(pygame.transform.rotate(self.getImage("doorClosed"+dead),90),(x,y))
@@ -154,7 +156,9 @@ class Main(base.Main):
         if self.number != -1: #Draw the number the door is
             textSurf = self.LINK["font16"].render("D"+str(self.number),16,(255,255,255)) #Create a surface that is the rendered text
             textSize = list(textSurf.get_size()) #Get the size of the text rendered
-            pygame.draw.rect(surf,(0,0,0),[x+(((self.size[0]/2)-(textSize[0]/2))*scale),y+((self.size[1]/4)*scale)]+textSize) #Draw a black background for the text to be displayed infront of
+            textSurf = pygame.transform.scale(textSurf,(int(textSize[0]*scale*1.2),int(textSize[1]*scale*1.2)))
+            textSize2 = list(textSurf.get_size()) #Get the size of the text rendered
+            pygame.draw.rect(surf,(0,0,0),[x+(((self.size[0]/2)-(textSize[0]/2))*scale),y+((self.size[1]/4)*scale)]+textSize2) #Draw a black background for the text to be displayed infront of
             surf.blit(textSurf,(x+(((self.size[0]/2)-(textSize[0]/2))*scale),y+((self.size[1]/4)*scale))) #Render text
         if self.HINT:
             self.renderHint(surf,self.hintMessage,[x,y])

@@ -19,6 +19,8 @@ class Main(base.Main):
     def LoadFile(self,data,idRef): #Load from a file
         self.pos = data[2]
         self.settings["god"] = data[3]
+    def loop(self,lag):
+        pass
     def rightInit(self,surf): #Initialize context menu for map designer
         self.__surface = pygame.Surface((210,100)) #Surface to render too
         self.__lastRenderPos = [0,0] #Last rendering position

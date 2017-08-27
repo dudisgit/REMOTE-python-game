@@ -17,6 +17,8 @@ class Main(base.Main):
         self.settings["attack"] = data[3]
     def __ChangeAttack(self,LINK,state): #Changes the attack mode, if the NPC should attack doors or not
         self.settings["attack"] = state == True
+    def loop(self,lag):
+        pass
     def rightInit(self,surf): #Initialize context menu for map designer
         self.__surface = pygame.Surface((210,75)) #Surface to render too
         self.__lastRenderPos = [0,0] #Last rendering position

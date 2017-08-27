@@ -1,7 +1,7 @@
 import pygame,client,time,screenLib,math,os,sys,render,importlib
 pygame.init()
 
-FPS = 30
+FPS = 30 #Default FPS
 RESLUTION = [1000,700]
 
 def ERROR(*info): #This function is called whenever an unexspected error occures. It is mainly so it can be displayed on the screen without the game crashing
@@ -13,7 +13,7 @@ def ADDLOG(mes): #Used to show logs (used for console)
     print(mes)
 def loadScreen(name): #Loads a screen
     global currentScreen
-    if name in LINK["screens"]:
+    if name in LINK["screens"]: #Screen exists
         ADDLOG("Loading screen - "+name)
         currentScreen = LINK["screens"][name].Main(LINK)
         ADDLOG("Loaded!")
@@ -22,29 +22,31 @@ def loadScreen(name): #Loads a screen
         ERROR("Attempt to load a screen that doesen't exist '"+name+"'")
 
 LINK = {} #This is a global variable for allowing controll over the whole program through one variable. Every class in this program should have a link to this!
-LINK["errorDisplay"] = ERROR
-LINK["reslution"] = RESLUTION
+LINK["errorDisplay"] = ERROR #Used to show errors
+LINK["reslution"] = RESLUTION #Reslution of the game
 LINK["DEV"] = True #Development mode, this will stop the game when errors occur.
-LINK["loadScreen"] = loadScreen
-LINK["render"] = render
-LINK["screenLib"] = screenLib
-LINK["log"] = ADDLOG
+LINK["loadScreen"] = loadScreen #Used so other scripts can load the map
+LINK["render"] = render #Used so other scripts can use its tools for rendering
+LINK["screenLib"] = screenLib #Used as a GUI tool for the map designer
+LINK["log"] = ADDLOG #Used to log infomation (not seen in game unless developer console is turned on)
 
 main = pygame.display.set_mode(RESLUTION)
 pygame.display.set_caption("REMOTE")
 clock = pygame.time.Clock()
-currentScreen = None
+currentScreen = None #The currently open screen
 LINK["currentScreen"] = currentScreen
-LINK["main"] = main
+LINK["main"] = main #Main pygame window
+#Fonts
 LINK["font24"] = pygame.font.Font("comandFont.ttf",24)
 LINK["font16"] = pygame.font.Font("comandFont.ttf",16)
 LINK["font42"] = pygame.font.Font("comandFont.ttf",42)
+#Controlls (can be changed)
 LINK["controll"] = {} #Used to let controlls for the game be changable
 LINK["controll"]["up"] = pygame.K_UP #Up arrow key
 LINK["controll"]["down"] = pygame.K_DOWN #Down arrow key
 LINK["controll"]["left"] = pygame.K_LEFT #Left arrow key
 LINK["controll"]["right"] = pygame.K_RIGHT #Right arrow key
-
+LINK["mesh"] = {} #Used for fast entity discovery
 
 #Load all content from the folders...
 #Screens
@@ -96,6 +98,8 @@ class NULLENT(LINK["ents"]["base"].Main): #Null entity for keeping the game runn
         pass
     def SaveFile(self):
         return []
+    def loop(self,lag):
+        pass
     def rightInit(self,surf):
         self.__surface = pygame.Surface((50,50))
         self.__lastRenderPos = [0,0]
@@ -110,8 +114,13 @@ class NULLENT(LINK["ents"]["base"].Main): #Null entity for keeping the game runn
         self.renderHint(surf,"Null entity, please remove.",[x,y])
 LINK["null"] = NULLENT
 
-loadScreen("game")
-currentScreen.open("Full map.map")
+LINK["drones"] = [] #Drone list of the players drones
+for i in range(0,3):
+    LINK["drones"].append(LINK["ents"]["drone"].Main(i*60,0,LINK,-1))
+LINK["shipEnt"] = LINK["ents"]["ship"].Main(0,0,LINK,-1)
+
+loadScreen("game") #Load the main game screen (TEMPORY)
+currentScreen.open("Testing map.map") #Open the map for the game (TEMPORY)
 
 run = True
 lastTime = time.time()-0.1

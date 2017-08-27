@@ -25,7 +25,7 @@ class Main:
         if len(LINK["ents"])==0:
             LINK["errorDisplay"]("No entities exist")
         for a in LINK["ents"]: #Fill the entity selecting window with items
-            if a!="base": #This entity is restricted and is not allowed to be spawned
+            if not a in ["base","ship"]: #This entity is restricted and is not allowed to be spawned
                 self.__buttonObjs.append(DumpButton(self,a+"")) #Give the button a class to call to
                 self.__entSelect.addItem(LINK["screenLib"].Button,a,self.__buttonObjs[-1].call) #Add the new button
         self.__label = LINK["screenLib"].Label(10,self.__reslution[1]-340,LINK,"Spawning menu") #Label to describe entity selecting window

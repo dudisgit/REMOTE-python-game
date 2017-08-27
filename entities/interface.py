@@ -21,6 +21,8 @@ class Main(base.Main):
             except:
                 self.LINK["errorDisplay"]("Saving power link "+str(i)+"(index) in interface "+str(self.ID)+"(ID) failed.")
         return ["interface",self.ID,self.pos,self.settings["god"],self.settings["scan"],pows]
+    def loop(self,lag):
+        pass
     def LoadFile(self,data,idRef): #Load from a file
         self.pos = data[2]
         self.settings["god"] = data[3]

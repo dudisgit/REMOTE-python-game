@@ -20,6 +20,8 @@ class Main(base.Main):
         self.__but1 = self.LINK["screenLib"].Button(5,5,self.LINK,"Delete",lambda LINK: self.delete()) #Delete button
     def rightLoop(self,mouse,kBuf): #Event loop for the widgets inside the context menu
         self.__but1.loop([mouse[0],mouse[1]-self.__lastRenderPos[0],mouse[2]-self.__lastRenderPos[1]]+mouse[3:],kBuf)
+    def loop(self,lag):
+        pass
     def rightRender(self,x,y,surf): #Render the context menu
         windowPos = [x,y+50] #Window position
         #The 4 IF statments below will make sure the context menu is allways on the screen, even if this entity is not.

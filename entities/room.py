@@ -22,6 +22,8 @@ class Main(base.Main):
         LINK["currentScreen"].linkItem(self,"power") #A bit bodgy but this can only be called in the map designer.
     def __UnlinkAll(self,LINK): #Deletes all links on this entity
         self.settings["power"] = []
+    def loop(self,lag):
+        pass
     def SaveFile(self): #Give all infomation about this object ready to save to a file
         pows = []
         for i,a in enumerate(self.settings["power"]):
