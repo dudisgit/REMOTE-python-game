@@ -7,7 +7,13 @@ DRONE_VIEW_SCALE = 3 #Drone view zoom in
 DEF_RES = [1000,700] #Default reslution, this will be used to scale up the screen if required
 MESH_BLOCK_SIZE = 125 #Size of a single mesh block
 
-class GameEventHandle:
+def getMapMash(MAP): #Gets the map hash for the specific map
+    file = open("maps/"+MAP,"rb")
+    MLEN = len(file.read())
+    file.close()
+    MLEN = MLEN % 65535
+    return MLEN
+class GameEventHandle: #Used to simulate and handle the events of the game world (NOT VISUAL)
     def __init__(self, LINK):
         self.__LINK = LINK
         self.Map = [] #Stores ALL entities. Order does not matter
@@ -99,21 +105,24 @@ class GameEventHandle:
         self.addToMesh(self.ship.room) #Add the ship's room to the MESH
         for i,a in enumerate(self.drones): #Add all the users drones to the map
             self.Map.append(a)
-            if self.ship.LR:
+            if self.ship.LR: #Is the ship left to right
                 a.pos = [self.ship.room.pos[0]+(i*60)+40,self.ship.room.pos[1]+40]
             else:
                 a.pos = [self.ship.room.pos[0]+40,self.ship.room.pos[1]+(i*60)+40]
             self.addToMesh(a) #Add the drone to the MESH
+            if self.__LINK["multi"] == 2: #Is server
+                self.__LINK["serv"].SYNC["e"+str(a.ID)] = a.GiveSync()
         file.close()
         self.__LINK["mesh"] = self.Mesh #Link the new MESH to the global one
         self.__LINK["log"]("Opened file sucsessfuly!")
 
-
-class Main:
+class Main: #Used as the screen object for rendering and interaction
     def __init__(self,LINK):
         self.__LINK = LINK
         self.Map = [] #Used to store the map inside
         self.Ref = {} #Used as a reference for other objects to find a selection of objects faster.
+        self.mapLoaded = False #Is the map loaded or not
+        self.mapLoading = False #Is the map loading
         self.__renderFunc = LINK["render"].Scematic(LINK,False) #Class to render entities
         self.__command = LINK["render"].CommandLine(LINK,3) #Class to render command line
         self.__reslution = LINK["reslution"] #Reslution of the game
@@ -122,6 +131,7 @@ class Main:
         self.scematic = True #If viewing in scematic view
         self.__scemPos = [0,0] #Scematic position
         self.__HoldKeys = {} #Keys being held down
+        self.__DOWNLOAD = [] #Used to store downloads (map)
         self.currentDrone = None #A reference to the currently selected drone
     def __isKeyDown(self,key): #Returns true if the key is being held down
         if key in self.__HoldKeys: #Has the key been pressed before?
@@ -130,11 +140,12 @@ class Main:
     def goToDrone(self,number): #Goto a specific drone number view
         if number>len(self.__Event.drones) or number<=0: #Drone doesen't exist
             self.__command.addLine("No such drone "+str(number),(255,255,0))
-        else:
-            self.currentDrone = self.__Event.drones[number-1]
-            self.scematic = False
+        else: #Drone exists
+            self.currentDrone = self.__Event.drones[number-1] #Set the current drone object to the one specified
+            self.scematic = False #Is not viewing in scematic view
             self.__command.activeTab = number-1 #Switch to the specific tab of the drone
-    def loop(self,mouse,kBuf,lag):
+    def loop(self,mouse,kBuf,lag): #Constant loop
+        global start
         for event in kBuf: #Loop through keyboard event loops
             if event.type == pygame.KEYDOWN:
                 self.__HoldKeys[event.key] = True
@@ -173,12 +184,36 @@ class Main:
         else: #Raise an error and return a null entity
             self.__LINK["errorDisplay"]("Tried to create entity but doesen't exist '"+name+"'")
         return self.__LINK["null"]
+    def downLoadingMap(self,LN): #Function called to save a peaice of the map
+        print("GOT,",LN)
+        if type(LN)==str: #Map has finished downloading
+            file = open("maps/"+LN,"wb")
+            file.write(pickle.dumps(self.__DOWNLOAD)) #Save the downloaded map
+            file.close()
+            self.__LINK["log"]("Finished downloading map")
+            self.open(LN) #Open the saved map
+            self.__DOWNLOAD = [] #Clear up some memory
+        else:
+            self.__DOWNLOAD.append(LN) #Add the downloading map to a 
+    def joinGame(self): #Joins a multiplayer server (downloads map)
+        for maps in self.__LINK["maps"]: #Find the map (if it exists)
+            if getMapMash(maps) == self.__LINK["cli"].SYNC["M"]["h"]: #Found the map, load it
+                self.open(maps)
+                break
+        else: #Request to download the map
+            self.__LINK["log"]("Missing map '"+self.__LINK["cli"].SYNC["M"]["n"]+"' downloading...")
+            self.__DOWNLOAD = []
+            self.__LINK["cli"].TRIGGER["dsnd"] = self.downLoadingMap #Downloading map function
+            self.__LINK["cli"].sendTrigger("dwnl")
+            self.mapLoading = True
     def open(self,name): #Opens a map
         self.__Event = GameEventHandle(self.__LINK)
         self.__Event.open(name)
         self.__renderFunc.ents = self.__Event.Map
         self.__scemPos = [self.__Event.ship.pos[0]-(self.__LINK["reslution"][0]/2),self.__Event.ship.pos[1]-(self.__LINK["reslution"][1]/2)] #Start the scematic position at the ships position
         self.__command.activeTab = len(self.__Event.drones)
+        self.mapLoaded = True
+        self.mapLoading = False
     def render(self,surf=None): #Render everything.
         if surf is None:
             surf = self.__LINK["main"]

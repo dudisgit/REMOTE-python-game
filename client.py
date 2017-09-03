@@ -2,7 +2,8 @@ import socket,select,pickle,time
 
 selfIp = socket.gethostbyname(socket.gethostname()) #"169.254.178.71"
 TCP_BUF_SIZE = 4046
-UDP_BUF_SIZE = 512
+MAX_KEEP = 60 # Maximum number of packets kept by the server when a packet was missed.
+UPDATE_RATE = 0.1 #Rate at which the client should sent updates to the server (UDP/TCP)
 
 def copyIter(lis): #Copies a list so the items are not pointers
     res = {}
@@ -65,19 +66,26 @@ def detectChanges(before,after): #Detects all the changes between one variable a
     return None #No changes atall
 
 class Client:
-    def __init__(self,serverIp,tcpPort=3746,udpPort=3745):
+    def __init__(self,serverIp,tcpPort=3746):
         self.SYNC = {} #A list of variables that gets synced with the server
         self.__SYNCBefore = {} #A list to detect changes in SYNC
         self.TRIGGER = {} #A list containing pointers to functions if the server calls them
         self.loading = True #Game is loading
         self.__serverIp = serverIp #IP of the server
         self.__tcpPort = tcpPort
-        self.__udpPort = udpPort
         self.__tsock = socket.socket(socket.AF_INET,socket.SOCK_STREAM) #Setup TCP socket
         self.__tsock.setsockopt(socket.SOL_SOCKET,socket.SO_REUSEADDR, 1) #Change settings to work with the "select" library
-        self.__tsock.settimeout(5)
-        self.__usock = socket.socket(socket.AF_INET,socket.SOCK_DGRAM)
-        self.__usock.bind((selfIp,udpPort))
+        self.__tsock.settimeout(5) #Disconnect after 5 seconds
+        self.__IDSend = 0 #Used to tell the position in the sending list
+        self.__IDRec = 0 #Used to tell the position in the receiving list
+        self.__ReceiveBuffer = [] #Used to track missing packets and ensure order of packets
+        self.__SendingBuffer = [] #Used to store packets incase the server didon't receive one properly
+        self.__resent = [] #Packets that where resent by the server, this list will be releatively small but fixes a problem
+        self.__ignorePackets = {} #Packet ID's to ignore (ID will be removed if message is different)
+        self.__UpdateTime = time.time()+UPDATE_RATE # Rate at which this client should send data to the server
+        for i in range(MAX_KEEP): #Fill with buffers with empty items
+            self.__ReceiveBuffer.append(None)
+            self.__SendingBuffer.append(None)
         try: #Attempt to connect to the server
             self.__tsock.connect((serverIp,tcpPort))
         except: #An error occured while connecting...
@@ -86,13 +94,19 @@ class Client:
         else:
             self.failConnect = False
     def loop(self):
-        self.udpLoop()
-        self.tcpLoop()
-        self.detectAndApplySYNC()
+        self.tcpLoop() #Process all receiving packets
+        if time.time()>self.__UpdateTime:
+            self.__UpdateTime = time.time()+UPDATE_RATE
+            self.detectAndApplySYNC() #Process all outgoing packets
     def __sendUDP(self,mes): #Sends a message over UDP
-        self.__usock.sendto(pickle.dumps(mes),(self.__serverIp,self.__udpPort))
-    def __sendTCP(self,mes): #Sends a message over TCP
         self.__tsock.sendall(pickle.dumps(mes))
+    def __sendTCP(self,mes): #Sends a message over TCP
+        if type(mes)==list: #Message is a list, allowed to send over UDP
+            self.__tsock.sendall(pickle.dumps([self.__IDSend]+mes))
+            self.__SendingBuffer[self.__IDSend] = [self.__IDSend]+mes
+            self.__IDSend = (self.__IDSend + 1) % MAX_KEEP
+        else: #Send it as UDP
+            self.__tsock.sendall(pickle.dumps(mes))
     def serverShutdown(self): #The server has shutdown!
         print("Lost connection to server!")
         print("Attempting to connect...")
@@ -100,6 +114,7 @@ class Client:
             self.__tsock.connect((serverIp,tcpPort))
         except:
             self.failConnect = True
+            raise #TEMPORY
         else:
             print("Connected!")
     def setVariable(self,lis,path,value): #Set a varable using a path list
@@ -230,27 +245,37 @@ class Client:
                     self.TRIGGER[data[0][1:]](*tuple(data[1:]))
             elif data[0][0]=="L": #Stop loading the game
                 self.loading = False
+                print("Loading END")
     def sendTrigger(self,funcName,*args):
         self.__sendTCP([["t"+funcName]+list(args)])
-    def receive(self,data,tcpSent=False):
-        if len(data)==0:
+    def receive(self,data,tcpSent=False): #Received a packet
+        if len(data)==0: #No data, exiting
             return False
-        if type(data[0])==list:
-            for a in data[0]:
-                self.doCommand(a,tcpSent)
-        else:
+        if type(data[0])==list: #Is a bundle of commands
+            for a in data:
+                if type(a) == list:
+                    if len(a)!=0:
+                        if type(a[0]) == list:
+                            if len(a[0])!=0: #If for some odd reason the message had anouther bundle inside this bundle
+                                for b in a:
+                                    self.doCommand(b,tcpSent)
+                        else: #Process normaly
+                            self.doCommand(a,tcpSent)
+                else: #Process the single charicter as a list
+                    self.doCommand([a],tcpSent)
+        elif data[0]=="r": #Resend a message if the server missed it.
+            if data[1]<len(self.__SendingBuffer) and data[1]>=0: #Check if the packet is out of range
+                self.__sendUDP(self.__SendingBuffer[data[1]]) #Resend missing packet to server
+        elif data[0]=="l": #Loading a map
+            self.loading = True
+            print("Loading START")
+        else: #Is a single command
             self.doCommand(data,tcpSent)
-    def udpLoop(self): #Loop for udp connection
-        read,write,err = select.select([self.__usock],[],[],0)
-        for sock in read:
-            dataRaw,addr = sock.recvfrom(UDP_BUF_SIZE)
-            if addr[0]==self.__serverIp: #Validate that this is the server
-                try: #Try to read data coming through
-                    data = pickle.loads(dataRaw)
-                except: #Break out the loop of the data is corrupted
-                    break
-                self.loading = False
-                self.receive(data)
+    def countTCPPackets(self): #Counts how many TCP packets there are
+        num = 0
+        for a in self.__ReceiveBuffer:
+            num += int(not a is None) #Add if the item in the list is not empty
+        return num
     def tcpLoop(self): #Loop for tcp connection
         read,write,err = select.select([self.__tsock],[],[],0)
         for sock in read:
@@ -263,9 +288,32 @@ class Client:
                     data = pickle.loads(dataRaw)
                 except:
                     break
-                if data=="p": #Was pinged
+                if data!="p": #Is not a ping message
+                    if type(data[0]) == int: #Message linked with an ID
+                        if data[0]<len(self.__ReceiveBuffer) and data[0]>=0: #ID is in range with KEEP
+                            shouldReceive = True #Is the packet not a duplicate
+                            if data[0] in self.__resent: #ID was expected to be received
+                                self.__resent.remove(data[0]) #Do not include this ID as an expected one in the future
+                                self.__ignorePackets[data[0]] = data[1:] #Mark this ID as a duplicate for future packets if they are detected
+                            elif data[0] in self.__ignorePackets: #Packet might be a duplicate
+                                if self.__ignorePackets[data[0]]!=data[1:]: #Packet is different, remove mark as duplicate
+                                    self.__ignorePackets.pop(data[0])
+                                else: #Packet is a duplicate, ignore!
+                                    shouldReceive = False
+                            if shouldReceive:
+                                self.__ReceiveBuffer[data[0]] = data[1:]
+                    else:
+                        self.receive(data) #Receive the data as UDP
+                    tCount = self.countTCPPackets()
+                    if tCount>=1:
+                        START = self.__IDRec + 0
+                        while not self.__ReceiveBuffer[self.__IDRec] is None: #Go through pending packets and process them all
+                            self.receive(self.__ReceiveBuffer[self.__IDRec],True)
+                            self.__ReceiveBuffer[self.__IDRec] = None
+                            self.__IDRec = (self.__IDRec+1) % MAX_KEEP
+                        if self.countTCPPackets()!=0: #Packets are missing, request them.
+                            if not self.__IDRec in self.__resent:
+                                self.__resent.append(self.__IDRec+0)
+                            self.__tsock.send(pickle.dumps(["r",self.__IDRec]))
+                else: #Was pinged
                     self.__sendTCP("p")
-                elif data=="l": #Start the game loading
-                    self.loading = True
-                else:
-                    self.receive(data,True)

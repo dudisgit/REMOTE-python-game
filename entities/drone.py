@@ -36,14 +36,40 @@ class Main(base.Main):
             if a[0]!="":
                 self.upgrades.append(self.LINK["upgrade"][a[0]].Main)
                 self.upgrades[-1].damage = a[1]+0
-        self.angle = random.randint(0,360)
+        if len(self.settings["angle"])==0:
+            self.angle = random.randint(0,360)
+        if self.LINK["multi"] == 2: #Is a server
+            self.LINK["serv"].SYNC["e"+str(self.ID)] = self.GiveSync()
+    def SyncData(self,data): #Syncs the data with this drone
+        self.pos = [data["x"],data["y"]]
+        self.angle = data["a"]
+    def GiveSync(self): #Returns the synced data for this drone
+        res = {}
+        res["x"] = int(self.pos[0])
+        res["y"] = int(self.pos[1])
+        res["a"] = int(self.angle)
+        return res
     def loop(self,lag):
-        pass
+        if self.overide and self.LINK["multi"] == 1:
+            self.LINK["cli"].SYNC["e"+str(self.ID)] = self.GiveSync()
+            self.overide = False
+        elif self.LINK["multi"] == 2:
+            self.SyncData(self.LINK["serv"].SYNC["e"+str(self.ID)])
+            bpos = [self.pos[0]+0,self.pos[1]+0]
+            self.applyPhysics(lag)
+            self.changeMesh(bpos) #Move the drone to anouther MESH
+            self.LINK["serv"].SYNC["e"+str(self.ID)] = self.GiveSync()
+        else:
+            bpos = [self.pos[0]+0,self.pos[1]+0]
+            self.SyncData(self.LINK["cli"].SYNC["e"+str(self.ID)])
+            self.changeMesh(bpos) #Move the drone to anouther MESH
     def turn(self,DIR): #Turn the drone is a specific direction
         self.angle += DIR
         self.angle = self.angle%360 #Make sure the angle is between 0 and 360
+        self.overide = True
     def go(self,DIR): #Move forward/backward
         bpos = [self.pos[0]+0,self.pos[1]+0] #Before position
+        self.overide = True
         self.pos[0]+=math.sin(self.angle/180*math.pi)*DIR*-1
         self.pos[1]+=math.cos(self.angle/180*math.pi)*DIR*-1
         self.applyPhysics() #Apply hit-box detection
@@ -208,7 +234,7 @@ class Main(base.Main):
         else:
             if self.settings["health"] == 0:
                 self.drawRotate(surf,x-(25*scale),y-(25*scale),self.getImage("droneDead"),self.angle)
-            elif self.ID == -1 and self.settings["health"]!=0: # Is a player drone
+            elif self.ID <= -1 and self.settings["health"]!=0: # Is a player drone
                 self.drawRotate(surf,x-(25*scale),y-(25*scale),self.getImage("droneNormal"),self.angle)
             else:
                 self.drawRotate(surf,x-(25*scale),y-(25*scale),self.getImage("droneDisabled"),self.angle)

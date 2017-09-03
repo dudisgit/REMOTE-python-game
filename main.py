@@ -47,6 +47,7 @@ LINK["controll"]["down"] = pygame.K_DOWN #Down arrow key
 LINK["controll"]["left"] = pygame.K_LEFT #Left arrow key
 LINK["controll"]["right"] = pygame.K_RIGHT #Right arrow key
 LINK["mesh"] = {} #Used for fast entity discovery
+LINK["multi"] = 1 #Is the game currently multiplayer, 0 = Single player, 1 = Client, 2 = Server
 
 #Load all content from the folders...
 #Screens
@@ -116,11 +117,14 @@ LINK["null"] = NULLENT
 
 LINK["drones"] = [] #Drone list of the players drones
 for i in range(0,3):
-    LINK["drones"].append(LINK["ents"]["drone"].Main(i*60,0,LINK,-1))
+    LINK["drones"].append(LINK["ents"]["drone"].Main(i*60,0,LINK,-2-i))
 LINK["shipEnt"] = LINK["ents"]["ship"].Main(0,0,LINK,-1)
 
+if LINK["multi"]:
+    CLI = client.Client("192.168.1.136")
+    LINK["cli"] = CLI
 loadScreen("game") #Load the main game screen (TEMPORY)
-currentScreen.open("Testing map.map") #Open the map for the game (TEMPORY)
+#currentScreen.open("Testing map.map") #Open the map for the game (TEMPORY)
 
 run = True
 lastTime = time.time()-0.1
@@ -137,6 +141,11 @@ while run:
             KeyEvent.append(event)
     mouseRaw = pygame.mouse.get_pressed()
     mouse = [mouseRaw[0]]+list(pygame.mouse.get_pos())+[mouseRaw[1],mouseRaw[2]]
+    if LINK["multi"]==1:
+        CLI.loop()
+        if not CLI.loading and not currentScreen.mapLoading and not currentScreen.mapLoaded:
+            currentScreen.joinGame()
+            print("CALL LOADING")
     if not currentScreen is None:
         try:
             currentScreen.loop(mouse,KeyEvent,lag)

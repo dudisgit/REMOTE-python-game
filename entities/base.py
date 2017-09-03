@@ -17,6 +17,7 @@ class Main(object):
         self.pos = [x,y] #Position of the entity
         self.size = [50,50] #Size of the entity
         self.angle = 0 #Angle of the entitity
+        self.overide = False #If this entitiy should overwrite the SYNC settings (multipalyer)
         self.alive = True #Is the entitiy alive (Should only be used for destructable entities)
         self.settings = {} #Settings of the entity, this is a vital part since this is what is saved to the file along with position and size.
         self.linkable = [] #A list containing items describing what entity can link to this one.
@@ -107,7 +108,7 @@ class Main(object):
                 dist = math.sqrt(( (self.pos[0]-ENT.pos[0])**2 ) + ( (self.pos[1]-ENT.pos[1])**2 ))
                 if dist<30: #Is coliding
                     ang = math.atan2((self.pos[0]-ENT.pos[0]),(self.pos[1]-ENT.pos[1]))
-                    self.pos = [self.pos[0]+(math.sin(ang)*4*lag),self.pos[1]+(math.cos(ang)*4*lag)]
+                    self.pos = [ENT.pos[0]+(math.sin(ang)*30),ENT.pos[1]+(math.cos(ang)*30)]
             else: #Box colision
                 if self.pos[0]>ENT.pos[0] and self.pos[0]<ENT.pos[0]+ENT.size[0] and self.pos[1]>ENT.pos[1] and self.pos[1]<ENT.pos[1]+ENT.size[1]:
                     ang = math.atan2((self.pos[0]-(ENT.pos[0]+(ENT.size[0]/2))),(self.pos[1]-(ENT.pos[1]+(ENT.size[1]/2))))
