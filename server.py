@@ -191,6 +191,7 @@ class Server: #Class for a server
         self.__tsock.bind((self.__ip,TCP_port)) #Bind the TCP socket to an IP and port
         self.__tsock.listen(MAX_PLAYER)
         self.__tlist = [self.__tsock] #Socket list for the TCP socket
+        self.newUser = None #Function to call if a new user joins the server
 
         print("Binded to "+self.__ip+" on port "+str(TCP_port))
     def __clientDisconnect(self,sock): #A client disconnected
@@ -356,6 +357,8 @@ class Server: #Class for a server
                 self.users[addr[0]] = Player(addr[0],con) #Add new player
                 if len(self.SYNC)!=0: #Sent the SYNC list to the user
                     self.users[addr[0]].updateSlow = ["l"]+self.sensify(detectChanges({},self.SYNC),False) #Send the whole SYNC list to the user
+                if not self.newUser is None:
+                    self.newUser(addr[0])
             else: #A message was received
                 try:
                     dataRaw = sock.recv(TCP_BUF_SIZE)
@@ -480,6 +483,7 @@ class GameServer:
         self.serv = Server(IP) #Make the server
         self.LINK = loadLINK() #Initialize LINK
         self.LINK["serv"] = self.serv
+        self.LINK["serv"].newUser = self.userJoin
         DEFMAP = "Testing map.map" #Map to load (tempory)
         self.mapName = DEFMAP
         self.world = self.LINK["screens"]["game"].GameEventHandle(self.LINK) #The game world to simulate
@@ -488,36 +492,22 @@ class GameServer:
         self.serv.SYNC["M"] = {} #Map
         self.serv.SYNC["M"]["h"] = self.LINK["screens"]["game"].getMapMash(DEFMAP) #Map hash
         self.serv.SYNC["M"]["n"] = DEFMAP #Map name
-        self.RAW_MAP = [] #Raw map file lines (used for user downloading)
-        with open("maps/"+DEFMAP,"rb") as file: #Open the map for sending to users
-            self.RAW_MAP = pickle.loads(file.read())
-        self.serv.TRIGGER["dwnl"] = self.downloadMap #Function to call when a user requests to download a map
-        self.__MAP_DOWNLOAD = {} #Users who are downloading the map
-        self.__DOWNLOAD_TICK = time.time()+SLOW_UPDATE_SPEED #Used to track how fast to call the event loop on map downloading
         print("Done, entering event loop, map mash is "+str(self.serv.SYNC["M"]["h"]))
+    def userJoin(self,addr): #A new user has joined
+        mapEnts = self.getAllMapEnts()
+        for a in mapEnts:
+            self.LINK["serv"].users[addr].updateSlow.append(["tdsnd",a])
     def getAllMapEnts(self): #Retruns all map entities (used for late downloading)
-        res = [self.RAW_MAP[0]+0]
+        res = [0]
         for a in self.world.Map:
-            res.append(a.SaveFile())
+            sD = a.SaveFile()
+            if sD[1]>res[0]:
+                res[0] = sD[1]+0
+            res.append(sD)
         return res
     def loop(self): #Game loop
         self.world.loop() #Simulate world events
         self.serv.loop() #Deal with server events and variable changes in SYNC
-        if time.time()>self.__DOWNLOAD_TICK: #Should run the donwloading loop
-            self.__DOWNLOAD_TICK = time.time()+SLOW_UPDATE_SPEED
-            self.__downloadMapLoop()
-    def __downloadMapLoop(self): #Used for sending maps to clients
-        rem = [] #User downloads that have finished
-        for i in self.__MAP_DOWNLOAD: #Go through every user downloading a map
-            a = self.__MAP_DOWNLOAD[i]
-            if a>=len(self.RAW_MAP): #Has the map finished downloading for the specific client
-                self.serv.users[i].sendTrigger("dsnd",self.mapName) #Send the maps name to save
-                rem.append(i) #Add to the removing list
-            else: #Continue sending parts of the map
-                self.serv.users[i].sendTrigger("dsnd",self.RAW_MAP[a]) #Sent a single entity
-                self.__MAP_DOWNLOAD[i] = a+1 #Increase variable for next entity
-        for a in rem: #Remove finished clients
-            self.__MAP_DOWNLOAD.pop(a)
     def downloadMap(self,UserSock): #Sends the current map to the specific user
         if not UserSock.getpeername()[0] in self.__MAP_DOWNLOAD: #Checking if the user isn't trying to request the map more than once
             self.__MAP_DOWNLOAD[UserSock.getpeername()[0]] = 0 #Begin sending the map

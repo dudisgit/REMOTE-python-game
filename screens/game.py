@@ -92,26 +92,35 @@ class GameEventHandle: #Used to simulate and handle the events of the game world
             except:
                 self.__LINK["errorDisplay"]("Error when loading entity ",a,sys.exc_info())
             self.addToMesh(self.Map[i]) #Add the entitiy to the MESH
-        if defaultAir is None:
-            self.__LINK["log"]("There is no default airlock, finding one...")
-            if "a1" in self.Ref:
-                defaultAir = self.Ref["a1"]
-            else:
-                self.__LINK["log"]("There are no airlocks on this map, an exception is about to raise")
-        self.Map.append(self.ship) #Add the main ship to the map
-        self.ship.dockTo(defaultAir) #Dock the ship to an airlock
-        self.Map.append(self.ship.room) #Add the ships room to the map
-        self.addToMesh(self.ship) #Add the ship to the MESH
-        self.addToMesh(self.ship.room) #Add the ship's room to the MESH
-        for i,a in enumerate(self.drones): #Add all the users drones to the map
-            self.Map.append(a)
-            if self.ship.LR: #Is the ship left to right
-                a.pos = [self.ship.room.pos[0]+(i*60)+40,self.ship.room.pos[1]+40]
-            else:
-                a.pos = [self.ship.room.pos[0]+40,self.ship.room.pos[1]+(i*60)+40]
-            self.addToMesh(a) #Add the drone to the MESH
-            if self.__LINK["multi"] == 2: #Is server
-                self.__LINK["serv"].SYNC["e"+str(a.ID)] = a.GiveSync()
+        if self.__LINK["multi"] != 1: #Is not a client
+            if defaultAir is None:
+                self.__LINK["log"]("There is no default airlock, finding one...")
+                if "a1" in self.Ref:
+                    defaultAir = self.Ref["a1"]
+                else:
+                    self.__LINK["log"]("There are no airlocks on this map, an exception is about to raise")
+            self.Map.append(self.ship) #Add the main ship to the map
+            self.ship.dockTo(defaultAir) #Dock the ship to an airlock
+            self.Map.append(self.ship.room) #Add the ships room to the map
+            self.addToMesh(self.ship) #Add the ship to the MESH
+            self.addToMesh(self.ship.room) #Add the ship's room to the MESH
+            for i,a in enumerate(self.drones): #Add all the users drones to the map
+                self.Map.append(a)
+                if self.ship.LR: #Is the ship left to right
+                    a.pos = [self.ship.room.pos[0]+(i*60)+40,self.ship.room.pos[1]+40]
+                else:
+                    a.pos = [self.ship.room.pos[0]+40,self.ship.room.pos[1]+(i*60)+40]
+                self.addToMesh(a) #Add the drone to the MESH
+                if self.__LINK["multi"] == 2: #Is server
+                    self.__LINK["serv"].SYNC["e"+str(a.ID)] = a.GiveSync()
+        else:
+            self.drones = [] #Servers drones
+            for i in range(2,6):
+                if 0-i in idRef:
+                    self.drones.append(idRef[0-i])
+                else:
+                    break
+            self.ship = idRef[-1] #Servers ship
         file.close()
         self.__LINK["mesh"] = self.Mesh #Link the new MESH to the global one
         self.__LINK["log"]("Opened file sucsessfuly!")
@@ -133,6 +142,10 @@ class Main: #Used as the screen object for rendering and interaction
         self.__HoldKeys = {} #Keys being held down
         self.__DOWNLOAD = [] #Used to store downloads (map)
         self.currentDrone = None #A reference to the currently selected drone
+        if LINK["multi"] == 1: #Client to server
+            self.__LINK["cli"].TRIGGER["dsnd"] = self.downLoadingMap #Downloading map function
+            self.__LINK["cli"].finishLoading = self.finishSYNC
+            mapLoading = True
     def __isKeyDown(self,key): #Returns true if the key is being held down
         if key in self.__HoldKeys: #Has the key been pressed before?
             return self.__HoldKeys[key]
@@ -186,26 +199,14 @@ class Main: #Used as the screen object for rendering and interaction
         return self.__LINK["null"]
     def downLoadingMap(self,LN): #Function called to save a peaice of the map
         print("GOT,",LN)
-        if type(LN)==str: #Map has finished downloading
-            file = open("maps/"+LN,"wb")
-            file.write(pickle.dumps(self.__DOWNLOAD)) #Save the downloaded map
+        self.__DOWNLOAD.append(LN) #Add the downloading map to the buffer
+    def finishSYNC(self): #Finished downloading SYNC and possibly the map
+        if len(self.__DOWNLOAD)!=0:
+            file = open("maps/SERVER_MAP.map","wb")
+            file.write(pickle.dumps(self.__DOWNLOAD))
             file.close()
-            self.__LINK["log"]("Finished downloading map")
-            self.open(LN) #Open the saved map
-            self.__DOWNLOAD = [] #Clear up some memory
-        else:
-            self.__DOWNLOAD.append(LN) #Add the downloading map to a 
-    def joinGame(self): #Joins a multiplayer server (downloads map)
-        for maps in self.__LINK["maps"]: #Find the map (if it exists)
-            if getMapMash(maps) == self.__LINK["cli"].SYNC["M"]["h"]: #Found the map, load it
-                self.open(maps)
-                break
-        else: #Request to download the map
-            self.__LINK["log"]("Missing map '"+self.__LINK["cli"].SYNC["M"]["n"]+"' downloading...")
             self.__DOWNLOAD = []
-            self.__LINK["cli"].TRIGGER["dsnd"] = self.downLoadingMap #Downloading map function
-            self.__LINK["cli"].sendTrigger("dwnl")
-            self.mapLoading = True
+            self.open("SERVER_MAP.map")
     def open(self,name): #Opens a map
         self.__Event = GameEventHandle(self.__LINK)
         self.__Event.open(name)

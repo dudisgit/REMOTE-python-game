@@ -18,6 +18,7 @@ class Main(base.Main):
         self.colisionType = 1 #Circle colision
         self.upgrades = [] #Upgrade objects inside the drone.
         self.__sShow = True #Show in games scematic view
+        self.__SYNCChange = [] #Used to detect if the SYNC has changed
         self.__inRoom = False #Is true if the drone is inside a room
         self.hintMessage = "This is a disabled drone, you can add items, change health and name in the context/options menu."
     def SaveFile(self): #Give all infomation about this object ready to save to a file
@@ -36,21 +37,25 @@ class Main(base.Main):
             if a[0]!="":
                 self.upgrades.append(self.LINK["upgrade"][a[0]].Main)
                 self.upgrades[-1].damage = a[1]+0
-        if len(self.settings["angle"])==0:
+        if self.settings["angle"]==0:
             self.angle = random.randint(0,360)
         if self.LINK["multi"] == 2: #Is a server
             self.LINK["serv"].SYNC["e"+str(self.ID)] = self.GiveSync()
     def SyncData(self,data): #Syncs the data with this drone
         self.pos = [data["x"],data["y"]]
         self.angle = data["a"]
+        self.__SYNCChange = [data["x"]+0,data["y"]+0,data["a"]+0]
     def GiveSync(self): #Returns the synced data for this drone
         res = {}
         res["x"] = int(self.pos[0])
         res["y"] = int(self.pos[1])
         res["a"] = int(self.angle)
+        self.__SYNCChange = [res["x"]+0,res["y"]+0,res["a"]+0]
         return res
+    def SyncChanged(self): #Has the sync for the drone changed (has server moved the drone)
+        return self.__SYNCChange[0]!=self.LINK["cli"].SYNC["e"+str(self.ID)]["x"] or self.__SYNCChange[1]!=self.LINK["cli"].SYNC["e"+str(self.ID)]["y"] or self.__SYNCChange[2]!=self.LINK["cli"].SYNC["e"+str(self.ID)]["a"]
     def loop(self,lag):
-        if self.overide and self.LINK["multi"] == 1:
+        if self.overide and self.LINK["multi"] == 1 and not self.SyncChanged(): #Send our drone position to the server
             self.LINK["cli"].SYNC["e"+str(self.ID)] = self.GiveSync()
             self.overide = False
         elif self.LINK["multi"] == 2:
@@ -59,7 +64,7 @@ class Main(base.Main):
             self.applyPhysics(lag)
             self.changeMesh(bpos) #Move the drone to anouther MESH
             self.LINK["serv"].SYNC["e"+str(self.ID)] = self.GiveSync()
-        else:
+        elif self.LINK["multi"]==1: #Sync our drone position with the servers version
             bpos = [self.pos[0]+0,self.pos[1]+0]
             self.SyncData(self.LINK["cli"].SYNC["e"+str(self.ID)])
             self.changeMesh(bpos) #Move the drone to anouther MESH

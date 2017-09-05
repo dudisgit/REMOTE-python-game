@@ -3,7 +3,7 @@ import socket,select,pickle,time
 selfIp = socket.gethostbyname(socket.gethostname()) #"169.254.178.71"
 TCP_BUF_SIZE = 4046
 MAX_KEEP = 60 # Maximum number of packets kept by the server when a packet was missed.
-UPDATE_RATE = 0.1 #Rate at which the client should sent updates to the server (UDP/TCP)
+UPDATE_RATE = 0.075 #Rate at which the client should sent updates to the server (UDP/TCP)
 
 def copyIter(lis): #Copies a list so the items are not pointers
     res = {}
@@ -71,6 +71,7 @@ class Client:
         self.__SYNCBefore = {} #A list to detect changes in SYNC
         self.TRIGGER = {} #A list containing pointers to functions if the server calls them
         self.loading = True #Game is loading
+        self.finishLoading = None #Function to call when the main content from the server has finished downloading
         self.__serverIp = serverIp #IP of the server
         self.__tcpPort = tcpPort
         self.__tsock = socket.socket(socket.AF_INET,socket.SOCK_STREAM) #Setup TCP socket
@@ -245,6 +246,8 @@ class Client:
                     self.TRIGGER[data[0][1:]](*tuple(data[1:]))
             elif data[0][0]=="L": #Stop loading the game
                 self.loading = False
+                if not self.finishLoading is None:
+                    self.finishLoading()
                 print("Loading END")
     def sendTrigger(self,funcName,*args):
         self.__sendTCP([["t"+funcName]+list(args)])

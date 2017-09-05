@@ -143,9 +143,6 @@ while run:
     mouse = [mouseRaw[0]]+list(pygame.mouse.get_pos())+[mouseRaw[1],mouseRaw[2]]
     if LINK["multi"]==1:
         CLI.loop()
-        if not CLI.loading and not currentScreen.mapLoading and not currentScreen.mapLoaded:
-            currentScreen.joinGame()
-            print("CALL LOADING")
     if not currentScreen is None:
         try:
             currentScreen.loop(mouse,KeyEvent,lag)

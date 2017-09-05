@@ -9,9 +9,8 @@ class Main(base.Main):
         self.size = [200,250]
         self.__inRoom = True #The ship is allways visible
         self.__sShow = True #Ship will allways be visible in scematic view
-        self.room = self.getEnt("room")(x+50,y,LINK,1)
+        self.room = self.getEnt("room")(x+50,y,LINK,-6)
         self.room.size = [120,250]
-        self.docked = -1 #Airlock this ship is docked to
         self.LR = False #Left to right direction
         self.hintMessage = "This entity should not be able to be spawned"
     def SaveFile(self): #Give all infomation about this object ready to save to a file
