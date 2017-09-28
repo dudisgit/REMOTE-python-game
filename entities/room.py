@@ -1,18 +1,29 @@
 #Do not run this file, it is a module!
-import pygame
+import pygame, math, time
 import entities.base as base
+
+ROOM_UPDATE_RATE = 14 #Amount of times a second to run physics events on the room
 
 class Main(base.Main):
     def __init__(self,x,y,LINK,ID,number=-1):
         self.init(x,y,LINK) #Init on the base class, __init__ is not called because its used for error detection.
         self.ID = ID
         self.number = number #The room number this room is.
+        if self.ID<0:
+            self.number = 1
         self.settings["radiation"] = False
         self.settings["power"] = [] #List of generators room is linked to
         self.powered = False#If the room is being powered
         self.poweredBefore = False #Has the room been powered before?
         self.radiation = False #Is the room full of radiation
+        self.doors = [] #The doors attached to this room
         self.air = True #Is their air in the room
+        self.__drawSurf = pygame.Surface((200,200)) #Surface to draw to when rendering bubbles
+        self.__lastUpdate = time.time()+(1/ROOM_UPDATE_RATE) #Used to make sure rooms don't continuesly scan for new entities when in a vacuum every screen refresh
+        self.__airBurst = [] #Air vacume circles that expant
+        self.__airDone = [] #Doors that have allredey been vacumed
+        self.__vacumeAirlocks = [] #A list of airlocks that this room is vacumed because of
+        self.__vacumeShortPath = "" #Shortest path to an airlock
         self.__sShow = True #Show in games scematic view
         self.__inRoom = False #Is true if the room is inside anouther room
         self.hintMessage = "A room is a space the drone can move about in, you can resize it using the slanted line at the bottom right"
@@ -22,8 +33,133 @@ class Main(base.Main):
         LINK["currentScreen"].linkItem(self,"power") #A bit bodgy but this can only be called in the map designer.
     def __UnlinkAll(self,LINK): #Deletes all links on this entity
         self.settings["power"] = []
+    def SyncData(self,data): #Syncs the data with this room
+        self.air = data["A"]
+    def GiveSync(self): #Returns the synced data for this room
+        res = {}
+        res["A"] = self.air
+        return res
     def loop(self,lag):
-        pass
+        if self.LINK["multi"]==1: #Client
+            self.SyncData(self.LINK["cli"].SYNC["e"+str(self.ID)])
+        elif self.LINK["multi"]==2: #Server
+            self.LINK["serv"].SYNC["e"+str(self.ID)] = self.GiveSync()
+        if time.time()>self.__lastUpdate: #Is not a client, single player or server
+            self.__lastUpdate = time.time()+(1/ROOM_UPDATE_RATE)
+            if self.air or len(self.__airBurst)!=0: #The room has air inside it
+                sz = math.sqrt((self.size[0]**2)+(self.size[1]**2))+50 #Find the maximum distance from one corner to anouther in the room
+                rem = []
+                ENTS = self.EntitiesInside() #Gets all the entities inside this room
+                for a in self.__airBurst: #Simulate all air pickets being vacumed.
+                    if a[2]!=-1: #Is not an instant bubble
+                        a[2] += 8*lag #Increase the bubbles size
+                    if self.LINK["multi"]!=1: #Is not a client
+                        for b in ENTS: #Make all entities inside this bubble get sucked out of the airlock
+                            dist = math.sqrt(((b.pos[0]-a[0][0])**2)+((b.pos[1]-a[0][1])**2)) #Distance from the start of the bubble to the door
+                            if (dist<=a[2] or a[2]==-1) and b.beingSucked == False:
+                                b.suckOutOfAirlock(a[1])
+                        for b in self.doors: #Find any doors it might be touching
+                            dist = math.sqrt(((b.pos[0]-a[0][0])**2)+((b.pos[1]-a[0][1])**2)) #Distance from the start of the bubble to the door
+                            if b.settings["open"] and not b.room2 is None and (dist<=a[2] or a[2]==-1) and not [a[3],b] in self.__airDone: #Is open and hasn't been visited
+                                POS = []
+                                #Get the of the start of the air bubble inside the door
+                                if type(b)==self.getEnt("door"): #Find air sucktion point on a door
+                                    if b.settings["lr"]:
+                                        if b.pos[0]<self.pos[0]:
+                                            POS = [b.pos[0]+0,b.pos[1]+25]
+                                        else:
+                                            POS = [b.pos[0]+50,b.pos[1]+25]
+                                    else:
+                                        if b.pos[1]<self.pos[1]:
+                                            POS = [b.pos[0]+25,b.pos[1]+0]
+                                        else:
+                                            POS = [b.pos[0]+25,b.pos[1]+50]
+                                else: #Find air sucktion point on an airlock
+                                    if b.settings["dir"]>=2:
+                                        if b.pos[0]<self.pos[0]:
+                                            POS = [b.pos[0]+0,b.pos[1]+25]
+                                        else:
+                                            POS = [b.pos[0]+50,b.pos[1]+25]
+                                    else:
+                                        if b.pos[1]<self.pos[1]:
+                                            POS = [b.pos[0]+25,b.pos[1]+0]
+                                        else:
+                                            POS = [b.pos[0]+25,b.pos[1]+50]
+                                #Make a new bubble into anouther room
+                                if b.room1 == self:
+                                    b.room2.airBurst(POS,a[1]+"/"+str(b.ID),a[3],b)
+                                else:
+                                    b.room1.airBurst(POS,a[1]+"/"+str(b.ID),a[3],b)
+                                self.__airDone.append([a[3],b])
+                                self.__airDone.append(b)
+                            elif not b.settings["open"] and [a[3],b] in self.__airDone: #Door has been closed, remove it from the list of done doors
+                                self.__airDone.remove([a[3],b])
+                                self.__airDone.remove(b)
+                    if a[2]>sz or a[2]==-1: #Bubble has reached maximum size or virtual bubble is over
+                        if self.LINK["multi"]!=1: #Is not a client
+                            self.air = False
+                        rem.append(a) #Remove this bubble
+                for a in rem:
+                    self.__airBurst.remove(a)
+            if (not self.air or len(self.__airBurst)!=0) and self.LINK["multi"]!=1: #Used to detect new opened rooms and stop the vacume if all airlocks are closed
+                isVac = False
+                for a in self.__vacumeAirlocks: #Check if this room is still in a vacume
+                    if a.settings["open"] and a.room2 is None: #Airlock is open and not connected to a ship
+                        iS = False
+                        for b in self.doors:
+                            if b.settings["open"]:
+                                if b.isPathTo(a) or b==a: #There is a path from the door to the airlock sucking this room or we are currently at the airlock
+                                    iS = True #Room is still vacuumed
+                                    break
+                        if iS: #Room is still vacuumed
+                            isVac = True
+                            break
+                if len(self.__airBurst)==0: #Room is completely vacuumed
+                    for a in self.doors:
+                        if a.settings["open"] and not a in self.__airDone and not a.room2 is None: #A new door has opened
+                            for b in self.__vacumeAirlocks:
+                                self.airBurst(self.pos,self.__vacumeShortPath+"/"+str(self.ID),b)
+                        elif not a.settings["open"] and a in self.__airDone: #A previously open door has closed
+                            for b in self.__vacumeAirlocks:
+                                if [b,a] in self.__airDone:
+                                    self.__airDone.remove([b,a])
+                            self.__airDone.remove(a)
+                        if a.settings["open"]: #Suck all entites inside the door out the airlock
+                            ENTS = a.EntitiesInside()
+                            for b in ENTS:
+                                if b.beingSucked == False:
+                                    b.suckOutOfAirlock(self.__vacumeShortPath+"/"+str(self.ID))
+                    ENTS = self.EntitiesInside() #Suck any remaining or new entiteis inside this room out the airlock
+                    for a in ENTS:
+                        if a.beingSucked == False:
+                            a.suckOutOfAirlock(self.__vacumeShortPath+"/"+str(self.ID))
+                if not isVac: #Vaccum has finished, filling with air...
+                    self.__vacumeAirlocks = []
+                    self.__airBurst = []
+                    self.__airDone = []
+                    self.__vacumeShortPath = ""
+                    self.air = True
+                    if self.LINK["multi"]==2: #Is server
+                        self.LINK["Broadcast"]("rbud",self.ID)
+    def fillAir(self): #Cancels all vacumes in the room (should only be used in multiplayer on clients)
+        self.__vacumeAirlocks = []
+        self.__airBurst = []
+        self.__airDone = []
+        self.__vacumeShortPath = ""
+    def airBurst(self,startPos,path,airlock,door=None): #Air vacume
+        self.__airBurst.append([startPos,path+"/"+str(self.ID),3,airlock])
+        if self.LINK["multi"]!=-1: #Is not a client
+            if len(path)<len(self.__vacumeShortPath) or len(self.__vacumeShortPath)==0:
+                self.__vacumeShortPath = path+""
+            if not self.air: #Air bubble must be an instant one since the room doesen't have air in it
+                self.__airBurst[-1][2] = -1
+            elif self.LINK["multi"]==2: #Is server
+                self.LINK["Broadcast"]("rbub",self.ID,startPos)
+            if not airlock in self.__vacumeAirlocks: #Airlock doesen't exist
+                self.__vacumeAirlocks.append(airlock)
+            if not door in self.__airDone and not door is None: #Door that air burst came from must not be visited again.
+                self.__airDone.append(door)
+                self.__airDone.append([airlock,door])
     def SaveFile(self): #Give all infomation about this object ready to save to a file
         pows = []
         for i,a in enumerate(self.settings["power"]):
@@ -32,10 +168,14 @@ class Main(base.Main):
             except:
                 self.LINK["errorDisplay"]("Saving power link "+str(i)+"(index) in room "+str(self.ID)+"(ID) failed.")
         return ["room",self.ID,self.pos,self.size,self.settings["radiation"],pows]
+    def reloadSize(self): #Must be called when the room has changed size
+        self.__drawSurf = pygame.Surface(self.size)
+        self.__drawSurf.set_colorkey((0,0,0))
     def LoadFile(self,data,idRef): #Load from a file
         self.pos = data[2]
         self.size = data[3]
         self.settings["radiation"] = data[4]
+        self.reloadSize()
         for a in data[5]:
             if a in idRef:
                 self.settings["power"].append(idRef[a])
@@ -102,6 +242,14 @@ class Main(base.Main):
     def sRender(self,x,y,scale,surf=None,edit=False): #Render in scematic view
         if surf is None:
             surf = self.LINK["main"]
+        if not edit:
+            scrolPos = [(self.pos[0]*scale)-x,(self.pos[1]*scale)-y]
+            self.__drawSurf.fill((0,0,0))
+            if self.air: #Render air bubbles
+                for a in self.__airBurst:
+                    if a[2]!=-1: #Air bubble is not an instant air bubble
+                        pygame.draw.circle(self.__drawSurf,(255,255,255),[int(a[0][0]-self.pos[0]),int(a[0][1]-self.pos[1])],int(a[2]),3)
+            surf.blit(pygame.transform.scale(self.__drawSurf,(int(self.size[0]*scale),int(self.size[1]*scale))),[int(x),int(y)])
         if (self.settings["radiation"] and edit) or self.radiation: #Draw slanting lines for radiation
             for i in range(-int(self.size[1]/25)+1,int(self.size[0]/25)):
                 if i<0:
@@ -123,7 +271,7 @@ class Main(base.Main):
                     ad2 = abs(i-(int(self.size[0]/25)-int(self.size[1]/25)))*25*scale
                 else:
                     ad2 = 0
-                pygame.draw.line(surf,(200,200,200),[x+(self.size[0]*scale)-((i*25*scale)+ad1),y+ad1],[x+(self.size[0]/2)-((((i*25)+self.size[1])*scale)-ad2),y+(self.size[1]*scale)-ad2])
+                pygame.draw.line(surf,(200,200,200),[x+(self.size[0]*scale)-((i*25*scale)+ad1),y+ad1],[x+((self.size[0])*scale)-((((i*25)+self.size[1])*scale)-ad2),y+(self.size[1]*scale)-ad2])
         if self.__inRoom and edit: #If inside a room in the map editor, used to raise error
             pygame.draw.rect(surf,(200,0,0),[x,y,self.size[0]*scale,self.size[1]*scale],int(5*scale))
         elif self.powered:
@@ -158,6 +306,9 @@ class Main(base.Main):
             textSize = list(textSurf.get_size()) #Get the size of the text rendered
             pygame.draw.rect(surf,(0,0,0),[x+(((self.size[0]/2)-(textSize[0]/2))*scale),y+((self.size[1]/4)*scale)]+textSize) #Draw a black background for the text to be displayed infront of
             surf.blit(textSurf,(x+(((self.size[0]/2)-(textSize[0]/2))*scale),y+((self.size[1]/4)*scale))) #Render text
+        if not edit and self.LINK["DEVDIS"]: #Development display, display room ID
+            textSurf = self.LINK["font42"].render("ID: "+str(self.ID),16,(0,150,0))
+            surf.blit(textSurf,(x+((self.size[0]/2)*scale),y+((self.size[1]/2)*scale))) #Render text
         if self.radiation or not self.air: #Draw warning sign
             surf.blit(self.getImage("warning"),(x+int((self.size[0]/2)*scale)-(25*scale),y+int((self.size[1]/2)*scale)-(25*scale)))
         if self.HINT:

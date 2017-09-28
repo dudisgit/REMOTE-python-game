@@ -1,5 +1,5 @@
 #Do not run this file, it is a module!
-import pygame
+import pygame, time
 import entities.base as base
 
 class Main(base.Main):
@@ -12,7 +12,10 @@ class Main(base.Main):
         self.settings["dir"] = 0 #This determines the direction of the airlock
         self.settings["fail"] = False #If the airlock should be allowed to fail
         self.settings["default"] = False #Is the default airlock for ships
-        self.powered = False #Is the airlock powered
+        self.powered = True #Is the airlock powered
+        self.room1 = None #The room the airlock is attached to.
+        self.room2 = None #The room of the ship (will be none if not docked)
+        self.trying = False #Is the airlock trying to close
         self.__sShow = True #Show in games scematic view
         self.__inRoom = False #Is true if the door is inside a room
         self.hintMessage = "An airlock is like a door but must not conenct two rooms but rather one room to outerspace. \nAn airlock can be made default by using its context/options menu. \nAn airlock also does not need its own power."
@@ -24,8 +27,84 @@ class Main(base.Main):
             except:
                 self.LINK["errorDisplay"]("Saving power link "+str(i)+"(index) in airlock "+str(self.ID)+"(ID) failed.")
         return ["airlock",self.ID,self.pos,self.settings["dir"],self.settings["default"],self.settings["fail"],pows]
+    def afterLoad(self): #Called after the entity has loaded
+        if self.LINK["multi"] != -1: #Is not loaded in map editor
+            #This is for finding the connected rooms to this door
+            if not self.settings["dir"]>=2: #Left to right
+                self.room1 = self.findPosition([self.pos[0]+25,self.pos[1]-25],[1,1])
+                if self.room1==-1:
+                    self.room1 = self.findPosition([self.pos[0]+25,self.pos[1]+75],[1,1])
+            else:
+                self.room1 = self.findPosition([self.pos[0]-25,self.pos[1]+25],[1,1])
+                if self.room1==-1:
+                    self.room1 = self.findPosition([self.pos[0]+75,self.pos[1]+25],[1,1])
+            if self.room1 == -1:
+                self.room1 = None
+                print("Failed to link")
+            else:
+                self.room1.doors.append(self)
+    def SyncData(self,data): #Syncs the data with this drone
+        self.settings["open"] = data["O"]
+        self.trying = data["T"]
+    def GiveSync(self): #Returns the synced data for this drone
+        res = {}
+        res["O"] = self.settings["open"]
+        res["T"] = self.trying
+        return res
+    def loop2(self,lag): #This is "loop" but will apply actions to the airlock (single player/server, not client)
+        if self.trying and self.powered:
+            if len(self.EntitiesInside())==0:
+                self.CLOSE()
+                self.trying = False
     def loop(self,lag):
-        pass
+        if self.LINK["multi"]==1: #Client
+            self.SyncData(self.LINK["cli"].SYNC["e"+str(self.ID)])
+        elif self.LINK["multi"]==2: #Server
+            self.LINK["serv"].SYNC["e"+str(self.ID)] = self.GiveSync()
+        if self.LINK["multi"]!=1: #Is not a client
+            self.loop2(lag)
+    def toggle(self): #Open/close the airlock and return any errors
+        errs = ""
+        if self.powered:
+            if self.settings["open"]:
+                errs = self.CLOSE()
+            else:
+                errs = self.OPEN()
+        else:
+            errs = "Airlock not powered"
+        return errs
+    def OPEN(self): #Opens the door
+        errs = ""
+        if self.powered: #Airlock is powered
+            if not self.room2 is None: #Ship is docked to airlock
+                if self.room2.ship.dockTime!=0: #Ship is still docking to airlock
+                    return "Ship is still docking to airlock"
+            else:
+                if self.settings["dir"]==0:
+                    POS = [self.pos[0]+25,self.pos[1]+0]
+                elif self.settings["dir"]==1:
+                    POS = [self.pos[0]+25,self.pos[1]+50]
+                elif self.settings["dir"]==2:
+                    POS = [self.pos[0]+0,self.pos[1]+25]
+                else:
+                    POS = [self.pos[0]+50,self.pos[1]+25]
+                self.room1.airBurst(POS,"/"+str(self.ID),self)
+            self.settings["open"] = True
+            self.trying = False
+        else:
+            errs = "Airlock not powered"
+        return errs
+    def CLOSE(self): #Closes the door
+        errs = ""
+        if self.powered:
+            if len(self.EntitiesInside())!=0:
+                errs = "Airlock is being blocked"
+                self.trying = True
+            else:
+                self.settings["open"] = False
+        else:
+            errs = "Airlock not powered"
+        return errs
     def LoadFile(self,data,idRef): #Load from a file
         self.pos = data[2]
         self.settings["dir"] = data[3]
@@ -136,15 +215,31 @@ class Main(base.Main):
                     surf.blit(pygame.transform.rotate(self.getImage("ship"),90),(x+(50*scale),y-(83*scale)))
                 elif self.settings["dir"] == 3: #Right
                     surf.blit(pygame.transform.rotate(self.getImage("ship"),270),(x-(250*scale),y-(125*scale)))
+        elif self.LINK["DEVDIS"]: #Development display (used to display door connections
+            if not self.settings["dir"]>=2:
+                pygame.draw.circle(surf,(255,0,0),[int(x+(25*scale)),int(y-(25*scale))],4)
+                pygame.draw.circle(surf,(255,0,0),[int(x+(25*scale)),int(y+(75*scale))],4)
+            else:
+                pygame.draw.circle(surf,(255,0,0),[int(x-(25*scale)),int(y+(25*scale))],4)
+                pygame.draw.circle(surf,(255,0,0),[int(x+(75*scale)),int(y+(25*scale))],4)
+            scrpos = [(self.pos[0]*scale)-x,(self.pos[1]*scale)-y] #Scroll position
+            if not self.room1 is None:
+                pygame.draw.line(surf,(255,0,0),[x,y],[(self.room1.pos[0]*scale)-scrpos[0],(self.room1.pos[1]*scale)-scrpos[1]])
+            if not self.room2 is None:
+                pygame.draw.line(surf,(255,0,0),[x,y],[(self.room2.pos[0]*scale)-scrpos[0],(self.room2.pos[1]*scale)-scrpos[1]])
         if self.alive and not self.powered: #If the door is not powered
             dead = "Power"
         if self.settings["open"]: #Airlock is open
+            if self.trying and (time.time()-int(time.time()))>0.5:
+                d = 20
+            else:
+                d = 25
             if self.settings["dir"]>=2: #Left to right
-                surf.blit(pygame.transform.rotate(self.getImage("doorAirOpen"+dead),270),(x,y-(25*scale)))
-                surf.blit(pygame.transform.rotate(self.getImage("doorAirOpen"+dead),90),(x,y+(25*scale)))
+                surf.blit(pygame.transform.rotate(self.getImage("doorAirOpen"+dead),270),(x,y-(d*scale)))
+                surf.blit(pygame.transform.rotate(self.getImage("doorAirOpen"+dead),90),(x,y+(d*scale)))
             else: #Up to down
-                surf.blit(self.getImage("doorOpen"+dead),(x-(25*scale),y))
-                surf.blit(pygame.transform.flip(self.getImage("doorAirOpen"+dead),True,False),(x+(25*scale),y))
+                surf.blit(self.getImage("doorAirOpen"+dead),(x-(d*scale),y))
+                surf.blit(pygame.transform.flip(self.getImage("doorAirOpen"+dead),True,False),(x+(d*scale),y))
             pygame.draw.rect(surf,(150,150,150),[x,y,self.size[0]*scale,self.size[1]*scale]) #Draw grey background when door is open
         else: #Airlock is closed
             if self.settings["dir"]>=2: #Lef to right

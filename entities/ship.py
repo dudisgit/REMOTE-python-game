@@ -1,6 +1,8 @@
 #Do not run this file, it is a module!
-import pygame, random
+import pygame, random, time
 import entities.base as base
+
+DOCK_DELAY = 4 #Time taken to dock to anouther airlock
 
 class Main(base.Main):
     def __init__(self,x,y,LINK,ID):
@@ -9,9 +11,13 @@ class Main(base.Main):
         self.size = [200,250]
         self.__inRoom = True #The ship is allways visible
         self.__sShow = True #Ship will allways be visible in scematic view
-        self.room = self.getEnt("room")(x+50,y,LINK,-6)
+        self.airlock = None #Airlock this ship is docked to
+        self.dockTime = 0 #Time until the ship has finished docking
+        self.room = self.getEnt("room")(x+50,y,LINK,-6,1) #The ships room
         self.room.size = [120,250]
+        self.room.ship = self #Giving the ships room a link to the ship
         self.LR = False #Left to right direction
+        self.upgrades = [] #Upgrades used by the ship
         self.hintMessage = "This entity should not be able to be spawned"
     def SaveFile(self): #Give all infomation about this object ready to save to a file
         return ["ship",self.ID,self.pos]
@@ -24,8 +30,23 @@ class Main(base.Main):
     def rightLoop(self,mouse,kBuf): #Event loop for the widgets inside the context menu
         self.__but1.loop([mouse[0],mouse[1]-self.__lastRenderPos[0],mouse[2]-self.__lastRenderPos[1]]+mouse[3:],kBuf)
     def loop(self,lag):
-        pass
-    def dockTo(self,airlock): #Docks the ship to a specific airlock
+        if time.time()>self.dockTime and self.dockTime!=0: #Reset docking timer when docking has completed
+            self.dockTime = 0
+    def dockTo(self,airlock,first=False): #Docks the ship to a specific airlock
+        if self.dockTime!=0:
+            return "Ship is still docking, please wait",(255,255,0)
+        if not self.airlock is None: #Is docked to an airlock
+            out = self.airlock.CLOSE()
+            if out=="Airlock is being blocked":
+                return out,(255,255,0)
+            self.airlock.room2 = None
+            self.room.doors = [airlock]
+        else: #First time docking to an airlock
+            self.airlock = airlock
+        self.dockTime = time.time()+DOCK_DELAY #Make sure nothing can open or dock until the ship has finished docking to the airlock
+        bpos = [self.room.pos[0]+0,self.room.pos[1]+0]
+        bpos2 = [self.pos[0]+0,self.pos[1]+0]
+        allE = self.room.EntitiesInside()
         if airlock.settings["dir"] == 1: #Up
             self.pos = [airlock.pos[0]-(self.size[0]/2),airlock.pos[1]-self.size[1]]
         elif airlock.settings["dir"] == 0: #Down
@@ -42,6 +63,30 @@ class Main(base.Main):
             self.room.size = [250,120]
             self.LR = True
             self.room.pos = [self.pos[0],self.pos[1]+60]
+        if not first:
+            if (self.airlock.settings["dir"]>1 and airlock.settings["dir"]>1) or (self.airlock.settings["dir"]<=1 and airlock.settings["dir"]<=1):
+                for a in allE: #Move all entities inside the ship room to the new location
+                    if a!=self:
+                        bpos3 = [a.pos[0]+0,a.pos[1]+0]
+                        a.pos = [a.pos[0]+(self.room.pos[0]-bpos[0]),a.pos[1]+(self.room.pos[1]-bpos[1])]
+                        a.changeMesh(bpos3)
+            else:
+                for a in allE: #Move all entities inside the ship room to the new location but when the room size has changed
+                    if a!=self:
+                        bpos3 = [a.pos[0]+0,a.pos[1]+0]
+                        a.pos = [a.pos[0]+(self.room.pos[0]-bpos[0]),a.pos[1]+(self.room.pos[1]-bpos[1])]
+                        a.pos = [self.room.pos[0]+(a.pos[1]-self.room.pos[1]),self.room.pos[1]+(a.pos[0]-self.room.pos[0])]
+                        a.changeMesh(bpos3)
+            if self.LINK["multi"]==2: #Is server
+                for a in allE: #Tell all entities they where teleported if this is a server
+                    a.teleported()
+        self.room.changeMesh(bpos)
+        self.room.reloadSize()
+        self.changeMesh(bpos2)
+        airlock.room2 = self.room
+        self.airlock = airlock
+        self.room.doors = [airlock]
+        return "Docking to airlock...",(0,255,0)
     def rightRender(self,x,y,surf): #Render the context menu
         windowPos = [x,y+50] #Window position
         #The 4 IF statments below will make sure the context menu is allways on the screen, even if this entity is not.
@@ -73,9 +118,10 @@ class Main(base.Main):
     def sRender(self,x,y,scale,surf=None,edit=False): #Render in scematic view
         if surf is None:
             surf = self.LINK["main"]
-        if self.LR:
-            surf.blit(pygame.transform.rotate(self.getImage("ship"),90),(x,y))
-        else:
-            surf.blit(self.getImage("ship"),(x,y))
+        if ((time.time()-int(time.time()))*2)%1>0.5 or self.dockTime==0:
+            if self.LR:
+                surf.blit(pygame.transform.rotate(self.getImage("ship"),90),(x,y))
+            else:
+                surf.blit(self.getImage("ship"),(x,y))
         if self.HINT:
             self.renderHint(surf,self.hintMessage,[x,y])

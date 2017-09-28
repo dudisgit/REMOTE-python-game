@@ -1,6 +1,8 @@
 #Do not run this file, it is a module!
-import pygame
+import pygame, time, random
 import entities.base as base
+
+RANDOM_DIE = 10 #Percentage change that the door will get destroyed when a room gets vacuumed
 
 class Main(base.Main):
     def __init__(self,x,y,LINK,ID,number=-1):
@@ -11,7 +13,9 @@ class Main(base.Main):
         self.settings["attack"] = True #Door is attackable
         self.settings["power"] = [] #Contains a list of generators the door is powered by
         self.settings["lr"] = True #This determines the direction of the door (Left right / Up down)
-        self.powered = False #If the door is powered on not
+        self.powered = True #If the door is powered on not
+        self.trying = False #Is the door trying to close?
+        self.__isVac = False #Is outisde the door a vacuum
         self.__sShow = True #Show in games scematic view
         self.__inRoom = False #Is true if the door is inside a room
         self.hintMessage = "A door must be placed between two rooms. It can be opened or closed as long as its powered by a generator or room. \nIf linked to a generator, the rooms next to it will not power it!"
@@ -33,8 +37,86 @@ class Main(base.Main):
                 self.settings["power"].append(idRef[a])
             else:
                 self.LINK["errorDisplay"]("Loading power link "+str(a)+"(ID) failed in door "+str(self.ID)+"(ID).")
+    def afterLoad(self): #Called after the entity has loaded
+        if self.LINK["multi"] != -1: #Is not loaded in map editor
+            #This is for finding the connected rooms to this door
+            if not self.settings["lr"]:
+                self.room1 = self.findPosition([self.pos[0]+25,self.pos[1]-25],[1,1])
+                self.room2 = self.findPosition([self.pos[0]+25,self.pos[1]+75],[1,1])
+            else:
+                self.room1 = self.findPosition([self.pos[0]-25,self.pos[1]+25],[1,1])
+                self.room2 = self.findPosition([self.pos[0]+75,self.pos[1]+25],[1,1])
+            if self.room1 == -1:
+                self.room1 = None
+            else:
+                self.room1.doors.append(self)
+            if self.room2 == -1:
+                self.room2 = None
+            else:
+                self.room2.doors.append(self)
+    def SyncData(self,data): #Syncs the data with this drone
+        self.settings["open"] = data["O"]
+        self.trying = data["T"]
+        self.alive = data["A"]
+    def GiveSync(self): #Returns the synced data for this drone
+        res = {}
+        res["O"] = self.settings["open"]
+        res["T"] = self.trying
+        res["A"] = self.alive
+        return res
+    def loop2(self,lag): #This is "loop" but will apply actions to the door (single player/server, not client)
+        if self.trying and self.powered:
+            if len(self.EntitiesInside())==0:
+                self.CLOSE()
+                self.trying = False
+        if not self.room1 is None and not self.room2 is None and self.alive: #Door is valid
+            if (not self.room1.air or not self.room2.air) and not self.__isVac: #A room has been vacuumed without the door knowing
+                self.__isVac = True
+                if random.randint(0,100)<RANDOM_DIE: #Random chance wether the door should be destroyed or not
+                    self.alive = False
+                    self.LINK["outputCommand"]("Door "+str(self.number)+" has been destroyed due to outside exposure.",(255,0,0))
+            elif self.room1.air and self.room2.air:
+                self.__isVac = False
     def loop(self,lag):
-        pass
+        if self.LINK["multi"]==1: #Client
+            self.SyncData(self.LINK["cli"].SYNC["e"+str(self.ID)])
+        elif self.LINK["multi"]==2: #Server
+            self.LINK["serv"].SYNC["e"+str(self.ID)] = self.GiveSync()
+        if self.LINK["multi"]!=1: #Is not a client
+            self.loop2(lag)
+    def toggle(self): #Open/close the door and return any errors
+        errs = ""
+        if self.powered:
+            if self.settings["open"]:
+                errs = self.CLOSE()
+            else:
+                errs = self.OPEN()
+        else:
+            errs = "Door not powered"
+        return errs
+    def OPEN(self): #Opens the door
+        errs = ""
+        if not self.alive:
+            errs = "Door has been destroyed"
+        elif self.powered:
+            self.settings["open"] = True
+            self.trying = False
+        else:
+            errs = "Door not powered"
+        return errs
+    def CLOSE(self): #Closes the door
+        errs = ""
+        if not self.alive:
+            errs = "Door has been destroyed"
+        elif self.powered:
+            if len(self.EntitiesInside())!=0:
+                errs = "Door is being blocked"
+                self.trying = True
+            else:
+                self.settings["open"] = False
+        else:
+            errs = "Door not powered"
+        return errs
     def __ChangeState(self,LINK,state): #switches door state
         self.settings["open"] = state == True
     def __ChangeDirection(self,LINK,state): #switches doors state
@@ -138,15 +220,33 @@ class Main(base.Main):
                     rem.append(a)
             for a in rem: #Loop through all the entities wanted to be deleted
                 self.settings["power"].remove(a)
+        elif self.LINK["DEVDIS"]: #Development display (used to display door connections
+            if not self.settings["lr"]:
+                pygame.draw.circle(surf,(255,0,0),[int(x+(25*scale)),int(y-(25*scale))],4)
+                pygame.draw.circle(surf,(255,0,0),[int(x+(25*scale)),int(y+(75*scale))],4)
+            else:
+                pygame.draw.circle(surf,(255,0,0),[int(x-(25*scale)),int(y+(25*scale))],4)
+                pygame.draw.circle(surf,(255,0,0),[int(x+(75*scale)),int(y+(25*scale))],4)
+            scrpos = [(self.pos[0]*scale)-x,(self.pos[1]*scale)-y] #Scroll position
+            if not self.room1 is None:
+                pygame.draw.line(surf,(255,0,0),[x,y],[(self.room1.pos[0]*scale)-scrpos[0],(self.room1.pos[1]*scale)-scrpos[1]])
+            if not self.room2 is None:
+                pygame.draw.line(surf,(255,0,0),[x,y],[(self.room2.pos[0]*scale)-scrpos[0],(self.room2.pos[1]*scale)-scrpos[1]])
         if self.alive and not self.powered: #If the door is not powered
             dead = "Power"
+        elif not self.alive:
+            dead = "Dead"
         if self.settings["open"]: #Door is open
+            if self.trying and (time.time()-int(time.time()))>0.5:
+                d = 20
+            else:
+                d = 25
             if self.settings["lr"]: #Left to right
-                surf.blit(pygame.transform.rotate(self.getImage("doorOpen"+dead),270),(x,y-(25*scale)))
-                surf.blit(pygame.transform.rotate(self.getImage("doorOpen"+dead),90),(x,y+(25*scale)))
+                surf.blit(pygame.transform.rotate(self.getImage("doorOpen"+dead),270),(x,y-(d*scale)))
+                surf.blit(pygame.transform.rotate(self.getImage("doorOpen"+dead),90),(x,y+(d*scale)))
             else: #Up to down
-                surf.blit(self.getImage("doorOpen"+dead),(x-(25*scale),y))
-                surf.blit(pygame.transform.flip(self.getImage("doorOpen"+dead),True,False),(x+(25*scale),y))
+                surf.blit(self.getImage("doorOpen"+dead),(x-(d*scale),y))
+                surf.blit(pygame.transform.flip(self.getImage("doorOpen"+dead),True,False),(x+(d*scale),y))
             pygame.draw.rect(surf,(150,150,150),[x,y,self.size[0]*scale,self.size[1]*scale]) #Draw grey background when door is open
         else: #Door is closed
             if self.settings["lr"]: #Left to right

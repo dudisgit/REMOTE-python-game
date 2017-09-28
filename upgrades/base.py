@@ -8,6 +8,7 @@ class Main:
     def init(self,LINK): #Init for the upgrade
         self.LINK = LINK
         self.drone = None #Drone this upgrade is linked to
+        self.used = False #Has the upgrade been used yet?
         self.name = "NO NAME" #Name of the upgrade
         self.damage = 0 #Damage to the upgrade
         self.droneUpgrade = True #Is a drone upgrade

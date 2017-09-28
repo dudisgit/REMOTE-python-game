@@ -9,6 +9,8 @@ class Main(base.Main):
         self.__model = random.randint(1,3) #What model to use for the scrap
         self.__sShow = True #Show in games scematic view
         self.__inRoom = False #Is true if the scrap is inside a room
+        self.size = [20,20]
+        self.beingSucked = False #Make this entity suckable out of an airlock
         self.hintMessage = "Scrap is used to reward players, use it like coins."
     def SaveFile(self): #Give all infomation about this object ready to save to a file
         return ["scrap",self.ID,self.pos]
@@ -20,8 +22,21 @@ class Main(base.Main):
         self.__but1 = self.LINK["screenLib"].Button(5,5,self.LINK,"Delete",lambda LINK: self.delete()) #Delete button
     def rightLoop(self,mouse,kBuf): #Event loop for the widgets inside the context menu
         self.__but1.loop([mouse[0],mouse[1]-self.__lastRenderPos[0],mouse[2]-self.__lastRenderPos[1]]+mouse[3:],kBuf)
+    def SyncData(self,data): #Syncs the data with this scrap
+        self.pos[0] = data["x"]
+        self.pos[1] = data["y"]
+    def GiveSync(self): #Returns the synced data for this scrap
+        res = {}
+        res["x"] = int(self.pos[0])+0
+        res["y"] = int(self.pos[1])+0
+        return res
     def loop(self,lag):
-        pass
+        if self.LINK["multi"]==1: #Client
+            self.SyncData(self.LINK["cli"].SYNC["e"+str(self.ID)])
+        elif self.LINK["multi"]==2: #Server
+            self.LINK["serv"].SYNC["e"+str(self.ID)] = self.GiveSync()
+        if self.LINK["multi"]!=1: #Is not a client
+            self.movePath(lag)
     def rightRender(self,x,y,surf): #Render the context menu
         windowPos = [x,y+50] #Window position
         #The 4 IF statments below will make sure the context menu is allways on the screen, even if this entity is not.

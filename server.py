@@ -12,12 +12,24 @@ FREQUENT_TIME = 5 #Seconds to update all users with frequently changed variables
 ERROR = None #Function to call when an error happens
 MAX_KEEP = 60 # Maximum packets to keep for users to access if missed, the higher this the more memory used and possibly a user could request a packet from a while ago.
 MAX_PACKET = 200 #Maximum size of one packet sent to a user
+WORLD_UPDATE_TICK = 0.05 #Time to wait until updating the world again
+
+def nameIP(IP): #Turns an IP into hexadecimal charicters
+    res = ""
+    spl = IP.split(".")
+    for a in spl:
+        if int(a)<16:
+            res+="0"
+        res+=hex(int(a))[2:]
+    return res
 
 class Player: #Class used to store a player
     def __init__(self,ip,sock):
         self.ip = ip #IP of the player
+        self.ip2 = nameIP(ip)
         self.tsock = sock #Socket for the player/client
         self.tick = 22 #Default
+        self.name = ip+"" #Name of the player
         self.sender = False #Is the source of a changed variable
         self.updateSlow = [] #Packets to send slowly to the user (This will be populated when the user first joins or the map is changed)
         self.updateSlowTimer = time.time() #Used for sending SYNC completely
@@ -79,6 +91,8 @@ class Player: #Class used to store a player
                     if len(pickle.dumps(sending+[a]))<MAX_PACKET or len(sending)==0: #Can add the data without the packet going over a limit
                         rem.append(a) #Mark the data to be removed from the buffe
                         sending.append(a) #Add the a list, ready to be sent to the client
+                        if type(a)==str:
+                            break
                     else: #Data limit has been hit
                         break
                 for a in rem: #Removed the ones sending from the buffer, ready to be sent
@@ -110,7 +124,7 @@ class Player: #Class used to store a player
                 self.__IDSend = (self.__IDSend + 1) % MAX_KEEP #Increment the ID for the next message
             if len(self.updateSlow)==0: #End of updating SYNC
                 self.__tickSend = time.time()+(1/self.tick)
-                self.sendTCP("L") #Send a packet to tell the user the SYNC has ended
+                self.__buffer.insert(0,"L") #Send a packet to tell the user the SYNC has ended
         if time.time()>self.__pingTime: #Ping the client
             self.__pingTime = time.time()+PING_INTERVAL
             self.__pingBefore = time.time()
@@ -192,13 +206,25 @@ class Server: #Class for a server
         self.__tsock.listen(MAX_PLAYER)
         self.__tlist = [self.__tsock] #Socket list for the TCP socket
         self.newUser = None #Function to call if a new user joins the server
+        self.closeUser = None #Function to call if a user disconnects
 
         print("Binded to "+self.__ip+" on port "+str(TCP_port))
     def __clientDisconnect(self,sock): #A client disconnected
-        self.users.pop(sock.getpeername()[0])
-        self.__tlist.remove(sock)
+        try: #Try to get the users address so that we can remove them from the player list
+            sIP = sock.getpeername()[0]
+        except OSError: #Try to find their address by finding their socket in the player list using brute force
+            sIP = None
+            for a in self.users:
+                if self.users[a].tsock == sock:
+                    sIP = self.users[a].ip
+                    break
+        if not sIP is None: #Disconnecting user
+            self.closeUser(sIP) #Call the function to deal with user disconnects
+            self.users[sIP].tsock.close()
+            self.users.pop(sIP)
+            self.__tlist.remove(sock)
     def getValue(self,path,currentList): #Returns the value at the specified path (path is a list)
-        if type(currentList[path[0]])==dict:
+        if type(currentList[path[0]])==dict and len(path)!=1:
             return self.getValue(path[1:],currentList[path[0]])
         return currentList[path[0]]
     def detectChanges(self,val1,val2): #Returns the changes in the variable
@@ -284,7 +310,7 @@ class Server: #Class for a server
                 return None
             else:
                 lis[path[0]] = {}
-        if type(lis[path[0]])==dict:
+        if type(lis[path[0]])==dict and len(path)!=-1:
             self.setVariable(lis[path[0]],path[1:],value)
         else:
             lis[path[0]] = value
@@ -345,9 +371,20 @@ class Server: #Class for a server
         self.loopTCP() #Process all incoming packets
         self.detectAndApplySYNC() #Process all outgoing packets (due to variable changes)
         self.uploadFrequent() #Send frequently changed variables to all users over TCP
+        rem = []
         for a in self.users: #Loop to process all user packet interaction (sending)
-            self.users[a].loop()
+            try: #Try to do an event loop on the user
+                self.users[a].loop()
+            except BrokenPipeError: #Socket must be broken, disconect user
+                self.users[a].tsock.close()
+                rem.append(a)
             self.users[a].sender = False #User is no longer a sender (used to detect if the user was the one who changed a variable)
+            if self.users[a].ip2 in self.SYNC:
+                self.users[a].name = self.SYNC[self.users[a].ip2]["N"]
+        for a in rem: #Users to remove since they had broken sockets
+            self.closeUser(self.users[a].ip) #Call the function to deal with user disconnects
+            self.__tlist.remove(self.users[a].tsock)
+            self.users.pop(a)
     def loopTCP(self): #This function must be called continuesly in order to update the TCP server
         read,write,err = select.select(self.__tlist,[],[],0) #Get all events to do with the socket
         for sock in read:
@@ -355,6 +392,7 @@ class Server: #Class for a server
                 con,addr = self.__tsock.accept()
                 self.__tlist.append(con)
                 self.users[addr[0]] = Player(addr[0],con) #Add new player
+                self.SYNC[nameIP(addr[0])]={"N": addr[0]}
                 if len(self.SYNC)!=0: #Sent the SYNC list to the user
                     self.users[addr[0]].updateSlow = ["l"]+self.sensify(detectChanges({},self.SYNC),False) #Send the whole SYNC list to the user
                 if not self.newUser is None:
@@ -472,7 +510,7 @@ def loadLINK(): #Loads all content
     LINK["null"] = NULLENT
     LINK["drones"] = [] #Drone list of the players drones
     for i in range(0,3):
-        LINK["drones"].append(LINK["ents"]["drone"].Main(i*60,0,LINK,-2-i))
+        LINK["drones"].append(LINK["ents"]["drone"].Main(i*60,0,LINK,-2-i,i+1))
     LINK["shipEnt"] = LINK["ents"]["ship"].Main(0,0,LINK,-1)
     LINK["multi"] = 2 #Running as server
     return LINK
@@ -484,19 +522,51 @@ class GameServer:
         self.LINK = loadLINK() #Initialize LINK
         self.LINK["serv"] = self.serv
         self.LINK["serv"].newUser = self.userJoin
+        self.LINK["serv"].closeUser = self.userLeave
+        self.LINK["serv"].TRIGGER["com"] = self.doCommand
         DEFMAP = "Testing map.map" #Map to load (tempory)
         self.mapName = DEFMAP
         self.world = self.LINK["screens"]["game"].GameEventHandle(self.LINK) #The game world to simulate
         self.world.open(DEFMAP) #Open the map in the world
+        self.LINK["world"] = self.world
         self.serv.SYNC["P"] = {} #Players
         self.serv.SYNC["M"] = {} #Map
         self.serv.SYNC["M"]["h"] = self.LINK["screens"]["game"].getMapMash(DEFMAP) #Map hash
         self.serv.SYNC["M"]["n"] = DEFMAP #Map name
+        self.LINK["outputCommand"] = self.putLine
+        self.LINK["Broadcast"] = self.broadCast
+        self.__updateTime = time.time()
+        if self.LINK["DEV"]:
+            self.__rend = render.DebugServer(self.LINK)
         print("Done, entering event loop, map mash is "+str(self.serv.SYNC["M"]["h"]))
+    def broadCast(self,fname,*args): #Broadcasts a message to all clients connected
+        for a in self.LINK["serv"].users:
+            self.LINK["serv"].users[a].sendTrigger(fname,*args)
+    def putLine(self,tex,col,Tab=None): #Add a line to the command line from an entity
+        if Tab is None: #Global
+            TB = -2
+        elif type(Tab) != int: #A specific drone tab
+            TB = self.world.drones.index(Tab)
+        else:
+            TB = Tab
+        self.broadCast("com","",TB,[tex,col])
+    def doCommand(self,sock,command,drone): #Called when a user enteres a command into their command line
+        pName = sock.getpeername()[0]
+        usr = self.LINK["serv"].users[pName]
+        tex,col = self.world.doCommand(command,drone,usr) #Process the command
+        if tex=="": #Broadcast what the user typed
+            self.broadCast("com",usr.name+">"+command,drone)
+        elif tex!="NOMES": #Broadcast what the user typed and what the outcome of the command was
+            self.broadCast("com",usr.name+">"+command,drone,[tex,col])
+    def userLeave(self,addr): #A user has left
+        print("Connection closed ",addr)
+        self.broadCast("com","User "+addr+" left",-2,(255,153,0)) #Broadcast that the user left
     def userJoin(self,addr): #A new user has joined
         mapEnts = self.getAllMapEnts()
         for a in mapEnts:
             self.LINK["serv"].users[addr].updateSlow.append(["tdsnd",a])
+        self.broadCast("com","User "+addr+" joined",-2,(255,153,0)) #Broadcast that the user joined
+        print("New connection "+addr)
     def getAllMapEnts(self): #Retruns all map entities (used for late downloading)
         res = [0]
         for a in self.world.Map:
@@ -506,8 +576,12 @@ class GameServer:
             res.append(sD)
         return res
     def loop(self): #Game loop
-        self.world.loop() #Simulate world events
+        if time.time()>self.__updateTime: #Only update the world a certain amounts of times in a second
+            self.__updateTime = time.time()+WORLD_UPDATE_TICK
+            self.world.loop() #Simulate world events
         self.serv.loop() #Deal with server events and variable changes in SYNC
+        if self.LINK["DEV"]:
+            self.__rend.render(self.world.Map)
     def downloadMap(self,UserSock): #Sends the current map to the specific user
         if not UserSock.getpeername()[0] in self.__MAP_DOWNLOAD: #Checking if the user isn't trying to request the map more than once
             self.__MAP_DOWNLOAD[UserSock.getpeername()[0]] = 0 #Begin sending the map

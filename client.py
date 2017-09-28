@@ -119,13 +119,13 @@ class Client:
         else:
             print("Connected!")
     def setVariable(self,lis,path,value): #Set a varable using a path list
-        if not path[0] in lis:
-            if len(path)==1:
+        if not path[0] in lis: #Create new variable
+            if len(path)==1: #Create the new variable as a normal
                 lis[path[0]] = value
                 return None
-            else:
+            else: #Create the new variable as a dictionary
                 lis[path[0]] = {}
-        if type(lis[path[0]])==dict:
+        if type(lis[path[0]])==dict and len(path)!=1: #Set a variable inside the keys dictionary
             self.setVariable(lis[path[0]],path[1:],value)
         else:
             lis[path[0]] = value
@@ -135,7 +135,7 @@ class Client:
                 return 0
             else:
                 lis[path[0]] = {}
-        if type(lis[path[0]])==dict:
+        if type(lis[path[0]])==dict and len(path)!=-1:
             return self.getVariable(lis[path[0]],path[1:])
         else:
             return lis[path[0]]

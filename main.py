@@ -1,6 +1,8 @@
+print("Importing modules")
 import pygame,client,time,screenLib,math,os,sys,render,importlib
+print("Loading pygame")
 pygame.init()
-
+print("Building varaibles")
 FPS = 30 #Default FPS
 RESLUTION = [1000,700]
 
@@ -29,6 +31,8 @@ LINK["loadScreen"] = loadScreen #Used so other scripts can load the map
 LINK["render"] = render #Used so other scripts can use its tools for rendering
 LINK["screenLib"] = screenLib #Used as a GUI tool for the map designer
 LINK["log"] = ADDLOG #Used to log infomation (not seen in game unless developer console is turned on)
+LINK["DEVDIS"] = True #Development display
+LINK["showFPS"] = True #If the FPS counter should be shown
 
 main = pygame.display.set_mode(RESLUTION)
 pygame.display.set_caption("REMOTE")
@@ -47,8 +51,9 @@ LINK["controll"]["down"] = pygame.K_DOWN #Down arrow key
 LINK["controll"]["left"] = pygame.K_LEFT #Left arrow key
 LINK["controll"]["right"] = pygame.K_RIGHT #Right arrow key
 LINK["mesh"] = {} #Used for fast entity discovery
-LINK["multi"] = 1 #Is the game currently multiplayer, 0 = Single player, 1 = Client, 2 = Server
+LINK["multi"] = 0 #Is the game currently multiplayer, -1 = Map editor, 0 = Single player, 1 = Client, 2 = Server
 
+print("Loading content")
 #Load all content from the folders...
 #Screens
 files = os.listdir("screens")
@@ -114,18 +119,28 @@ class NULLENT(LINK["ents"]["base"].Main): #Null entity for keeping the game runn
     def sRender(self,x,y,scale,surf=None,edit=False):
         self.renderHint(surf,"Null entity, please remove.",[x,y])
 LINK["null"] = NULLENT
-
+print("Initilazing drones")
 LINK["drones"] = [] #Drone list of the players drones
 for i in range(0,3):
-    LINK["drones"].append(LINK["ents"]["drone"].Main(i*60,0,LINK,-2-i))
+    LINK["drones"].append(LINK["ents"]["drone"].Main(i*60,0,LINK,-2-i,i+1))
+LINK["drones"][0].settings["upgrades"][0] = ["gather",0]
+LINK["drones"][0].settings["upgrades"][1] = ["motion",1]
+LINK["drones"][1].settings["upgrades"][0] = ["generator",0]
+LINK["drones"][2].settings["upgrades"][0] = ["interface",2]
+LINK["drones"][2].settings["upgrades"][1] = ["tow",0]
+LINK["drones"][0].loadUpgrades()
+LINK["drones"][1].loadUpgrades()
+LINK["drones"][2].loadUpgrades()
 LINK["shipEnt"] = LINK["ents"]["ship"].Main(0,0,LINK,-1)
+LINK["shipEnt"].upgrades = [LINK["shipUp"]["remote power"].Main(LINK)]
 
-if LINK["multi"]:
-    CLI = client.Client("192.168.1.136")
+if LINK["multi"]==1: #Client
+    CLI = client.Client("127.0.1.1")
     LINK["cli"] = CLI
 loadScreen("game") #Load the main game screen (TEMPORY)
-#currentScreen.open("Testing map.map") #Open the map for the game (TEMPORY)
-
+if LINK["multi"]!=1:
+    currentScreen.open("Testing map.map") #Open the map for the game (TEMPORY)
+print("Going into event loop")
 run = True
 lastTime = time.time()-0.1
 while run:
@@ -158,6 +173,8 @@ while run:
             if LINK["DEV"]:
                 raise
             ERROR("Error when rendering screen",sys.exc_info())
+    if LINK["showFPS"]:
+        main.blit(LINK["font24"].render("FPS: "+str(int(30/lag)),16,(255,255,255)),[0,0])
     pygame.display.flip()
     clock.tick(FPS)
 pygame.quit()
