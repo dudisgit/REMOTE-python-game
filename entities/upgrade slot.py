@@ -10,6 +10,7 @@ class Main(base.Main):
         self.__inRoom = False #Is true if the upgrade slot is inside a room
         self.settings["perm"] = False #Is perminantly installed
         self.settings["upgrade"] = "Empty" #What upgrade this supplies
+        self.__upg = None #Ship upgrade entity
         self.hintMessage = "This is to give the player new ship upgrades. It can be destroyed or sucked out of an airlock."
     def SaveFile(self): #Give all infomation about this object ready to save to a file
         return ["upgrade slot",self.ID,self.pos,self.settings["perm"],self.settings["upgrade"]]
@@ -17,6 +18,9 @@ class Main(base.Main):
         self.pos = data[2]
         self.settings["perm"] = data[3]
         self.settings["upgrade"] = data[4]
+        if self.LINK["multi"]==0 or self.LINK["multi"]==2: #Is single player or server
+            #Create the upgrade in this slot
+            self.__upg = self.LINK["create"]("ShipUpgrade",[self.pos[0]+(self.size[0]/4),self.pos[1]+(self.size[1]/4)],data[4],self.settings["perm"])
     def loop(self,lag):
         pass
     def __ChangePerm(self,LINK,state): #Change if the upgrade slot should be perminantly installed or not
@@ -86,10 +90,7 @@ class Main(base.Main):
                         self.drawRotate(surf,x,y,self.getImage("upgrade"),self.angle)
             else:
                 surf.blit(self.getImage("upgradeWarning"),(x,y))
-        else:
-            if self.settings["upgrade"]!="Empty":
-                surf.blit(self.getImage("upgrade"),(x,y))
-            else:
-                surf.blit(self.getImage("upgradeEmpty"),(x,y))
+        else: #Render normal
+            surf.blit(self.getImage("upgradeEmpty"),(x,y))
         if self.HINT:
             self.renderHint(surf,self.hintMessage,[x,y])

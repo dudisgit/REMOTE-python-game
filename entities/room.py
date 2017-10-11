@@ -9,19 +9,27 @@ class Main(base.Main):
         self.init(x,y,LINK) #Init on the base class, __init__ is not called because its used for error detection.
         self.ID = ID
         self.number = number #The room number this room is.
+        self.settings["radiation"] = False
+        self.settings["scanable"] = True #Is the room scannable
+        self.settings["power"] = [] #List of generators room is linked to
         if self.ID<0:
             self.number = 1
-        self.settings["radiation"] = False
-        self.settings["power"] = [] #List of generators room is linked to
+            self.settings["scanable"] = False
         self.powered = False#If the room is being powered
         self.poweredBefore = False #Has the room been powered before?
         self.radiation = False #Is the room full of radiation
         self.doors = [] #The doors attached to this room
         self.air = True #Is their air in the room
+        self.SCAN = 0 #Scan type
+        #0 = Off
+        #1 = Safe
+        #2 = Error
+        #3 = Bad
         self.__drawSurf = pygame.Surface((200,200)) #Surface to draw to when rendering bubbles
         self.__lastUpdate = time.time()+(1/ROOM_UPDATE_RATE) #Used to make sure rooms don't continuesly scan for new entities when in a vacuum every screen refresh
         self.__airBurst = [] #Air vacume circles that expant
         self.__airDone = [] #Doors that have allredey been vacumed
+        self.__radDone = [] #Doors that have allredey been filled with radiation
         self.__vacumeAirlocks = [] #A list of airlocks that this room is vacumed because of
         self.__vacumeShortPath = "" #Shortest path to an airlock
         self.__sShow = True #Show in games scematic view
@@ -35,15 +43,32 @@ class Main(base.Main):
         self.settings["power"] = []
     def SyncData(self,data): #Syncs the data with this room
         self.air = data["A"]
+        self.powered = data["P"]
+        self.radiation = data["R"]
+        self.SCAN = data["S"]
+        if self.powered:
+            self.poweredBefore = True
     def GiveSync(self): #Returns the synced data for this room
         res = {}
         res["A"] = self.air
+        res["R"] = self.radiation
+        res["P"] = self.powered
+        res["S"] = self.SCAN
         return res
+    def loop2(self,lag): #Is not a client
+        self.powered = False
+        for a in self.settings["power"]: #Check all power connections to see if this room is powered
+            if a.active:
+                self.powered = True
+                self.poweredBefore = True
+                break
     def loop(self,lag):
         if self.LINK["multi"]==1: #Client
             self.SyncData(self.LINK["cli"].SYNC["e"+str(self.ID)])
         elif self.LINK["multi"]==2: #Server
             self.LINK["serv"].SYNC["e"+str(self.ID)] = self.GiveSync()
+        if self.LINK["multi"]!=1: #Is not a client, singple player or server
+            self.loop2(lag)
         if time.time()>self.__lastUpdate: #Is not a client, single player or server
             self.__lastUpdate = time.time()+(1/ROOM_UPDATE_RATE)
             if self.air or len(self.__airBurst)!=0: #The room has air inside it
@@ -52,15 +77,21 @@ class Main(base.Main):
                 ENTS = self.EntitiesInside() #Gets all the entities inside this room
                 for a in self.__airBurst: #Simulate all air pickets being vacumed.
                     if a[2]!=-1: #Is not an instant bubble
-                        a[2] += 8*lag #Increase the bubbles size
+                        if a[4]==1: #Air bubble
+                            a[2] += 8*lag #Increase the bubbles size
+                        else: #Radiation bubble
+                            a[2] += 1.2*lag #Increase the bubbles size
                     if self.LINK["multi"]!=1: #Is not a client
                         for b in ENTS: #Make all entities inside this bubble get sucked out of the airlock
                             dist = math.sqrt(((b.pos[0]-a[0][0])**2)+((b.pos[1]-a[0][1])**2)) #Distance from the start of the bubble to the door
-                            if (dist<=a[2] or a[2]==-1) and b.beingSucked == False:
-                                b.suckOutOfAirlock(a[1])
+                            if (dist<=a[2] or a[2]==-1) and ((b.beingSucked == False and a[4]==1) or a[4]==2):
+                                if a[4]==1: #Is a normal air bubble
+                                    b.suckOutOfAirlock(a[1])
+                                elif type(b)==self.getEnt("drone") or b.isNPC: #Damage object
+                                    b.takeDamage(lag,"radiation")
                         for b in self.doors: #Find any doors it might be touching
                             dist = math.sqrt(((b.pos[0]-a[0][0])**2)+((b.pos[1]-a[0][1])**2)) #Distance from the start of the bubble to the door
-                            if b.settings["open"] and not b.room2 is None and (dist<=a[2] or a[2]==-1) and not [a[3],b] in self.__airDone: #Is open and hasn't been visited
+                            if b.settings["open"] and not b.room2 is None and (dist<=a[2] or a[2]==-1) and ((not [a[3],b] in self.__airDone and a[4]==1) or (not [a[3],b] in self.__radDone and a[4]==2)): #Is open and hasn't been visited
                                 POS = []
                                 #Get the of the start of the air bubble inside the door
                                 if type(b)==self.getEnt("door"): #Find air sucktion point on a door
@@ -86,22 +117,41 @@ class Main(base.Main):
                                         else:
                                             POS = [b.pos[0]+25,b.pos[1]+50]
                                 #Make a new bubble into anouther room
-                                if b.room1 == self:
-                                    b.room2.airBurst(POS,a[1]+"/"+str(b.ID),a[3],b)
-                                else:
-                                    b.room1.airBurst(POS,a[1]+"/"+str(b.ID),a[3],b)
-                                self.__airDone.append([a[3],b])
-                                self.__airDone.append(b)
-                            elif not b.settings["open"] and [a[3],b] in self.__airDone: #Door has been closed, remove it from the list of done doors
-                                self.__airDone.remove([a[3],b])
-                                self.__airDone.remove(b)
+                                if a[4]==1: #Air bubble
+                                    if b.room1 == self:
+                                        b.room2.airBurst(POS,a[1]+"/"+str(b.ID),a[3],b)
+                                    else:
+                                        b.room1.airBurst(POS,a[1]+"/"+str(b.ID),a[3],b)
+                                    self.__airDone.append([a[3],b])
+                                    self.__airDone.append(b)
+                                else: #Radiation bubble
+                                    if b.room1 == self:
+                                        b.room2.radBurst(POS)
+                                    else:
+                                        b.room1.radBurst(POS)
+                                    self.__radDone.append([a[3],b])
+                                    self.__radDone.append(b)
+                            elif not b.settings["open"] and (([a[3],b] in self.__airDone and a[4]==1) or ([a[3],b] in self.__radDone and a[4]==2)): #Door has been closed, remove it from the list of done doors
+                                if a[4]==1: #Is an air bubble
+                                    self.__airDone.remove([a[3],b])
+                                    self.__airDone.remove(b)
+                                else: #Remove door from previously done radiation doors
+                                    self.__radDone.remove([a[3],b])
+                                    self.__radDone.remove(b)
                     if a[2]>sz or a[2]==-1: #Bubble has reached maximum size or virtual bubble is over
-                        if self.LINK["multi"]!=1: #Is not a client
+                        if self.LINK["multi"]!=1 and a[4]==1: #Is not a client and is air bubble
                             self.air = False
+                        elif self.LINK["multi"]!=1 and a[4]==2: #Is not a client and is radiation bubble
+                            if not self.radiation:
+                                self.LINK["outputCommand"]("Radiation has completely flooded R"+str(self.number),(255,0,0))
+                            self.radiation = True
                         rem.append(a) #Remove this bubble
                 for a in rem:
                     self.__airBurst.remove(a)
-            if (not self.air or len(self.__airBurst)!=0) and self.LINK["multi"]!=1: #Used to detect new opened rooms and stop the vacume if all airlocks are closed
+                if len(rem)!=0:
+                    if self.radiation: #Remove all radiation bubbles
+                        self.__clearRadiation()
+            if (not self.air or len(self.__airBurst)!=0 or self.radiation) and self.LINK["multi"]!=1: #Used to detect new opened rooms and stop the vacume if all airlocks are closed
                 isVac = False
                 for a in self.__vacumeAirlocks: #Check if this room is still in a vacume
                     if a.settings["open"] and a.room2 is None: #Airlock is open and not connected to a ship
@@ -114,7 +164,7 @@ class Main(base.Main):
                         if iS: #Room is still vacuumed
                             isVac = True
                             break
-                if len(self.__airBurst)==0: #Room is completely vacuumed
+                if not self.__containsBubble(1) and not self.air: #Room is completely vacuumed
                     for a in self.doors:
                         if a.settings["open"] and not a in self.__airDone and not a.room2 is None: #A new door has opened
                             for b in self.__vacumeAirlocks:
@@ -133,21 +183,48 @@ class Main(base.Main):
                     for a in ENTS:
                         if a.beingSucked == False:
                             a.suckOutOfAirlock(self.__vacumeShortPath+"/"+str(self.ID))
-                if not isVac: #Vaccum has finished, filling with air...
-                    self.__vacumeAirlocks = []
-                    self.__airBurst = []
-                    self.__airDone = []
-                    self.__vacumeShortPath = ""
+                if self.radiation:
+                    DroneObject = self.getEnt("drone")
+                    for a in self.doors:
+                        if a.settings["open"] and not a in self.__radDone and not a.room2 is None: #A new door has opened
+                            self.radBurst(self.pos) #Create a virtual bubble to fill not allredey filled doors with radiation
+                        Ents = a.EntitiesInside()
+                        for b in Ents: #Go through all the entities inside the door and cause them to be damaged by radiation
+                            if type(b) == DroneObject or b.isNPC:
+                                b.takeDamage(lag,"radiation")
+                    ENTS = self.EntitiesInside()
+                    for b in ENTS: #Damage all entities inside the room
+                        if type(b)==DroneObject or b.isNPC:
+                            b.takeDamage(lag,"radiation")
+                if not isVac and (not self.air or len(self.__airBurst)!=0): #Vaccum has finished, filling with air...
+                    self.fillAir()
                     self.air = True
                     if self.LINK["multi"]==2: #Is server
                         self.LINK["Broadcast"]("rbud",self.ID)
+    def __containsBubble(self,ID): #Returns true if the bubble is inside the list
+        for a in self.__airBurst:
+            if a[4]==ID:
+                return True
+        return False
     def fillAir(self): #Cancels all vacumes in the room (should only be used in multiplayer on clients)
         self.__vacumeAirlocks = []
-        self.__airBurst = []
+        rem = []
+        for a in self.__airBurst:
+            if a[4]==1:
+                rem.append(a)
+        for a in rem:
+            self.__airBurst.remove(a)
         self.__airDone = []
         self.__vacumeShortPath = ""
+    def __clearRadiation(self): #Clears all radiation bubbles (does not turn off radiation in the room)
+        rem = []
+        for a in self.__airBurst:
+            if a[4]==2:
+                rem.append(a)
+        for a in rem:
+            self.__airBurst.remove(a)
     def airBurst(self,startPos,path,airlock,door=None): #Air vacume
-        self.__airBurst.append([startPos,path+"/"+str(self.ID),3,airlock])
+        self.__airBurst.append([startPos,path+"/"+str(self.ID),3,airlock,1])
         if self.LINK["multi"]!=-1: #Is not a client
             if len(path)<len(self.__vacumeShortPath) or len(self.__vacumeShortPath)==0:
                 self.__vacumeShortPath = path+""
@@ -160,6 +237,15 @@ class Main(base.Main):
             if not door in self.__airDone and not door is None: #Door that air burst came from must not be visited again.
                 self.__airDone.append(door)
                 self.__airDone.append([airlock,door])
+    def radBurst(self,startPos): #Radiation leak
+        if not self.__containsBubble(2):
+            self.LINK["outputCommand"]("Radiation is flooding R"+str(self.number),(255,0,0))
+        self.__airBurst.append([startPos,"",3,None,2])
+        if self.LINK["multi"]!=-1: #Is not a client
+            if self.radiation: #Air bubble must be an instant one since the room doesen't have air in it
+                self.__airBurst[-1][2] = -1
+            elif self.LINK["multi"]==2: #Is server
+                self.LINK["Broadcast"]("rrub",self.ID,startPos)
     def SaveFile(self): #Give all infomation about this object ready to save to a file
         pows = []
         for i,a in enumerate(self.settings["power"]):
@@ -167,7 +253,7 @@ class Main(base.Main):
                 pows.append(a.ID)
             except:
                 self.LINK["errorDisplay"]("Saving power link "+str(i)+"(index) in room "+str(self.ID)+"(ID) failed.")
-        return ["room",self.ID,self.pos,self.size,self.settings["radiation"],pows]
+        return ["room",self.ID,self.pos,self.size,self.settings["radiation"],self.settings["scanable"],pows]
     def reloadSize(self): #Must be called when the room has changed size
         self.__drawSurf = pygame.Surface(self.size)
         self.__drawSurf.set_colorkey((0,0,0))
@@ -175,22 +261,41 @@ class Main(base.Main):
         self.pos = data[2]
         self.size = data[3]
         self.settings["radiation"] = data[4]
+        self.settings["scanable"] = data[5]
         self.reloadSize()
-        for a in data[5]:
+        for a in data[6]:
             if a in idRef:
                 self.settings["power"].append(idRef[a])
             else:
                 self.LINK["errorDisplay"]("Loading power link "+str(a)+"(ID) failed in room "+str(self.ID)+"(ID).")
+        if self.LINK["multi"]==-1: #In map editor
+            if not data[5]:
+                self.SCAN = 2
+    def afterLoad(self): #Link generators inside this room to the room
+        Ents = self.EntitiesInside()
+        GenObj = self.getEnt("generator")
+        for a in Ents:
+            if type(a)==GenObj:
+                if not a in self.settings["power"]:
+                    self.settings["power"].append(a)
+    def __ChangeScan(self,LINK,state):
+        self.settings["scanable"] = state==True
+        if state:
+            self.SCAN = 0
+        else:
+            self.SCAN = 2
     def rightInit(self,surf): #Initialize context menu for map designer
         self.__surface = pygame.Surface((210,145)) #Surface to render too
         self.__lastRenderPos = [0,0] #Last rendering position
         self.__but1 = self.LINK["screenLib"].Button(5,5,self.LINK,"Delete",lambda LINK: self.delete()) #Delete button
         self.__check1 = self.LINK["screenLib"].CheckButton(5,40,self.LINK,"Radiation leak",self.settings["radiation"],self.__ChangeRadiation) #Radiation checkbox
-        self.__but2 = self.LINK["screenLib"].Button(5,75,self.LINK,"Link to",self.__LinkTo)
-        self.__but3 = self.LINK["screenLib"].Button(5,110,self.LINK,"Unlink all",self.__UnlinkAll)
+        self.__check2 = self.LINK["screenLib"].CheckButton(5,75,self.LINK,"Scannable",self.settings["scanable"],self.__ChangeScan) #Scannable checkbox
+        self.__but2 = self.LINK["screenLib"].Button(5,110,self.LINK,"Link to",self.__LinkTo)
+        self.__but3 = self.LINK["screenLib"].Button(5,145,self.LINK,"Unlink all",self.__UnlinkAll)
     def rightLoop(self,mouse,kBuf): #Event loop for the widgets inside the context menu
         self.__but1.loop([mouse[0],mouse[1]-self.__lastRenderPos[0],mouse[2]-self.__lastRenderPos[1]]+mouse[3:],kBuf)
         self.__check1.loop([mouse[0],mouse[1]-self.__lastRenderPos[0],mouse[2]-self.__lastRenderPos[1]]+mouse[3:],kBuf)
+        self.__check2.loop([mouse[0],mouse[1]-self.__lastRenderPos[0],mouse[2]-self.__lastRenderPos[1]]+mouse[3:],kBuf)
         self.__but2.loop([mouse[0],mouse[1]-self.__lastRenderPos[0],mouse[2]-self.__lastRenderPos[1]]+mouse[3:],kBuf)
         self.__but3.loop([mouse[0],mouse[1]-self.__lastRenderPos[0],mouse[2]-self.__lastRenderPos[1]]+mouse[3:],kBuf)
     def rightRender(self,x,y,surf): #Render the context menu
@@ -207,6 +312,7 @@ class Main(base.Main):
         self.__surface.fill((0,0,0)) #Empty the context menu surface
         self.__but1.render(self.__but1.pos[0],self.__but1.pos[1],1,1,self.__surface) #Render delete button
         self.__check1.render(self.__check1.pos[0],self.__check1.pos[1],1,1,self.__surface) #Render checkbutton
+        self.__check2.render(self.__check2.pos[0],self.__check2.pos[1],1,1,self.__surface) #Render checkbutton
         self.__but2.render(self.__but2.pos[0],self.__but2.pos[1],1,1,self.__surface) #Render link button
         self.__but3.render(self.__but3.pos[0],self.__but3.pos[1],1,1,self.__surface) #Render unlink button
         surfSize = self.__surface.get_size() #Get the size of the context menu
@@ -223,6 +329,7 @@ class Main(base.Main):
         self.__but2 = None
         self.__but3 = None
         self.__check1 = None
+        self.__check2 = None
     def editMove(self,ents): #Room is being moved
         ins = self.findInsideOrNextTo(ents,[self])
         for ent in ins:
@@ -242,13 +349,29 @@ class Main(base.Main):
     def sRender(self,x,y,scale,surf=None,edit=False): #Render in scematic view
         if surf is None:
             surf = self.LINK["main"]
+        if self.SCAN!=0: #Draw scan lines on room
+            if self.SCAN==1: #Safe
+                col = (0,255,0)
+            elif self.SCAN==2: #Error
+                col = (255,255,0)
+            elif self.SCAN==3: #Bad
+                col = (255,0,0)
+            else: #Scan variable error
+                col = (255,255,255)
+            perc = (time.time()-int(time.time()))*2
+            if perc>1:
+                perc = 2-perc
+            pygame.draw.line(surf,col,[x+(self.size[0]*scale*perc),y],[x+(self.size[0]*scale*perc),y+(self.size[1]*scale)],int(3*scale))
+            pygame.draw.line(surf,col,[x,y+(self.size[1]*scale*perc)],[x+(self.size[0]*scale),y+(self.size[1]*scale*perc)],int(3*scale))
         if not edit:
             scrolPos = [(self.pos[0]*scale)-x,(self.pos[1]*scale)-y]
             self.__drawSurf.fill((0,0,0))
-            if self.air: #Render air bubbles
-                for a in self.__airBurst:
-                    if a[2]!=-1: #Air bubble is not an instant air bubble
+            for a in self.__airBurst:
+                if a[2]!=-1: #Air bubble is not an instant air bubble
+                    if a[4]==1: #Air bubble
                         pygame.draw.circle(self.__drawSurf,(255,255,255),[int(a[0][0]-self.pos[0]),int(a[0][1]-self.pos[1])],int(a[2]),3)
+                    else: #Radiation bubble
+                        pygame.draw.circle(self.__drawSurf,(255,0,0),[int(a[0][0]-self.pos[0]),int(a[0][1]-self.pos[1])],int(a[2]))
             surf.blit(pygame.transform.scale(self.__drawSurf,(int(self.size[0]*scale),int(self.size[1]*scale))),[int(x),int(y)])
         if (self.settings["radiation"] and edit) or self.radiation: #Draw slanting lines for radiation
             for i in range(-int(self.size[1]/25)+1,int(self.size[0]/25)):

@@ -9,11 +9,14 @@ class Main(base.Main):
         self.__model = random.randint(1,3) #What model to use for the scrap
         self.__sShow = True #Show in games scematic view
         self.__inRoom = False #Is true if the scrap is inside a room
-        self.size = [20,20]
+        self.size = [40,40]
         self.beingSucked = False #Make this entity suckable out of an airlock
         self.hintMessage = "Scrap is used to reward players, use it like coins."
     def SaveFile(self): #Give all infomation about this object ready to save to a file
         return ["scrap",self.ID,self.pos]
+    def deleting(self): #Called when this entity is being deleted
+        if self.LINK["multi"]==2: #Is server
+            self.LINK["serv"].SYNC.pop("e"+str(self.ID))
     def LoadFile(self,data,idRef): #Load from a file
         self.pos = data[2]
     def rightInit(self,surf): #Initialize context menu for map designer

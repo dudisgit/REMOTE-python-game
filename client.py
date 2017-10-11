@@ -94,6 +94,14 @@ class Client:
             raise
         else:
             self.failConnect = False
+    def getInfo(self): #Returns info about the receiving buffer
+        res = []
+        for a in self.__ReceiveBuffer:
+            if a is None:
+                res.append(False)
+            else:
+                res.append(len(a))
+        return self.__IDRec,res
     def loop(self):
         self.tcpLoop() #Process all receiving packets
         if time.time()>self.__UpdateTime:
@@ -135,7 +143,7 @@ class Client:
                 return 0
             else:
                 lis[path[0]] = {}
-        if type(lis[path[0]])==dict and len(path)!=-1:
+        if type(lis[path[0]])==dict and len(path)!=1:
             return self.getVariable(lis[path[0]],path[1:])
         else:
             return lis[path[0]]
@@ -143,7 +151,7 @@ class Client:
         if not path[0] in lis:
             if len(path)!=1:
                 lis[path[0]] = {}
-        if type(lis[path[0]])==dict:
+        if type(lis[path[0]])==dict and len(path)!=1:
             self.deleteVariable(lis[path[0]],path[1:])
         else:
             if path[0] in lis:
@@ -217,8 +225,11 @@ class Client:
             elif data[0][0]=="d": #Delete a variable
                 if len(data)==1:
                     return False
-                self.deleteVariable(self.SYNC,data[1:])
-                self.deleteVariable(self.__SYNCBefore,data[1:])
+                try:
+                    self.deleteVariable(self.SYNC,data[1:])
+                    self.deleteVariable(self.__SYNCBefore,data[1:])
+                except:
+                    print("Failed to delete variable path ",data[1:])
             elif data[0][0]=="s": #Change a variable
                 if len(data)<2:
                     return False

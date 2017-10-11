@@ -3,6 +3,7 @@ import pygame, time, random
 import entities.base as base
 
 RANDOM_DIE = 10 #Percentage change that the door will get destroyed when a room gets vacuumed
+PRY_DIE = 20 #Percentage change that the door will get gestroyed when its pried open
 
 class Main(base.Main):
     def __init__(self,x,y,LINK,ID,number=-1):
@@ -13,7 +14,7 @@ class Main(base.Main):
         self.settings["attack"] = True #Door is attackable
         self.settings["power"] = [] #Contains a list of generators the door is powered by
         self.settings["lr"] = True #This determines the direction of the door (Left right / Up down)
-        self.powered = True #If the door is powered on not
+        self.powered = False #If the door is powered on not
         self.trying = False #Is the door trying to close?
         self.__isVac = False #Is outisde the door a vacuum
         self.__sShow = True #Show in games scematic view
@@ -37,6 +38,11 @@ class Main(base.Main):
                 self.settings["power"].append(idRef[a])
             else:
                 self.LINK["errorDisplay"]("Loading power link "+str(a)+"(ID) failed in door "+str(self.ID)+"(ID).")
+    def pry(self): #Pry's open this door (used to display animation and open door)
+        if not self.settings["open"]: #Door is not open
+            if random.randint(0,100)<PRY_DIE: #Destroy the door if random chance is true
+                self.alive = False
+            self.settings["open"] = True #Open the door
     def afterLoad(self): #Called after the entity has loaded
         if self.LINK["multi"] != -1: #Is not loaded in map editor
             #This is for finding the connected rooms to this door
@@ -58,11 +64,13 @@ class Main(base.Main):
         self.settings["open"] = data["O"]
         self.trying = data["T"]
         self.alive = data["A"]
+        self.powered = data["P"]
     def GiveSync(self): #Returns the synced data for this drone
         res = {}
         res["O"] = self.settings["open"]
         res["T"] = self.trying
         res["A"] = self.alive
+        res["P"] = self.powered
         return res
     def loop2(self,lag): #This is "loop" but will apply actions to the door (single player/server, not client)
         if self.trying and self.powered:
@@ -77,6 +85,21 @@ class Main(base.Main):
                     self.LINK["outputCommand"]("Door "+str(self.number)+" has been destroyed due to outside exposure.",(255,0,0))
             elif self.room1.air and self.room2.air:
                 self.__isVac = False
+        self.powered = False #Make the door unpowered
+        if len(self.settings["power"])==0: #Check if either room is powered
+            if not self.room1 is None:
+                self.powered = self.room1.powered == True
+            if not self.room2 is None:
+                self.powered = self.powered or self.room2.powered
+        else: #Check all power connections if this door is powered
+            for a in self.settings["power"]:
+                if a.active:
+                    self.powered = True
+                    break
+        if not self.powered: #Is not powered, make sure the attempt closing animation is not ran
+            self.trying = False
+        if self.LINK["allPower"]:
+            self.powered = True
     def loop(self,lag):
         if self.LINK["multi"]==1: #Client
             self.SyncData(self.LINK["cli"].SYNC["e"+str(self.ID)])
@@ -232,10 +255,11 @@ class Main(base.Main):
                 pygame.draw.line(surf,(255,0,0),[x,y],[(self.room1.pos[0]*scale)-scrpos[0],(self.room1.pos[1]*scale)-scrpos[1]])
             if not self.room2 is None:
                 pygame.draw.line(surf,(255,0,0),[x,y],[(self.room2.pos[0]*scale)-scrpos[0],(self.room2.pos[1]*scale)-scrpos[1]])
-        if self.alive and not self.powered: #If the door is not powered
-            dead = "Power"
-        elif not self.alive:
-            dead = "Dead"
+        if not edit:
+            if self.alive and not self.powered: #If the door is not powered
+                dead = "Power"
+            elif not self.alive:
+                dead = "Dead"
         if self.settings["open"]: #Door is open
             if self.trying and (time.time()-int(time.time()))>0.5:
                 d = 20

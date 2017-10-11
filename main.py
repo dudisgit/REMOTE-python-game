@@ -50,7 +50,11 @@ LINK["controll"]["up"] = pygame.K_UP #Up arrow key
 LINK["controll"]["down"] = pygame.K_DOWN #Down arrow key
 LINK["controll"]["left"] = pygame.K_LEFT #Left arrow key
 LINK["controll"]["right"] = pygame.K_RIGHT #Right arrow key
+LINK["controll"]["escape"] = pygame.K_ESCAPE #Escaping key for closing menus
 LINK["mesh"] = {} #Used for fast entity discovery
+LINK["upgradeIDCount"] = 0 #ID count for upgrades
+LINK["scrapCollected"] = 0 #Amount of scrap colected
+LINK["allPower"] = True #Enable global power, a cheat for development
 LINK["multi"] = 0 #Is the game currently multiplayer, -1 = Map editor, 0 = Single player, 1 = Client, 2 = Server
 
 print("Loading content")
@@ -73,7 +77,6 @@ LINK["content"] = {}
 for a in files:
     if a[-4:]==".png":
         LINK["content"][a[:-4]] = pygame.image.load("content/"+a)
-        LINK["content"][a[:-4]].set_colorkey((0,0,0))
 LINK["cont"] = {} #This is used for storing "content" in LINK but is resized every frame.
 #Maps
 LINK["maps"] = os.listdir("maps")
@@ -123,16 +126,19 @@ print("Initilazing drones")
 LINK["drones"] = [] #Drone list of the players drones
 for i in range(0,3):
     LINK["drones"].append(LINK["ents"]["drone"].Main(i*60,0,LINK,-2-i,i+1))
-LINK["drones"][0].settings["upgrades"][0] = ["gather",0]
-LINK["drones"][0].settings["upgrades"][1] = ["motion",1]
-LINK["drones"][1].settings["upgrades"][0] = ["generator",0]
-LINK["drones"][2].settings["upgrades"][0] = ["interface",2]
-LINK["drones"][2].settings["upgrades"][1] = ["tow",0]
+LINK["drones"][0].settings["upgrades"][0] = ["motion",0,-1]
+LINK["drones"][0].settings["upgrades"][1] = ["stealth",1,-1]
+LINK["drones"][1].settings["upgrades"][0] = ["generator",0,-1]
+LINK["drones"][1].settings["upgrades"][1] = ["sensor",1,-1]
+LINK["drones"][2].settings["upgrades"][0] = ["interface",2,-1]
+LINK["drones"][2].settings["upgrades"][1] = ["tow",0,-1]
 LINK["drones"][0].loadUpgrades()
 LINK["drones"][1].loadUpgrades()
 LINK["drones"][2].loadUpgrades()
 LINK["shipEnt"] = LINK["ents"]["ship"].Main(0,0,LINK,-1)
-LINK["shipEnt"].upgrades = [LINK["shipUp"]["remote power"].Main(LINK)]
+LINK["shipEnt"].settings["upgrades"][0] = ["remote power",1,-1]
+LINK["shipEnt"].settings["upgrades"][1] = ["overload",2,-1]
+LINK["shipEnt"].loadUpgrades()
 
 if LINK["multi"]==1: #Client
     CLI = client.Client("127.0.1.1")

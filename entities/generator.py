@@ -1,6 +1,8 @@
 #Do not run this file, it is a module!
-import pygame
+import pygame, random
 import entities.base as base
+
+RANDOM_DIE = 30 #Percentage chance the generator will be destroyed when the room is vacuumed
 
 class Main(base.Main):
     def __init__(self,x,y,LINK,ID):
@@ -11,6 +13,8 @@ class Main(base.Main):
         self.linkable = ["power"] #A list of names that can connect to this entity
         self.__sShow = True #Show in games scematic view
         self.__inRoom = False #Is true if the generator is inside a room
+        self.__isVac = False #Used to detect changes in room pressure
+        self.__curRoom = None #Room the generator is in
         self.hintMessage = "A generator powers electronics around the ship and can be accessed using a drone or a ship upgrade. \nIt can power other stuff like doors, rooms, airlocks, etc"
     def __ChangeGod(self,LINK,state): #switches godmode on/off on the generator
         self.settings["god"] = state == True
@@ -19,8 +23,32 @@ class Main(base.Main):
     def LoadFile(self,data,idRef): #Load from a file
         self.pos = data[2]
         self.settings["god"] = data[3]
+    def afterLoad(self):
+        self.__curRoom = self.findPosition()
+    def SyncData(self,data): #Syncs the data with this drone
+        self.active = data["O"]
+        self.alive = data["A"]
+    def GiveSync(self): #Returns the synced data for this drone
+        res = {}
+        res["O"] = self.active
+        res["A"] = self.alive
+        return res
     def loop(self,lag):
-        pass
+        if self.LINK["multi"]==1: #Client
+            self.SyncData(self.LINK["cli"].SYNC["e"+str(self.ID)])
+        elif self.LINK["multi"]==2: #Server
+            self.LINK["serv"].SYNC["e"+str(self.ID)] = self.GiveSync()
+        if not self.alive:
+            self.active = False
+        if self.LINK["multi"]!=1: #Is not a client, single player or server
+            if self.__curRoom.air != self.__isVac:
+                self.__isVac = self.__curRoom.air == True
+                if not self.__isVac and random.randint(0,100)<RANDOM_DIE and not self.settings["god"]: #Destroy the generator
+                    self.alive = False
+                    self.active = False
+                    self.LINK["outputCommand"]("Generator in R"+str(self.__curRoom.number)+" has been destroyed due to outside exposure.",(255,0,0))
+            if self.LINK["allPower"]:
+                self.active = True
     def rightInit(self,surf): #Initialize context menu for map designer
         self.__surface = pygame.Surface((210,100)) #Surface to render too
         self.__lastRenderPos = [0,0] #Last rendering position
@@ -70,7 +98,9 @@ class Main(base.Main):
             else: #else a red.
                 surf.blit(self.getImage("generatorDead"),(x,y))
         else:
-            if self.active:
+            if not self.alive:
+                surf.blit(self.getImage("generatorDead"),(x,y))
+            elif self.active:
                 surf.blit(self.getImage("generatorOn"),(x,y))
             else:
                 surf.blit(self.getImage("generatorOff"),(x,y))

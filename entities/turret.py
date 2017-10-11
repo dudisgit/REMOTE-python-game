@@ -1,5 +1,5 @@
 #Do not run this file, it is a module!
-import pygame
+import pygame, random
 import entities.base as base
 
 class Main(base.Main):
@@ -10,6 +10,8 @@ class Main(base.Main):
         self.settings["power"] = [] #Contains a list of generators the turret is powered by
         self.settings["inter"] = [] #Contains a list of interfaces the turret is controlled by
         self.turretActive = False #Is the turret currently active
+        self.powered = False #Is this turret powered?
+        self.__activeChange = False #Used to detect changes in the turret being active
         self.__sShow = True #Show in games scematic view
         self.__inRoom = False #Is true if the turret is inside a room
         self.hintMessage = "A turret is a player controlled ship defence, the player can turn on/off turrets using an interface whilst the turret is powered. \nWhen active it will kill anything in the room (including the player)"
@@ -27,8 +29,60 @@ class Main(base.Main):
             except:
                 self.LINK["errorDisplay"]("Saving controll link "+str(i)+"(index) in turret "+str(self.ID)+"(ID) failed.")
         return ["turret",self.ID,self.pos,self.settings["god"],pows,ints]
+    def loop2(self,lag): #Ran on single player or server
+        self.powered = False #Make the turret unpowered
+        if len(self.settings["power"])==0: #Check if either room is powered
+            r = self.findPosition() #Get the position of this turret
+            if r!=-1 and type(r)==self.getEnt("room"): #Is the room valid?
+                self.powered = r.powered == True #Base turret's power on the room its in
+        else: #Check all power connections if this turret is powered
+            for a in self.settings["power"]: #Go through all generators this upgrade is linked to to find one that is active
+                if a.active:
+                    self.powered = True
+                    break
+        self.turretActive = False #Turret is active or not
+        for a in self.settings["inter"]:
+            if a.defence: #Interface is requesting this turret to turn on
+                self.turretActive = True
+                break
+        if self.turretActive and self.powered and self.alive: #Active turret
+            Rom = self.findPosition() #Get the room the turret is in
+            if Rom!=-1 and type(Rom)==self.getEnt("room"): #Position and room is valid
+                Ents = Rom.EntitiesInside() #Get all entities in the rooms
+                DroneObject = self.getEnt("drone") #Drone object
+                Ems = 0
+                for a in Ents: #Go through every entity in the room
+                    if (a.isNPC or type(a)==DroneObject) and a.alive: #Is an NPC or drone thats alive
+                        if a.health>0: #Health is still above 0
+                            if a.takeDamage(lag,"turret"):
+                                self.LINK["outputCommand"]("Turret in R"+str(Rom.number)+" has killed an object",(255,255,0))
+                        if type(a)==self.getEnt("swarm"): #Swarm NPC
+                            Ems += random.randint(25,35)
+                        else:
+                            Ems += 1
+                if not self.__activeChange: #The turrets first time turning on from its off state
+                    self.__activeChange = True
+                    if Ems==0:
+                        self.LINK["outputCommand"]("Turret in R"+str(Rom.number)+" activated",(0,255,0))
+                    else:
+                        self.LINK["outputCommand"]("Turret in R"+str(Rom.number)+" attacking "+str(Ems)+" objects",(255,255,0))
+        else:
+            self.__activeChange = False
+    def SyncData(self,data): #Syncs the data with this drone
+        self.turretActive = data["A"] == True
+        self.alive = data["L"] == True
+    def GiveSync(self): #Returns the synced data for this drone
+        res = {}
+        res["A"] = self.turretActive
+        res["L"] = self.alive
+        return res
     def loop(self,lag):
-        pass
+        if self.LINK["multi"]==1: #Client
+            self.SyncData(self.LINK["cli"].SYNC["e"+str(self.ID)])
+        elif self.LINK["multi"]==2: #Server
+            self.LINK["serv"].SYNC["e"+str(self.ID)] = self.GiveSync()
+        if self.LINK["multi"]!=1: #Is not client, single player or server
+            self.loop2(lag)
     def LoadFile(self,data,idRef): #Load from a file
         self.pos = data[2]
         self.settings["god"] = data[3]
@@ -40,6 +94,7 @@ class Main(base.Main):
         for a in data[5]:
             if a in idRef:
                 self.settings["inter"].append(idRef[a])
+                idRef[a].turrets.append(self)
             else:
                 self.LINK["errorDisplay"]("Loading interface link "+str(a)+"(ID) failed in turret "+str(self.ID)+"(ID).")
     def __ChangeGod(self,LINK,state): #switches godmode on the turret
@@ -136,7 +191,9 @@ class Main(base.Main):
             else:
                 surf.blit(self.getImage("turretDead"),(x,y))
         else:
-            if self.turretActive:
+            if not self.alive:
+                surf.blit(self.getImage("turretDead"),(x,y))
+            elif self.turretActive:
                 surf.blit(self.getImage("turretActive"),(x,y))
             else:
                 surf.blit(self.getImage("turret"),(x,y))

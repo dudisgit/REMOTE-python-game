@@ -1,6 +1,8 @@
 #Do not run this file, it is a module!
-import pygame
+import pygame, random
 import entities.base as base
+
+RANDOM_DIE = 30 #Percentage chance the generator will be destroyed when the room is vacuumed
 
 class Main(base.Main):
     def __init__(self,x,y,LINK,ID):
@@ -9,9 +11,13 @@ class Main(base.Main):
         self.settings["god"] = True #Interface is indestructable
         self.settings["scan"] = False #Is the interface allowed to scan a room
         self.settings["power"] = [] #Contains a list of generators the interface is powered by
+        self.turrets = [] #Turrets that are linked to this interface (appended by the turrets)
+        self.defence = False #Activate/deactivate defences
         self.linkable = ["inter"] #Make the interface accept link upgrades
         self.__sShow = True #Show in games scematic view
         self.__inRoom = False #Is true if the interface is inside a room
+        self.__isVac = False #Used to detect change in air pressure inside the current room
+        self.powered = False #Is this interface powered or not
         self.hintMessage = "An interface can be used to controll turrets or survey the ship. They must be powered and can be accessed using the interface upgrade on a drone."
     def SaveFile(self): #Give all infomation about this object ready to save to a file
         pows = []
@@ -21,8 +27,29 @@ class Main(base.Main):
             except:
                 self.LINK["errorDisplay"]("Saving power link "+str(i)+"(index) in interface "+str(self.ID)+"(ID) failed.")
         return ["interface",self.ID,self.pos,self.settings["god"],self.settings["scan"],pows]
-    def loop(self,lag):
+    def toggleDefence(self): #Toggle defences on/off
+        self.defence = not self.defence
+    def scanShip(self): #Scans all the ships rooms, like a survayor
         pass
+    def afterLoad(self):
+        self.__curRoom = self.findPosition()
+    def loop2(self,lag): #Ran if single player or server
+        self.powered = False #Make the interface unpowered
+        if len(self.settings["power"])==0: #Check if either room is powered
+            self.powered = self.__curRoom.powered == True #Base interface's power on the room its in
+        else: #Check all power connections if this interface is powered
+            for a in self.settings["power"]: #Go through all generators this upgrade is linked to to find one that is active
+                if a.active:
+                    self.powered = True
+                    break
+        if self.__curRoom.air != self.__isVac:
+            self.__isVac = self.__curRoom.air == True
+            if not self.__isVac and random.randint(0,100)<RANDOM_DIE and not self.settings["god"]: #Destroy the generator
+                self.alive = False
+                self.LINK["outputCommand"]("Interface in R"+str(self.__curRoom.number)+" has been destroyed due to outside exposure.",(255,0,0))
+    def loop(self,lag):
+        if self.LINK["multi"]!=1: #Single player or server
+            self.loop2(lag)
     def LoadFile(self,data,idRef): #Load from a file
         self.pos = data[2]
         self.settings["god"] = data[3]
@@ -113,6 +140,9 @@ class Main(base.Main):
             else:
                 surf.blit(self.getImage("interfaceDead"),(x,y))
         else:
-            surf.blit(self.getImage("interface"),(x,y))
+            if self.alive:
+                surf.blit(self.getImage("interface"),(x,y))
+            else:
+                surf.blit(self.getImage("interfaceDead"),(x,y))
         if self.HINT:
             self.renderHint(surf,self.hintMessage,[x,y])

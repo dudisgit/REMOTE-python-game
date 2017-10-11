@@ -1,12 +1,14 @@
 #Main screen for drones
 import pygame, time, pickle, sys, socket
 
+VERSION = 0.1
+
 SCROLL_SPEED = 2 #Scematic scroll speed
 CONSOLE_SIZE = [440,205] #Size of the console
 DRONE_VIEW_SCALE = 3 #Drone view zoom in
 DEF_RES = [1000,700] #Default reslution, this will be used to scale up the screen if required
 MESH_BLOCK_SIZE = 125 #Size of a single mesh block
-DEFAULT_COMMANDS = ["navigate","open","close","say","name","dock"] #Default commands other than upgrade ones
+DEFAULT_COMMANDS = ["navigate","open","close","say","name","dock","swap"] #Default commands other than upgrade ones
 
 def getMapMash(MAP): #Gets the map hash for the specific map
     file = open("maps/"+MAP,"rb")
@@ -32,7 +34,28 @@ class GameEventHandle: #Used to simulate and handle the events of the game world
         self.drones = LINK["drones"] #All the drones used
         self.ship = LINK["shipEnt"] #The main ship of the map
         self.Mesh = {} #Used to speed up entitiy discovery, this is a 2D dictionary
+        self.__IDMAX = -1
         LINK["mesh"] = self.Mesh #Set the global MESH to this classes one.
+        LINK["create"] = self.createEnt #Create a new entity
+        LINK["IDref"] = self.Ref
+    def createEnt(self,name,pos,*args): #Creates a new entity
+        if name in self.__LINK["ents"]:
+            if self.__LINK["multi"]==1: #Is a client
+                self.Map.append(self.__LINK["ents"][name].Main(pos[0],pos[1],self.__LINK,args[0],*tuple(args[1:])))
+                ID = args[0]+0
+            else:
+                self.Map.append(self.__LINK["ents"][name].Main(pos[0],pos[1],self.__LINK,self.__IDMAX+0,*tuple(args)))
+                ID = self.__IDMAX+0
+            self.IDLINK[ID] = self.Map[-1]
+            self.addToMesh(self.Map[-1])
+            self.Map[-1].afterLoad()
+            if self.__LINK["multi"]==2: #Is a server
+                for a in self.__LINK["serv"].users:
+                    self.__LINK["serv"].users[a].sendTrigger("mke",name,pos,self.__IDMAX+0,*tuple(args))
+            self.__IDMAX += 1
+            return self.Map[-1]
+        else:
+            self.__LINK["errorDisplay"]("Couln't create entity '"+name+"' because it doesen't exist!")
     def scanMESH(self): #Will scan the whole mesh for entities that shouldn't exist!
         for a in self.Mesh:
             for b in self.Mesh[a]:
@@ -96,6 +119,7 @@ class GameEventHandle: #Used to simulate and handle the events of the game world
         doorCount = 1 #Counting doors
         airCount = 1 #Counting airlocks
         roomCount = 2 #Counting rooms
+        self.__IDMAX = data[0]+0
         for a in data[1:]:
             if a[0]=="door": #Entity is a door
                 self.Map.append(self.getEnt(a[0])(a[2][0],a[2][1],self.__LINK,a[1]+0,doorCount+0))
@@ -116,6 +140,7 @@ class GameEventHandle: #Used to simulate and handle the events of the game world
                 self.Ref[a[0]] = []
             self.Ref[a[0]].append(self.Map[-1]) #Add the entitiy to a list of ones its same type.
         defaultAir = None #The default airlock found.
+        self.__LINK["IDref"] = self.Ref
         for i,a in enumerate(data[1:]): #Load all the etities settings
             try:
                 self.Map[i].LoadFile(a,self.IDLINK)
@@ -128,6 +153,7 @@ class GameEventHandle: #Used to simulate and handle the events of the game world
         self.__LINK["mesh"] = self.Mesh #Link the new MESH to the global one
         for a in self.Map: #Used to load content after the map has loaded sucsessfuly (e.g. special connections)
             a.afterLoad()
+        self.__LINK["scrapCollected"] = 0 #Amount of scrap colected
         if self.__LINK["multi"] != 1: #Is not a client
             if defaultAir is None:
                 self.__LINK["log"]("There is no default airlock, finding one...")
@@ -153,7 +179,7 @@ class GameEventHandle: #Used to simulate and handle the events of the game world
                 self.IDLINK[a.ID] = a
                 if self.__LINK["multi"] == 2: #Is server
                     self.__LINK["serv"].SYNC["e"+str(a.ID)] = a.GiveSync()
-        else:
+        else: #Is a client
             self.drones = [] #Servers drones
             for i in range(2,6):
                 if 0-i in self.IDLINK:
@@ -163,6 +189,7 @@ class GameEventHandle: #Used to simulate and handle the events of the game world
             self.ship = self.IDLINK[-1] #Servers ship
             self.ship.room = self.IDLINK[-6] #Set the ships room to the servers one
         file.close()
+        self.__LINK["shipEnt"] = self.ship
         self.__LINK["mesh"] = self.Mesh #Link the new MESH to the global one
         self.__LINK["log"]("Opened file sucsessfuly!")
     def doCommand(self,text,drone,usrObj=None): #Will execute a command and return the text the command outputs
@@ -171,22 +198,18 @@ class GameEventHandle: #Used to simulate and handle the events of the game world
         spl = text.split(" ")
         if len(text)==0:
             return out,col
-        if text[0]=="d" and spl[0]!="dock": #Open/close a door
+        if text[0]=="d" and (text[1:].isnumeric() or len(text)==1): #Open/close a door
             gt = text[1:]
             if len(gt)==0:
                 out = "No door number entered"
-            elif not gt.isnumeric():
-                out = "Expected a door NUMBER"
             elif not text in self.Ref:
                 out = "No such door"
             else:
                 out = self.Ref[text].toggle()
-        elif text[0]=="a": #Open/close an airlock
+        elif text[0]=="a" and (text[1:].isnumeric() or len(text)==1): #Open/close an airlock
             gt = text[1:]
             if len(gt)==0:
                 out = "No airlock number entered"
-            elif not gt.isnumeric():
-                out = "Expected an airlock NUMBER"
             elif not text in self.Ref:
                 out = "No such airlock"
             else:
@@ -247,19 +270,23 @@ class GameEventHandle: #Used to simulate and handle the events of the game world
                 elif len(spl)==2 and drone==-1: #If using quick navigating, there is an active drone feed
                     out = "Not on an active drone"
                 else:
-                    if len(spl)==2: #Move a drones to a place
+                    if len(spl)==2: #Move a drone to a place
                         if drone<0 or drone>=len(self.drones): #Drone doesen't exist
                             out = "No such drone"
                         else:
-                            if self.drones[drone].pathTo(self.Ref[spl[-1]]): #Move a drone to the room
-                                out = "Navigating drone "+str(drone+1)+" to "+spl[-1]
-                                col = (0,255,0)
+                            if self.drones[drone].alive:
+                                if self.drones[drone].pathTo(self.Ref[spl[-1]]): #Move a drone to the room
+                                    out = "Navigating drone "+str(drone+1)+" to "+spl[-1]
+                                    col = (0,255,0)
+                                else:
+                                    out = "Room obstructed"
                             else:
-                                out = "Room obstructed"
+                                out = "Drone is disabled"
                     elif spl[1]=="all": #Navigate all drones to a room
                         fail = False
                         for a in self.drones:
-                            fail = fail or not a.pathTo(self.Ref[spl[-1]])
+                            if a.alive:
+                                fail = fail or not a.pathTo(self.Ref[spl[-1]])
                         if fail:
                             out = "Navigating all drones to "+spl[-1]+", although some are obstructed"
                         else:
@@ -279,8 +306,9 @@ class GameEventHandle: #Used to simulate and handle the events of the game world
                             drs = ""
                             for a in spl[1:-1]:
                                 if a!="":
-                                    fail = fail or not self.drones[int(a)-1].pathTo(self.Ref[spl[-1]])
-                                    drs+=a+" "
+                                    if self.drones[int(a)-1].alive:
+                                        fail = fail or not self.drones[int(a)-1].pathTo(self.Ref[spl[-1]])
+                                        drs+=a+" "
                             if fail:
                                 out = "Navigating drones "+drs+"to "+spl[-1]+" although some are obstructed"
                             else:
@@ -300,6 +328,39 @@ class GameEventHandle: #Used to simulate and handle the events of the game world
                 if self.__LINK["multi"]==2: #Is server
                     for a in self.__LINK["serv"].users:
                         self.__LINK["serv"].users[a].sendTrigger("dock",spl[1])
+        elif len(spl)!=0: #Process the command as an upgrade
+            if drone<0 or drone>=len(self.drones): #In scematic view
+                for drone in self.drones+[self.ship]:
+                    reason = None
+                    if drone.alive:
+                        for upgrade in drone.upgrades+drone.PERM_UPG:
+                            if spl[0] in upgrade.caller: #Command belongs to upgrade
+                                reason = upgrade.commandAllowed(text) #Is command valid or not according to the upgrade?
+                                if reason==True: #Execute the upgrade command
+                                    out = upgrade.doCommand(text,usrObj)
+                                    col = (0,255,0)
+                                    break
+                                elif type(reason)==str:
+                                    out = reason+""
+                    if reason == True:
+                        break
+            else:
+                if self.drones[drone].alive:
+                    for upgrade in self.drones[drone].upgrades+self.drones[drone].PERM_UPG:
+                        if spl[0] in upgrade.caller: #Command belongs to upgrade
+                            reason = upgrade.commandAllowed(text) #Is command valid or not according to the upgrade?
+                            if reason==True: #Execute the upgrade command
+                                out = upgrade.doCommand(text,usrObj)
+                                if type(out)!=str:
+                                    out = "NOMES"
+                                col = (0,255,0)
+                                break
+                            elif type(reason)==str:
+                                out = reason+""
+                    if out=="NOMES" and usrObj is None:
+                        out = ""
+                else:
+                    out = "Drone is disabled"
         return out,col
 
 class Main: #Used as the screen object for rendering and interaction
@@ -321,6 +382,9 @@ class Main: #Used as the screen object for rendering and interaction
         self.__typing = "" #The current typing text
         self.__typingOut = "" #The displayed output text for the typing text (used for hinting)
         self.__backPress = -1 # The time to press the backspace button again
+        self.force = [] #A list of functions to call so the user has no controll until the functions say so, if empty then normal user controll is enabled
+        self.__fChange = 0 #Used to detect changes in size inside the "force" list
+        self.__LINK["force"] = self.force #Make it so everything can access this
         self.currentDrone = None #A reference to the currently selected drone
         if LINK["multi"] == 1: #Client to server
             self.__LINK["cli"].TRIGGER["dsnd"] = self.downLoadingMap #Downloading map function
@@ -330,7 +394,10 @@ class Main: #Used as the screen object for rendering and interaction
             self.__LINK["cli"].TRIGGER["dock"] = self.__clientDock #Ship has docked to an airlock
             self.__LINK["cli"].TRIGGER["del"] = self.__rmEnt #Remove entity
             self.__LINK["cli"].TRIGGER["rbub"] = self.__mkBubble #Create a visual bubble in a room
+            self.__LINK["cli"].TRIGGER["rrub"] = self.__mkRad #Create a visual radiation bubble in a room
             self.__LINK["cli"].TRIGGER["rbud"] = self.__dlBubble #Remove all visual bubbles in a room
+            self.__LINK["cli"].TRIGGER["cupg"] = self.__callUpgrade #Call an upgrade on a drone to work client-side (not recomended but used for menu's)
+            self.__LINK["cli"].TRIGGER["mke"] = self.__Event.createEnt #Create a new entity in the map
             self.name = socket.gethostbyname(socket.gethostname())
             self.IP = nameIP(self.name)
             mapLoading = True
@@ -339,8 +406,15 @@ class Main: #Used as the screen object for rendering and interaction
         self.__LINK["outputCommand"] = self.putLine #So other entiteis can output to their tab
     def changeName(self,nam):
         self.name=nam
+    def __callUpgrade(self,droneID,upgradeName,*args): #This is used to call functions on specific upgrades on drones (client-side)
+        for a in self.__Event.IDLINK[droneID].upgrades+self.__Event.IDLINK[droneID].PERM_UPG:
+            if a.name==upgradeName: #Found the upgrade
+                a.clientCall(*tuple(args))
+                break
     def __mkBubble(self,ID,pos): #Creates a vacuum bubble in a room requested by the server
         self.__Event.IDLINK[ID].airBurst(pos,"",-1)
+    def __mkRad(self,ID,pos): #Creates a radiation bubble in the room requested by the server
+        self.__Event.IDLINK[ID].radBurst(pos)
     def __dlBubble(self,ID): #Remove all vacuum bubbles in a room requested by the server
         self.__Event.IDLINK[ID].fillAir()
     def __rmEnt(self,ID): #Removes an entitiy requested by the server
@@ -369,17 +443,20 @@ class Main: #Used as the screen object for rendering and interaction
             return self.__HoldKeys[key]
         return False
     def goToDrone(self,number): #Goto a specific drone number view
-        if number>len(self.__Event.drones) or number<=0: #Drone doesen't exist
+        droneNums = {}
+        for a in self.__Event.drones:
+            droneNums[a.number] = a
+        if not number in droneNums: #Drone doesen't exist
             self.putLine("No such drone "+str(number),(255,255,0))
         else: #Drone exists
-            self.currentDrone = self.__Event.drones[number-1] #Set the current drone object to the one specified
+            self.currentDrone = droneNums[number] #Set the current drone object to the one specified
             self.scematic = False #Is not viewing in scematic view
             self.__command.activeTab = number-1 #Switch to the specific tab of the drone
     def putLine(self,tex,col,Tab=None): #Adds a line to the current command line
         if Tab is None:
             TB = None
         elif type(Tab) != int:
-            TB = self.__Event.drones.index(Tab)
+            TB = Tab.number-1
         else:
             TB = Tab
         self.__command.replaceLast(tex,col,TB)
@@ -391,10 +468,13 @@ class Main: #Used as the screen object for rendering and interaction
         if command=="":
             return 0
         if self.__LINK["multi"]==1: #Send the command to the server to process
-            if self.currentDrone is None:
-                self.__LINK["cli"].sendTrigger("com",command,-1)
+            if len(command)>175: #Max text limit for text
+                self.putLine("Gone over max text limit",(255,255,255))
             else:
-                self.__LINK["cli"].sendTrigger("com",command,self.__Event.drones.index(self.currentDrone))
+                if self.currentDrone is None:
+                    self.__LINK["cli"].sendTrigger("com",command,-1)
+                else:
+                    self.__LINK["cli"].sendTrigger("com",command,self.__Event.drones.index(self.currentDrone))
         else:
             self.__command.replaceLast(">"+self.__typing)  
             if self.currentDrone is None:
@@ -419,36 +499,66 @@ class Main: #Used as the screen object for rendering and interaction
             if self.__isAtStart(self.__typing,a):
                 self.__typingOut = self.__typing+a[len(self.__typing):].upper()
                 break
-        else: #No matching command found
-            self.__typingOut = self.__typing+""
+        else: #No matching default command found
+            self.__typingOut = ""
+            if self.currentDrone is None: #Search all drones and ship upgrades
+                for d in self.__Event.drones+[self.__Event.ship]: #Go through every drone and the ship
+                    for a in d.upgrades: #Go through all upgrades on the entity
+                        for b in a.caller: #Loop through all the names it the upgrade can be called by
+                            if self.__isAtStart(self.__typing,b): #Should show a hint?
+                                self.__typingOut = self.__typing+b[len(self.__typing):].upper()
+                                break
+                        if self.__typingOut!="":
+                            break
+                    if self.__typingOut!="":
+                        break
+            else: #Search active drone for hints
+                for a in self.currentDrone.upgrades: #Loop through all the drones upgades
+                    for b in a.caller: #Loop throguh all the commands that can be called for this upgade
+                        if self.__isAtStart(self.__typing,b): #Should show a hint?
+                            self.__typingOut = self.__typing+b[len(self.__typing):].upper()
+                            break
+                    if self.__typingOut!="":
+                        break
+            if self.__typingOut == "":
+                self.__typingOut = self.__typing+""
     def loop(self,mouse,kBuf,lag): #Constant loop
         global start
-        for event in kBuf: #Loop through keyboard event loops
-            if event.type == pygame.KEYDOWN:
-                self.__HoldKeys[event.key] = True
-                if event.key >= 48 and event.key <=57 and len(self.__typing)==0: #Key is a number
-                    self.goToDrone(int(chr(event.key)))
-                elif event.key == pygame.K_SPACE and len(self.__typing)==0: #Exit out of scematic view
-                    self.scematic = True
-                    self.currentDrone = None
-                    self.__command.activeTab = len(self.__command.tabs)-1 #Goto the ships command line
-                elif event.key >= 32 and event.key <= 126: #A key was pressed down for typing
-                    self.__typing += chr(event.key)
-                    self.__hintTyping()
-                elif event.key == pygame.K_BACKSPACE: #Backspace
-                    self.__typing = self.__typing[:-1]
-                    self.__backPress = time.time()+0.4
-                    self.__hintTyping()
-                elif event.key == pygame.K_TAB: #Tab key, auto fill hint
-                    if len(self.__typingOut)!=len(self.__typing):
-                        self.__typing = self.__typingOut.lower()+" "
-                        self.__typingOut = self.__typingOut.lower()+" "
-                elif event.key == pygame.K_RETURN: #Enter button was pressed
-                    self.doCommand(self.__typing)
-                    self.__typing = ""
-                    self.__typingOut = ""
-            elif event.type == pygame.KEYUP:
-                self.__HoldKeys[event.key] = False
+        if len(self.force)!=0: #A force function has taken over (e.g. swap menu)
+            if len(self.force)!=self.__fChange: #Force has just started
+                self.__fChange = len(self.force)
+                for a in self.__HoldKeys: #Stop all holding keys
+                    self.__HoldKeys[a] = False
+            for a in self.force:
+                a[1](mouse,kBuf,lag)
+        else: #Run normaly
+            self.__fChange = 0
+            for event in kBuf: #Loop through keyboard event loops
+                if event.type == pygame.KEYDOWN:
+                    self.__HoldKeys[event.key] = True
+                    if event.key >= 48 and event.key <=57 and len(self.__typing)==0: #Key is a number
+                        self.goToDrone(int(chr(event.key)))
+                    elif event.key == pygame.K_SPACE and len(self.__typing)==0: #Exit out of scematic view
+                        self.scematic = True
+                        self.currentDrone = None
+                        self.__command.activeTab = len(self.__command.tabs)-1 #Goto the ships command line
+                    elif event.key >= 32 and event.key <= 126: #A key was pressed down for typing
+                        self.__typing += chr(event.key)
+                        self.__hintTyping()
+                    elif event.key == pygame.K_BACKSPACE: #Backspace
+                        self.__typing = self.__typing[:-1]
+                        self.__backPress = time.time()+0.4
+                        self.__hintTyping()
+                    elif event.key == pygame.K_TAB: #Tab key, auto fill hint
+                        if len(self.__typingOut)!=len(self.__typing):
+                            self.__typing = self.__typingOut.lower()+" "
+                            self.__typingOut = self.__typingOut.lower()+" "
+                    elif event.key == pygame.K_RETURN: #Enter button was pressed
+                        self.doCommand(self.__typing)
+                        self.__typing = ""
+                        self.__typingOut = ""
+                elif event.type == pygame.KEYUP:
+                    self.__HoldKeys[event.key] = False
         if self.mapLoaded:
             self.reloadCommandline()
         if (time.time()-int(time.time()))*2%1<0.5 or len(self.__typing)!=len(self.__typingOut):
@@ -479,9 +589,9 @@ class Main: #Used as the screen object for rendering and interaction
                 self.reloadCommandline()
             else:
                 if self.__isKeyDown(self.__LINK["controll"]["up"]):
-                    self.currentDrone.go(lag*2)
+                    self.currentDrone.go(lag)
                 if self.__isKeyDown(self.__LINK["controll"]["down"]):
-                    self.currentDrone.go(-2*lag)
+                    self.currentDrone.go(-1*lag)
                 if self.__isKeyDown(self.__LINK["controll"]["left"]):
                     self.currentDrone.turn(lag*4)
                 if self.__isKeyDown(self.__LINK["controll"]["right"]):
@@ -489,13 +599,19 @@ class Main: #Used as the screen object for rendering and interaction
         if not self.__Event is None:
             self.__Event.loop()
     def reloadCommandline(self): #Reloads all the drone/ship upgrades and infomation to the command line
-        for i,a in enumerate(self.__Event.drones):
-            if a.settings["health"]<=0:
-                self.__command.settings(i,1,a.beingAttacked,a.upgrades)
-            else:
-                self.__command.settings(i,0,a.beingAttacked,a.upgrades)
+        droneNums = []
+        for a in self.__Event.drones:
+            droneNums.append(a.number)
+        i2 = 0
         for i in range(0,len(self.__command.tabs)-1):
-            if i>=len(self.__Event.drones):
+            if i+1 in droneNums:
+                a = self.__Event.drones[i2]
+                i2+=1
+                if a.settings["health"]<=0 or not a.alive:
+                    self.__command.settings(i,1,a.beingAttacked,a.upgrades)
+                else:
+                    self.__command.settings(i,0,a.beingAttacked,a.upgrades)
+            else:
                 self.__command.settings(i,2)
         self.__command.settings(len(self.__command.tabs)-1,0,False,self.__LINK["shipEnt"].upgrades)
     def getEnt(self,name): #Returns the entity with the name
@@ -505,7 +621,7 @@ class Main: #Used as the screen object for rendering and interaction
             self.__LINK["errorDisplay"]("Tried to create entity but doesen't exist '"+name+"'")
         return self.__LINK["null"]
     def downLoadingMap(self,LN): #Function called to save a peaice of the map
-        print("GOT,",LN)
+        print("GOT,",LN) #TEMPORY
         self.__DOWNLOAD.append(LN) #Add the downloading map to the buffer
     def finishSYNC(self): #Finished downloading SYNC and possibly the map
         if len(self.__DOWNLOAD)!=0:
@@ -515,13 +631,18 @@ class Main: #Used as the screen object for rendering and interaction
             file.close()
             self.__DOWNLOAD = []
             self.open("SERVER_MAP.map")
+            if self.__LINK["cli"].SYNC["V"]!=VERSION:
+                if self.__LINK["cli"].SYNC["V"]>VERSION:
+                    self.__LINK["errorDisplay"]("Server has a more updated version than you ("+str(self.__LINK["cli"].SYNC["V"]))
+                else:
+                    self.__LINK["errorDisplay"]("You have a more updated version than the server ("+str(self.__LINK["cli"].SYNC["V"]))
     def open(self,name): #Opens a map
         self.__Event.open(name)
         self.__renderFunc.ents = self.__Event.Map
         self.__scemPos = [self.__Event.ship.pos[0]-(self.__LINK["reslution"][0]/2),self.__Event.ship.pos[1]-(self.__LINK["reslution"][1]/2)] #Start the scematic position at the ships position
         self.__command.activeTab = len(self.__Event.drones)
         for i,a in enumerate(self.__Event.drones):
-            self.__command.tabs.insert(i,["DRONE-"+str(i+1),[[">",[255,255,255]]],0,[],False])
+            self.__command.tabs.insert(i,["DRONE-"+str(i+1),[[">",[255,255,255]]],0,[],False,a])
         self.reloadCommandline()
         self.mapLoaded = True
         self.mapLoading = False
@@ -538,4 +659,8 @@ class Main: #Used as the screen object for rendering and interaction
             if self.__LINK["DEVDIS"]:
                 self.__LINK["render"].drawDevMesh(drpos[0]-(self.__LINK["reslution"][0]/2)+(25*scale),drpos[1]-(self.__LINK["reslution"][1]/2)+(25*scale),DRONE_VIEW_SCALE*scale,surf,self.__LINK) #DEVELOPMENT
             self.__renderFunc.render(drpos[0]-(self.__LINK["reslution"][0]/2)+(25*scale),drpos[1]-(self.__LINK["reslution"][1]/2)+(25*scale),DRONE_VIEW_SCALE*scale,surf) #Render the map through drone view.
+        if self.__LINK["DEVDIS"]:
+            self.__LINK["render"].drawConnection(10,10,surf,self.__LINK)
         self.__command.render(self.__reslution[0]-CONSOLE_SIZE[0]-20,self.__reslution[1]-CONSOLE_SIZE[1]-20,CONSOLE_SIZE[0],CONSOLE_SIZE[1],surf) #Render command line
+        for a in self.force:
+            a[2](surf,list(surf.get_size()))

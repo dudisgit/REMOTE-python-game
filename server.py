@@ -1,6 +1,7 @@
 import socket,select,pickle,time,render, os, importlib, sys
 import entities.base as base
 
+VERSION = 0.1 #Version number, used so clients with incorrect versions cannot connect
 
 TCP_port = 3746 #Port for serious data transfer, e.g. chat messages
 TCP_BUF_SIZE = 4046 #Receiving buffer size
@@ -50,6 +51,10 @@ class Player: #Class used to store a player
             self.ReceiveBuffer.append(None)
             self.SendingBuffer.append(None)
         self.ping = 0 #The current ping for the user
+    def getIDSend(self): #Returns the value of IDSend, used for debugging
+        return self.__IDSend +0
+    def getBufs(self): #Returns the value of the lengths of both buffers for debugging
+        return len(self.__buffer),len(self.__buffer2)
     def sendTrigger(self,funcName,*args): #Call a function on the client
         self.__buffer.append([["t"+funcName]+list(args)])
     def receivedPing(self): #Called when the user sent a message back because of a ping
@@ -88,7 +93,7 @@ class Player: #Class used to store a player
                 sending = [self.__IDSend] #Packet to send to the client
                 rem = [] #Data to remove from the buffer
                 for a in self.__buffer: #Loop through the buffer and send only what we should fit in a packet.
-                    if len(pickle.dumps(sending+[a]))<MAX_PACKET or len(sending)==0: #Can add the data without the packet going over a limit
+                    if len(pickle.dumps(sending+[a]))<MAX_PACKET or len(sending)==1: #Can add the data without the packet going over a limit
                         rem.append(a) #Mark the data to be removed from the buffe
                         sending.append(a) #Add the a list, ready to be sent to the client
                         if type(a)==str:
@@ -295,8 +300,14 @@ class Server: #Class for a server
         if time.time()>self.__UpdateFrequent:
             self.__UpdateFrequent = time.time()+FREQUENT_TIME
             msg = []
+            rem = [] #Remove invalid variables
             for a in self.__frequent:
-                msg.append(["s",self.getValue(a,self.SYNC)]+a)
+                try:
+                    msg.append(["s",self.getValue(a,self.SYNC)]+a)
+                except:
+                    rem.append(a)
+            for a in rem:
+                self.__frequent.remove(a)
             for a in self.users:
                 self.users[a].sendTCP(msg)
     def close(self): #Closes all sockets
@@ -310,7 +321,7 @@ class Server: #Class for a server
                 return None
             else:
                 lis[path[0]] = {}
-        if type(lis[path[0]])==dict and len(path)!=-1:
+        if type(lis[path[0]])==dict and len(path)!=1:
             self.setVariable(lis[path[0]],path[1:],value)
         else:
             lis[path[0]] = value
@@ -318,7 +329,7 @@ class Server: #Class for a server
         if not path[0] in lis:
             if len(path)!=1:
                 lis[path[0]] = {}
-        if type(lis[path[0]])==dict:
+        if type(lis[path[0]])==dict and len(path)!=1:
             self.deleteVariable(lis[path[0]],path[1:])
         else:
             if path[0] in lis:
@@ -366,7 +377,10 @@ class Server: #Class for a server
             self.users[pname].receivedResend(data[1]) #Resend the packet to the user (without using tick-rate)
         else:
             for a in data:
-                self.doCommand(a,sock,tcpSent)
+                try:
+                    self.doCommand(a,sock,tcpSent)
+                except:
+                    print("FAIL PACKET ",a)
     def loop(self): #Must be called continualy
         self.loopTCP() #Process all incoming packets
         self.detectAndApplySYNC() #Process all outgoing packets (due to variable changes)
@@ -474,14 +488,18 @@ class NULLENT(base.Main): #Null entity for keeping the game running when an enti
         pass
     def sRender(self,x,y,scale,surf=None,edit=False):
         self.renderHint(surf,"Null entity, please remove.",[x,y])
-def loadLINK(): #Loads all content
+def loadLINK(serv): #Loads all content
     LINK = {} #This is a global variable for allowing controll over the whole program through one variable. Every class in this program should have a link to this!
     LINK["errorDisplay"] = ERROR #Used to show errors
+    LINK["serv"] = serv
     LINK["reslution"] = [1000,700] #Reslution of the game
-    LINK["DEV"] = True #Development mode, this will stop the game when errors occur.
+    LINK["DEV"] = False #Development mode, this will stop the game when errors occur.
+    LINK["allPower"] = False #Cheat to enable power to all doors, used for development
     LINK["render"] = render #Used so other scripts can use its tools for rendering
     LINK["log"] = ADDLOG #Used to log infomation (not seen in game unless developer console is turned on)
     LINK["mesh"] = {} #Used for fast entity discovery
+    LINK["upgradeIDCount"] = 0 #Upgrade ID Count
+    LINK["multi"] = 2 #Running as server
     #Screens
     files = os.listdir("screens")
     LINK["screens"] = {}
@@ -503,7 +521,7 @@ def loadLINK(): #Loads all content
             itm = importlib.import_module("upgrades."+a[:-3])
             if a=="base.py":
                 LINK["upgrade"][a[:-3]] = itm
-            elif itm.Main(LINK).droneUpgrade:
+            elif itm.Main(LINK,-1).droneUpgrade:
                 LINK["upgrade"][a[:-3]] = itm
             else:
                 LINK["shipUp"][a[:-3]] = itm
@@ -511,24 +529,38 @@ def loadLINK(): #Loads all content
     LINK["drones"] = [] #Drone list of the players drones
     for i in range(0,3):
         LINK["drones"].append(LINK["ents"]["drone"].Main(i*60,0,LINK,-2-i,i+1))
+    LINK["drones"][0].settings["upgrades"][0] = ["generator",0,-1]
+    LINK["drones"][0].settings["upgrades"][1] = ["stealth",2,-1]
+    LINK["drones"][0].settings["upgrades"][2] = ["speed",1,-1]
+    LINK["drones"][1].settings["upgrades"][0] = ["pry",0,-1]
+    LINK["drones"][1].settings["upgrades"][1] = ["motion",1,-1]
+    LINK["drones"][1].settings["upgrades"][2] = ["tow",0,-1]
+    LINK["drones"][0].loadUpgrades() #Tempory
+    LINK["drones"][1].loadUpgrades() #Tempory
+    
     LINK["shipEnt"] = LINK["ents"]["ship"].Main(0,0,LINK,-1)
-    LINK["multi"] = 2 #Running as server
+    LINK["shipEnt"].settings["upgrades"][0] = ["remote power",0,-1]
+    LINK["shipEnt"].settings["upgrades"][1] = ["overload",1,-1]
+    LINK["shipEnt"].loadUpgrades()
     return LINK
 
 class GameServer:
     def __init__(self,IP):
         print("Loading...")
         self.serv = Server(IP) #Make the server
-        self.LINK = loadLINK() #Initialize LINK
+        self.LINK = loadLINK(self.serv) #Initialize LINK
         self.LINK["serv"] = self.serv
         self.LINK["serv"].newUser = self.userJoin
         self.LINK["serv"].closeUser = self.userLeave
-        self.LINK["serv"].TRIGGER["com"] = self.doCommand
+        self.LINK["serv"].TRIGGER["com"] = self.doCommand #Execute a command
+        self.LINK["serv"].TRIGGER["mvu"] = self.__moveUpgrade #Move an upgade from one drone to anouther
+        self.LINK["serv"].TRIGGER["sup"] = self.__swapUpgrade #Swap two upgrades in a drone, (used instead of two "self.__moveUpgrade" calls)
         DEFMAP = "Testing map.map" #Map to load (tempory)
         self.mapName = DEFMAP
         self.world = self.LINK["screens"]["game"].GameEventHandle(self.LINK) #The game world to simulate
         self.world.open(DEFMAP) #Open the map in the world
         self.LINK["world"] = self.world
+        self.serv.SYNC["V"] = VERSION #Server version
         self.serv.SYNC["P"] = {} #Players
         self.serv.SYNC["M"] = {} #Map
         self.serv.SYNC["M"]["h"] = self.LINK["screens"]["game"].getMapMash(DEFMAP) #Map hash
@@ -539,6 +571,20 @@ class GameServer:
         if self.LINK["DEV"]:
             self.__rend = render.DebugServer(self.LINK)
         print("Done, entering event loop, map mash is "+str(self.serv.SYNC["M"]["h"]))
+    def __moveUpgrade(self,sock,drone1ID,drone2ID,index):
+        #Index 0 should allways be a "swap.py" upgrade
+        #Move the upgrade server-side
+        DRONE = self.LINK["IDs"][drone1ID]
+        DRONE.PERM_UPG[0].moveTo(DRONE.upgrades.pop(index),self.LINK["IDs"][drone2ID])
+        self.broadCast("cupg",drone1ID,"swap",drone2ID,index) #Send a trigger to all players that a drone upgrade has moved
+    def __swapUpgrade(self,sock,drone1ID,drone2ID,leftIndex,rightIndex):
+        #Swap the upgrades server-side
+        DRONE_1 = self.LINK["IDs"][drone1ID]
+        DRONE_2 = self.LINK["IDs"][drone2ID]
+        upg = DRONE_1.upgrades.pop(leftIndex)
+        DRONE_2.PERM_UPG[0].moveTo(DRONE_2.upgrades.pop(rightIndex),DRONE_1,leftIndex)
+        DRONE_1.PERM_UPG[0].moveTo(upg,DRONE_2,rightIndex)
+        self.broadCast("cupg",drone1ID,"swap",drone2ID,leftIndex,rightIndex) #Send a trigger to all players that two drone upgrades where swapped
     def broadCast(self,fname,*args): #Broadcasts a message to all clients connected
         for a in self.LINK["serv"].users:
             self.LINK["serv"].users[a].sendTrigger(fname,*args)
@@ -589,7 +635,7 @@ class GameServer:
 if __name__=="__main__": #If not imported the run as a server without a game running in the background.
     ERROR = enError
     IP = socket.gethostbyname(socket.gethostname())
-    #IP = "169.254.178.71"
+    IP = "127.0.1.1"
     Game = GameServer(IP)
     while True:
         Game.loop()

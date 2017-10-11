@@ -7,14 +7,25 @@ class Main(base.Main):
         self.init(x,y,LINK) #Init on the base class, __init__ is not called because its used for error detection.
         self.ID = ID
         self.settings["attack"] = False #If this NPC should attack doors
+        self.health = 80
         self.__sShow = True #Show in games scematic view
+        self.isNPC = True
         self.__inRoom = False #Is true if the NPC is inside a room
         self.hintMessage = "A swarm is the mose dangorus enemy in the game. Fast, quick and deadly. \nThey can travel through vents if in a room with them."
+    def takeDamage(self,dmg,reason=""):
+        self.health -= dmg
+        if self.health<0:
+            self.health = 0
+            self.alive = False
+        return self.health == 0
     def SaveFile(self): #Give all infomation about this object ready to save to a file
         return ["swarm",self.ID,self.pos,self.settings["attack"]]
     def LoadFile(self,data,idRef): #Load from a file
         self.pos = data[2]
         self.settings["attack"] = data[3]
+    def deleting(self): #Called when this entity is being deleted
+        if self.LINK["multi"]==2: #Is server
+            self.LINK["serv"].SYNC.pop("e"+str(self.ID))
     def __ChangeAttack(self,LINK,state): #Changes the attack mode, if the NPC should attack doors or not
         self.settings["attack"] = state == True
     def rightInit(self,surf): #Initialize context menu for map designer

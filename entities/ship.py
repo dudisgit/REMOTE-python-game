@@ -3,6 +3,7 @@ import pygame, random, time
 import entities.base as base
 
 DOCK_DELAY = 4 #Time taken to dock to anouther airlock
+DEFAULT_UPGRADE_LIMIT = 2 #Default upgrade limit on ships
 
 class Main(base.Main):
     def __init__(self,x,y,LINK,ID):
@@ -17,12 +18,36 @@ class Main(base.Main):
         self.room.size = [120,250]
         self.room.ship = self #Giving the ships room a link to the ship
         self.LR = False #Left to right direction
+        self.settings["upgrades"] = []
+        self.PERM_UPG = [] #Not used
+        for i in range(DEFAULT_UPGRADE_LIMIT):
+            self.settings["upgrades"].append(["",0,-1])
         self.upgrades = [] #Upgrades used by the ship
         self.hintMessage = "This entity should not be able to be spawned"
     def SaveFile(self): #Give all infomation about this object ready to save to a file
-        return ["ship",self.ID,self.pos]
+        return ["ship",self.ID,self.pos,self.settings["upgrades"]]
     def LoadFile(self,data,idRef): #Load from a file
         self.pos = data[2]
+        self.settings["upgrades"] = data[3]
+        self.loadUpgrades()
+        print("Loaded",self.settings)
+    def loadUpgrades(self): #Loads all the upgrades into the ship
+        self.upgrades = []
+        for i,a in enumerate(self.settings["upgrades"]):
+            if a[0]!="":
+                if a[2]!=-1:
+                    self.upgrades.append(self.LINK["shipUp"][a[0]].Main(self.LINK,a[2]))
+                else:
+                    self.upgrades.append(self.LINK["shipUp"][a[0]].Main(self.LINK,self.LINK["upgradeIDCount"]+0))
+                    self.settings["upgrades"][i][2] = self.LINK["upgradeIDCount"]+0
+                    self.LINK["upgradeIDCount"] += 1
+                self.upgrades[-1].damage = a[1]
+                self.upgrades[-1].drone = self #Link the upgrade to this ship
+    def unloadUpgrades(self): #Imports all the upgrades into the ship for saving (used in multiplayer)
+        for a in self.settings["upgrades"]:
+            a = ["",0,-1]
+        for i,a in enumerate(self.upgrades):
+            self.settings["upgrades"][i] = [a.name.lower(),a.damage+0,a.ID]
     def rightInit(self,surf): #Initialize context menu for map designer
         self.__surface = pygame.Surface((210,40)) #Surface to render too
         self.__lastRenderPos = [0,0] #Last rendering position
@@ -32,6 +57,12 @@ class Main(base.Main):
     def loop(self,lag):
         if time.time()>self.dockTime and self.dockTime!=0: #Reset docking timer when docking has completed
             self.dockTime = 0
+        if self.LINK["multi"]!=1: #Is not a client, single player or server
+            for a in self.upgrades: #Do an event loop on all upgrades
+                a.loop(lag)
+        else: #Is a client
+            for a in self.upgrades: #Do an event loop on all upgrades
+                a.clientLoop(lag)
     def dockTo(self,airlock,first=False): #Docks the ship to a specific airlock
         if self.dockTime!=0:
             return "Ship is still docking, please wait",(255,255,0)

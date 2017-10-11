@@ -6,15 +6,26 @@ class Main(base.Main):
     def __init__(self,x,y,LINK,ID):
         self.init(x,y,LINK) #Init on the base class, __init__ is not called because its used for error detection.
         self.ID = ID
+        self.isNPC = True
+        self.health = 80
         self.__sShow = True #Show in games scematic view
         self.__inRoom = False #Is true if the NPC is inside a room
         self.hintMessage = "An android is easy to deal with. It is slower than drones and deals minimal damage. \nIt cannot attack doors"
+    def takeDamage(self,dmg,reason=""):
+        self.health -= dmg
+        if self.health<0:
+            self.health = 0
+            self.alive = False
+        return self.health == 0
     def SaveFile(self): #Give all infomation about this object ready to save to a file
         return ["android",self.ID,self.pos]
     def LoadFile(self,data,idRef): #Load from a file
         self.pos = data[2]
     def loop(self,lag):
         pass
+    def deleting(self): #Called when this entity is being deleted
+        if self.LINK["multi"]==2: #Is server
+            self.LINK["serv"].SYNC.pop("e"+str(self.ID))
     def rightInit(self,surf): #Initialize context menu for map designer
         self.__surface = pygame.Surface((210,40)) #Surface to render too
         self.__lastRenderPos = [0,0] #Last rendering position

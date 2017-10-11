@@ -12,11 +12,15 @@ class Main(object):
     def __init__(self,x,y,LINK,ID):
         LINK["errorDisplay"]("Base entitie was created but shouldn't be. This class is for inheriting uses only!")
         self.init(x,y,LINK)
+        self.__sShow = False #Don't show in scematic view
         self.ID = ID
     def init(self,x,y,LINK): #Called to initialize variables
         self.pos = [x,y] #Position of the entity
         self.size = [50,50] #Size of the entity
-        self.angle = 0 #Angle of the entitity
+        self.speed = 2 #Speed of navigating the entity
+        self.isNPC = False #Is this entity and NPC
+        self.angle = 0 #Angle of the entity
+        self.stealth = False #Is the entity stealthing?
         self.overide = False #If this entitiy should overwrite the SYNC settings (multipalyer)
         self.alive = True #Is the entitiy alive (Should only be used for destructable entities)
         self.settings = {} #Settings of the entity, this is a vital part since this is what is saved to the file along with position and size.
@@ -28,6 +32,8 @@ class Main(object):
         self.paths = [] # Paths this entity should follow
         self.beingSucked = None #Is being sucked out of an airlock, None = is a solid object, else True/False
         self.hintMessage = "NO HINT" #Hinting message
+    def takeDamage(self,dmg,reason=""):
+        return False
     def getEnt(self,name): #Returns the entity with the name
         if name in self.LINK["ents"]: #Does the entity exist?
             return self.LINK["ents"][name].Main #Return the sucsessful entity
@@ -35,6 +41,8 @@ class Main(object):
             self.LINK["errorDisplay"]("Tried to get entity but doesen't exist '"+name+"'")
         return self.LINK["null"]
     def teleported(self): #Called when this entity has been teleported, used in ship docking
+        pass
+    def loop(self,lag):
         pass
     def EntitiesInside(self,includeRoom=False,pos=None,size=None,bsize=1): #Returns all entities inside this one (game). Ignores airlocks, rooms and doors
         if pos is None:
@@ -248,7 +256,7 @@ class Main(object):
             sp = [self.pos[0]+(self.size[0]/2),self.pos[1]+(self.size[1]/2)] #Entities center position
             angle = math.atan2(sp[0]-a[1][0][0],sp[1]-a[1][0][1])*180/math.pi #Angle of the target
             angle = int(angle) % 360 #Put into the range 0-360
-            if a[0]==0:
+            if a[0]==0 or a[0]==2:
                 dist2 = 0 #Angular distance from the entities angle and the targets angle
                 if angle > self.angle: #This is an algorithm for turning in a proper direction smothly
                     if angle - self.angle > 180:
@@ -268,7 +276,7 @@ class Main(object):
                     self.angle = int(self.angle) % 360 #Make sure this entitys angle is not out of range
                 except:
                     self.angle = int(cmath.phase(self.angle)) % 360 #Do the same before but unconvert it from a complex number
-                speed = 2*lag #Speed to move at
+                speed = self.speed*lag #Speed to move at
             else: #Being sucked out an airlock
                 speed = 6*lag
             bpos = [self.pos[0]+0,self.pos[1]+0] #Before position
@@ -282,13 +290,17 @@ class Main(object):
             HIT = self.applyPhysics(lag) #Apply hit-box detection
             dist = math.sqrt(((sp[0]-a[1][0][0])**2)+((sp[1]-a[1][0][1])**2)) #Distance from the target node
             if type(a[1][0][2]) == self.getEnt("airlock") or type(a[1][0][2]) == self.getEnt("door"):
-                if not a[1][0][2].settings["open"]:
+                if not a[1][0][2].settings["open"] and a[0]!=2:
                     if type(self)==self.getEnt("drone") and a[0]==0:
                         self.LINK["outputCommand"]("Drone navigation opstructed",(255,255,0),self)
                     rem.append(a)
-            if a[0]==1:
+            if type(a[1][-1][2])==self.getEnt("airlock") and a[0]==1:
                 if not a[1][-1][2].settings["open"]:
                     rem.append(a)
+            if a[0]==1:
+                if type(a[1][-1][2])==self.getEnt("room"):
+                    if not a[1][-1][2].settings["open"]:
+                        rem.append(a)
             if dist<12.5 or (type(a[1][0][2]) == self.getEnt("room") and HIT): #Finished going through the path.
                 if len(a[1])==1 and a[0]==1 and type(a[1][0][2])==self.getEnt("airlock"):
                     REACH_END = True
@@ -311,7 +323,7 @@ class Main(object):
     def stopNavigation(self,typ=0): #Stops all navigation paths on the specific one
         rem = []
         for a in self.paths:
-            if a[0]==typ:
+            if a[0]==typ or (a[0]==2 and typ==0):
                 rem.append(a)
         for a in rem:
             self.paths.remove(a)

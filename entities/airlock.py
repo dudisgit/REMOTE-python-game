@@ -2,6 +2,8 @@
 import pygame, time
 import entities.base as base
 
+RADIATION_DELAY = 6 #Delay until the airlock will fill the room with radiation
+
 class Main(base.Main):
     def __init__(self,x,y,LINK,ID,number=-1):
         self.init(x,y,LINK) #Init on the base class, __init__ is not called because its used for error detection.
@@ -12,12 +14,13 @@ class Main(base.Main):
         self.settings["dir"] = 0 #This determines the direction of the airlock
         self.settings["fail"] = False #If the airlock should be allowed to fail
         self.settings["default"] = False #Is the default airlock for ships
-        self.powered = True #Is the airlock powered
+        self.powered = False #Is the airlock powered
         self.room1 = None #The room the airlock is attached to.
         self.room2 = None #The room of the ship (will be none if not docked)
         self.trying = False #Is the airlock trying to close
         self.__sShow = True #Show in games scematic view
         self.__inRoom = False #Is true if the door is inside a room
+        self.__radFill = 0 #Time until the airlock should fill the room with radiation
         self.hintMessage = "An airlock is like a door but must not conenct two rooms but rather one room to outerspace. \nAn airlock can be made default by using its context/options menu. \nAn airlock also does not need its own power."
     def SaveFile(self): #Give all infomation about this object ready to save to a file
         pows = []
@@ -40,22 +43,47 @@ class Main(base.Main):
                     self.room1 = self.findPosition([self.pos[0]+75,self.pos[1]+25],[1,1])
             if self.room1 == -1:
                 self.room1 = None
-                print("Failed to link")
+                self.LINK["errorDisplay"]("Failed to link airlock to room, outside map? ("+str(self.ID)+")")
             else:
                 self.room1.doors.append(self)
+    def deleting(self): #Called when this entity is being deleted
+        if self.LINK["multi"]==2: #Is server
+            self.LINK["serv"].SYNC.pop("e"+str(self.ID))
     def SyncData(self,data): #Syncs the data with this drone
         self.settings["open"] = data["O"]
+        self.powered = data["P"]
         self.trying = data["T"]
     def GiveSync(self): #Returns the synced data for this drone
         res = {}
         res["O"] = self.settings["open"]
         res["T"] = self.trying
+        res["P"] = self.powered
         return res
     def loop2(self,lag): #This is "loop" but will apply actions to the airlock (single player/server, not client)
         if self.trying and self.powered:
             if len(self.EntitiesInside())==0:
                 self.CLOSE()
                 self.trying = False
+        self.powered = False
+        for a in self.settings["power"]:
+            if a.active:
+                self.powered = True
+                break
+        self.powered = self.powered or not self.room2 is None
+        if self.LINK["allPower"]:
+            self.powered = True
+        if time.time()>self.__radFill and self.__radFill!=0: #Fill the room with radiation
+            #Find the position of where to start
+            if self.settings["dir"]==0:
+                POS = [self.pos[0]+25,self.pos[1]+0]
+            elif self.settings["dir"]==1:
+                POS = [self.pos[0]+25,self.pos[1]+50]
+            elif self.settings["dir"]==2:
+                POS = [self.pos[0]+0,self.pos[1]+25]
+            else:
+                POS = [self.pos[0]+50,self.pos[1]+25]
+            self.room1.radBurst(POS) #Start the radiation
+            self.__radFill = 0
     def loop(self,lag):
         if self.LINK["multi"]==1: #Client
             self.SyncData(self.LINK["cli"].SYNC["e"+str(self.ID)])
@@ -89,6 +117,7 @@ class Main(base.Main):
                 else:
                     POS = [self.pos[0]+50,self.pos[1]+25]
                 self.room1.airBurst(POS,"/"+str(self.ID),self)
+                self.__radFill = time.time()+RADIATION_DELAY #Delay radiation filling
             self.settings["open"] = True
             self.trying = False
         else:
@@ -102,6 +131,7 @@ class Main(base.Main):
                 self.trying = True
             else:
                 self.settings["open"] = False
+                self.__radFill = 0 #Stop any radiation filling
         else:
             errs = "Airlock not powered"
         return errs
