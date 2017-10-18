@@ -38,6 +38,11 @@ class Main(base.Main):
                 self.__beingDamaged = 0
         if "A" in data: #Check if sensor is alive
             self.alive = data["A"]
+    def takeDamage(self,dmg,reason=""):
+        self.health -= dmg
+        if self.health<0:
+            self.health = 0
+            self.alive = False
     def afterLoad(self):
         self.__room = self.findPosition()
     def deleting(self): #Called when this entity is being deleted
@@ -97,7 +102,7 @@ class Main(base.Main):
     def sRender(self,x,y,scale,surf=None,edit=False): #Render in scematic view
         if surf is None:
             surf = self.LINK["main"]
-        if self.alive or self.health<=0: #Is the sensor alive
+        if self.alive: #Is the sensor alive
             if time.time()<self.__beingDamaged and ((time.time()-int(time.time()))*4)%1>0.5: #Make damage icon flickr when being damaged
                 surf.blit(self.getImage("sensorDamage"),(x,y))
             else: #Render normaly

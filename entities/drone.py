@@ -132,20 +132,28 @@ class Main(base.Main):
         if self.LINK["multi"] == 2: #Is a server
             self.LINK["serv"].SYNC["e"+str(self.ID)] = self.GiveSync()
     def teleported(self): #This drone was teleported.
-        self.LINK["serv"].SYNC["e"+str(self.ID)] = self.GiveSync() #Upload the data about the drone in the world to SYNC
+        if self.LINK["multi"]==2: #Is server
+            self.LINK["serv"].SYNC["e"+str(self.ID)] = self.GiveSync() #Upload the data about the drone in the world to SYNC
     def SyncData(self,data): #Syncs the data with this drone
         self.pos = [data["x"]+0,data["y"]+0]
         self.angle = data["a"]+0
         self.settings["health"] = data["H"]+0
         self.aliveShow = data["L"] == True
+        if self.LINK["multi"]==1: #Is a client
+            self.alive = self.aliveShow == True
+            self.health = int(self.settings["health"])+0
         self.__SYNCChange = [data["x"]+0,data["y"]+0,data["a"]+0]
-    def GiveSync(self): #Returns the synced data for this drone
+    def GiveSync(self,posOnly=False): #Returns the synced data for this drone
         res = {}
         res["x"] = int(self.pos[0])+0
         res["y"] = int(self.pos[1])+0
         res["a"] = int(self.angle)+0
-        res["H"] = int(self.settings["health"])+0
-        res["L"] = self.aliveShow == True
+        if not posOnly: #Sync all settings
+            res["H"] = int(self.settings["health"])+0
+            res["L"] = self.aliveShow == True
+        else: #Only sync drone position and not other data
+            res["H"] = self.LINK["cli"].SYNC["e"+str(self.ID)]["H"]
+            res["L"] = self.LINK["cli"].SYNC["e"+str(self.ID)]["L"]
         self.__SYNCChange = [res["x"]+0,res["y"]+0,res["a"]+0]
         return res
     def deleting(self): #This drone is being deleted
@@ -195,13 +203,13 @@ class Main(base.Main):
                     self.LINK["outputCommand"]("Drone "+str(self.number)+" was disabled",(255,0,0))
                     self.stopNavigation(0)
         if self.overide and self.LINK["multi"] == 1 and not self.SyncChanged(): #Send our drone position to the server
-            self.LINK["cli"].SYNC["e"+str(self.ID)] = self.GiveSync()
+            self.LINK["cli"].SYNC["e"+str(self.ID)] = self.GiveSync(True)
             self.overide = False
         elif self.LINK["multi"] == 2: #Server
             if self.SyncChangedServer(): #If drone has been moved by a client than cancel any navigation
                 self.stopNavigation(0)
             bpos = [self.pos[0]+0,self.pos[1]+0]
-            if self.number!=-1:
+            if self.number!=-1 and self.alive:
                 self.SyncData(self.LINK["serv"].SYNC["e"+str(self.ID)]) #Sync the drones data to the world
             self.applyPhysics(lag)
             self.loop2(lag)
@@ -212,6 +220,7 @@ class Main(base.Main):
         elif self.LINK["multi"]==1: #Sync our drone position with the servers version
             bpos = [self.pos[0]+0,self.pos[1]+0]
             self.SyncData(self.LINK["cli"].SYNC["e"+str(self.ID)])
+            self.health = self.settings["health"]
             self.changeMesh(bpos) #Move the drone to anouther MESH
             for a in self.upgrades+self.PERM_UPG:
                 a.clientLoop(lag)

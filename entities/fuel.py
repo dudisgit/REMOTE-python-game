@@ -16,8 +16,17 @@ class Main(base.Main):
     def LoadFile(self,data,idRef): #Load from a file
         self.pos = data[2]
         self.settings["god"] = data[3]
+    def SyncData(self,data): #Syncs the data with this lure
+        self.used = data["U"]
+    def GiveSync(self): #Returns the synced data for this lure
+        res = {}
+        res["U"] = self.used
+        return res
     def loop(self,lag):
-        pass
+        if self.LINK["multi"]==1: #Client
+            self.SyncData(self.LINK["cli"].SYNC["e"+str(self.ID)])
+        elif self.LINK["multi"]==2: #Server
+            self.LINK["serv"].SYNC["e"+str(self.ID)] = self.GiveSync()
     def __ChangeGod(self,LINK,state):
         self.settings["god"] = state == True
     def rightInit(self,surf): #Initialize context menu for map designer

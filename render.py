@@ -16,9 +16,11 @@ class Scematic:
                 siz = list(self.__LINK["content"][a].get_size())
                 self.__LINK["cont"][a] = pygame.transform.scale(self.__LINK["content"][a],(int(siz[0]*scale/10.24),int(siz[1]*scale/10.24)))
             self.__scaleChange = scale+0
+        sx,sy = surf.get_size()
         for a in self.ents:
-            if a.canShow() or edit:
-                a.sRender((a.pos[0]*scale)-x,(a.pos[1]*scale)-y,scale,surf,edit)
+            if a.canShow() or edit: #Allowed to show in scematic view
+                if (a.pos[0]*scale)-x<sx and (a.pos[1]*scale)-y<sy and ((a.pos[0]+a.size[0])*scale)-x>0 and ((a.pos[1]+a.size[1])*scale)-y>0: #Inside screen
+                    a.sRender((a.pos[0]*scale)-x,(a.pos[1]*scale)-y,scale,surf,edit)
 
 def drawDevMesh(x,y,scale,surf,LINK): #Used in development only, this will draw a pixel grid for MESH
     for xp in LINK["mesh"]:

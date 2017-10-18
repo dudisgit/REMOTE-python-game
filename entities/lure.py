@@ -9,8 +9,8 @@ class Main(base.Main):
         self.__sShow = True #Show in games scematic view
         self.__inRoom = False #Is true if the lure is inside a room
         self.size = [40,40] #Size of the lure
-        self.health = 200 #Health of the lure
-        self.__healthChange = 200 #Used to detect changes in health for the lure
+        self.health = 500 #Health of the lure
+        self.__healthChange = 500 #Used to detect changes in health for the lure
         self.__lastDamage = 0 #Used to time when the lure was last attacked (used so it doesen't spam console)
         self.__beingDamaged = 0 #Is upgrade being damaged
         self.beingSucked = False #Make this entity suckable out of an airlock
@@ -20,6 +20,11 @@ class Main(base.Main):
     def LoadFile(self,data,idRef): #Load from a file
         self.pos = data[2]
         self.health = data[3]
+    def takeDamage(self,dmg,reason=""): #Take damage
+        self.health -= dmg
+        if self.health<0: #Lure is dead
+            self.health = 0
+            self.alive = False
     def SyncData(self,data): #Syncs the data with this lure
         #Allot of the data received is checked by IF statements, this is because this entity is designed to be spawned in so data may not sync
         if "x" and "y" in data:
@@ -72,7 +77,7 @@ class Main(base.Main):
     def sRender(self,x,y,scale,surf=None,edit=False): #Render in scematic view
         if surf is None:
             surf = self.LINK["main"]
-        if self.alive or self.health<=0: #Is the lure alive
+        if self.alive: #Is the lure alive
             if time.time()<self.__beingDamaged and time.time()-int(time.time())>0.5: #Make damage icon flickr when being damaged
                 surf.blit(self.getImage("lureDamage"),(x,y))
             else: #Render normaly

@@ -48,7 +48,7 @@ class Main:
                             ((self.drone.pos[1]+(self.drone.size[1]/2)-(self.__targetEnt.pos[1]+(self.__targetEnt.size[1]/2)) )**2) )
             if not hasPath or dist<=self.__activationDist: #Path has finished or been canceled
                 if dist<=self.__activationDist: #Has reached the generator without being canceled
-                    self.drone.stopNavigation(0) #Stop the drone from moving other paths
+                    self.drone.stopNavigation() #Stop the drone from moving other paths
                     self.__activationDist = -1
                     self.hitFunction(self.__targetEnt)
                     if self.__activationDist==-1:

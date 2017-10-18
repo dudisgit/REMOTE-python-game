@@ -1,9 +1,15 @@
 #This file is the base entitie that all other entites inheret to.
-import pygame,time,math,cmath
+import pygame,time,math,cmath,random
 
 MESH_BLOCK_SIZE = 125 #Size of a single mesh block (game.py)
 ROOM_BORDER = 5 # Width of a boarder in a room
 DOOR_BORDER = 5 #Border of a door
+SCAN_DEPTH = 15 #Scan depth of NPC player tracking
+DETECT_DIST = 40 #Detection distance for when a stealth'ed drone can be detected
+NPCUpdate_rate = 5 #How many times a second to update the NPC AI
+ATTACK_DOOR_PERCENT = 7 #Percentage chance that NPC will attack a door
+ATTACK_DOOR_UPDATE = 12 #Seconds until generating a random number again for breaking down a door
+VENT_TRAVEL_PERC = 30 #Percentage chance that a swarm will travel through a vent.
 
 def nothing(*args): #Does nothing
     pass
@@ -21,6 +27,10 @@ class Main(object):
         self.isNPC = False #Is this entity and NPC
         self.angle = 0 #Angle of the entity
         self.stealth = False #Is the entity stealthing?
+        self.NPCATTACK = None #Is the NPC in attack mode (only if this entitiy is an NPC)
+        self.__NPCUpdate = time.time() #Used to slow down update rates on NPCs
+        self.__NPCDoorUpdate = time.time()+0 #When to generate a random number again for breaking down doors
+        self.__VentDirect = None #Was this NPC going towards a vent
         self.overide = False #If this entitiy should overwrite the SYNC settings (multipalyer)
         self.alive = True #Is the entitiy alive (Should only be used for destructable entities)
         self.settings = {} #Settings of the entity, this is a vital part since this is what is saved to the file along with position and size.
@@ -34,14 +44,231 @@ class Main(object):
         self.hintMessage = "NO HINT" #Hinting message
     def takeDamage(self,dmg,reason=""):
         return False
+    def __onPath(self,typ): #Return if the path type is active
+        for a in self.paths:
+            if a[0]==typ:
+                return True
+        return False
+    def linePath(self,From,To,capSize=[0,0]): #Returns true if the two points don't have anything blocking them (used for NPC 'seeing')
+        dist = math.sqrt(( (From[0]-To[0])**2 ) + ( (From[1]-To[1])**2 ))
+        angle = math.atan2(From[0]-To[0],From[1]-To[1]) #Angle of the target
+        angle = math.pi+angle #Correct the angle
+        done = [] #Doors that have allredey been processed
+        RoomReferenceObject = self.getEnt("room")
+        for i in range(0,int(dist/SCAN_DEPTH)):
+            PS = [From[0] + (math.sin(angle)*i*SCAN_DEPTH),From[1] + (math.cos(angle)*i*SCAN_DEPTH)] #Point position
+            P = self.findPositionAbsolute(PS,capSize) #Get the position the point is inside of
+            if P==-1: #Outside map
+                break
+            elif not type(P)==RoomReferenceObject: #Is not a room, must be an airlock or door
+                if not P in done:
+                    done.append(P)
+                    if not P.settings["open"]: #Door is closed
+                        break
+        else: #All points where valid towards the entity so return true
+            return True
+        return False
+    def linePathVisual(self,lineFrom,lineTo,surf=None,add=[0,0],scale=1): #This funciton is the same as "linePath" but is used for debugging visualy
+        pygame.draw.line(surf,(255,255,255),[(lineFrom[0]*scale)-add[0],(lineFrom[1]*scale)-add[1]],[(lineTo[0]*scale)-add[0],(lineTo[1]*scale)-add[1]],2)
+        dist = math.sqrt(( (lineFrom[0]-lineTo[0])**2 ) + ( (lineFrom[1]-lineTo[1])**2 ))
+        angle = math.atan2(lineFrom[0]-lineTo[0],lineFrom[1]-lineTo[1]) #Angle of the target
+        angle = math.pi+angle
+        done = []
+        for i in range(0,int(dist/SCAN_DEPTH)):
+            PS = [lineFrom[0] + (math.sin(angle)*i*SCAN_DEPTH),lineFrom[1] + (math.cos(angle)*i*SCAN_DEPTH)]
+            P = self.findPositionAbsolute(PS,[0,0])
+            if P==-1:
+                break
+            elif type(P)==self.getEnt("room"):
+                pygame.draw.circle(surf,(255,255,0),[int((PS[0]*scale)-add[0]),int((PS[1]*scale)-add[1])],5)
+            else:
+                if not P in done:
+                    done.append(P)
+                    if not P.settings["open"]:
+                        break
+                pygame.draw.circle(surf,(0,255,0),[int((PS[0]*scale)-add[0]),int((PS[1]*scale)-add[1])],5)
+        else:
+            pygame.draw.line(surf,(255,0,0),[(lineFrom[0]*scale)-add[0],(lineFrom[1]*scale)-add[1]],[(lineTo[0]*scale)-add[0],(lineTo[1]*scale)-add[1]],2)
+    def __randomRoomPosition(self): #Returns a random room coordinate
+        Rm = self.findPosition() #Get the room the entity is in
+        if type(Rm)==self.getEnt("room"): #Entity is in a room
+            #Return random position in room
+            if Rm.pos[0]+30>Rm.pos[0]+Rm.size[0]-30:
+                Rx = Rm.pos[0]+(Rm.size[0]/2)
+            else:
+                Rx = random.randint(Rm.pos[0]+30,Rm.pos[0]+Rm.size[0]-30)
+            if Rm.pos[1]+30>Rm.pos[1]+Rm.size[1]-30:
+                Ry = Rm.pos[1]+(Rm.size[1]/2)
+            else:
+                Ry = random.randint(Rm.pos[1]+30,Rm.pos[1]+Rm.size[1]-30)
+            return [Rx,Ry]
+        elif type(Rm)==self.getEnt("door") or self.getEnt("airlock"): #NPC is outside a room, go to first room in door
+            return [Rm.room1.pos[0]+(Rm.room1.size[0]/2),Rm.room1.pos[1]+(Rm.room2.size[1]/2)]
+        else: #Entity is not inside a room
+            return self.pos
+    def teleported(self): #Was teleported because of ship dock
+        if self.isNPC: #Entity is an NPC
+            self.stopNavigation() #Stop all navigation (stops the NPC trying to go to a previous random location before the ships position changed)
+    def __NPCScanForTargets(self): #Scans for targets
+        if type(self)==self.getEnt("android") and "sensor" in self.LINK["IDref"]: #If android and sensors exist then include sensors as targets
+            targets = self.LINK["drones"]+self.LINK["IDref"]["sensor"]
+        else: #Normaly target drones and lures
+            if "lure" in self.LINK["IDref"]: #If lures exist then target them
+                targets = self.LINK["drones"]+self.LINK["IDref"]["lure"]
+            else:
+                targets = self.LINK["drones"]
+        closest = [-1,None] #Used for finding the closest target
+        for a in targets: #Detect if this NPC can see any of the targets
+            dist = math.sqrt(( (self.pos[0]-a.pos[0])**2 ) + ( (self.pos[1]-a.pos[1])**2 ))
+            if (not a.stealth or dist<DETECT_DIST) and a.alive: #Target is not in stealth mode
+                if self.linePath([self.pos[0]+(self.size[0]),self.pos[1]+(self.size[1]/2)],[a.pos[0]+(a.size[0]/2),a.pos[1]+(a.size[1]/2)]):
+                    if dist<closest[0] or closest[0]==-1:
+                        closest[0] = dist+0
+                        closest[1] = a
+                    if type(a)==self.getEnt("lure"): #If the NPC see a lure it must attack it.
+                        closest[1] = a
+                        break
+        if not self.NPCATTACK is None: #Allredey targeting, compare the distances between this new target
+            dist = math.sqrt(( (self.pos[0]-self.NPCATTACK.pos[0])**2 ) + ( (self.pos[1]-self.NPCATTACK.pos[1])**2 ))
+        else:
+            dist = -1
+        if closest[0]!=-1 and (closest[0]<dist or dist==-1) and closest[1]!=self.NPCATTACK: #Found a target / replacement target
+            TPos = closest[1].findPosition()
+            Spos = self.findPosition()
+            self.stopNavigation() #Stop all navigation
+            if TPos!=Spos: #Is the target not in the room with the NPC?
+                self.pathTo(closest[1]) #Use path finding to head towards target
+            elif closest[0]>self.NPCDist: #In the same room, head towards
+                self.paths.append([3,[ [closest[1].pos[0]+(closest[1].size[0]/2),closest[1].pos[1]+(closest[1].size[1]/2),closest[1]] ]])
+            self.NPCATTACK = closest[1]
+    def NPCAttackLoop(self,dist): #Will only be called continuesly if there is a visual path between the target and that its chasing it.
+        pass
+    def NPCDroneSee(self): #Returns True if a drone can see this NPC (used for freeing engine resources in multiplayer where NPCs can be moving in other rooms)
+        PS = [self.pos[0]+(self.size[0]),self.pos[1]+(self.size[1]/2)]
+        for a in self.LINK["drones"]: #Go through every drone the player owns
+            if self.linePath(PS,[a.pos[0]+(a.size[0]/2),a.pos[1]+(a.size[1]/2)]):
+                return True
+        if self.LINK["multi"]==2: #Is a server
+            PS2 = [self.LINK["serv"].SYNC["e"+str(self.ID)]["x"]+(self.size[0]/2),self.LINK["serv"].SYNC["e"+str(self.ID)]["y"]+(self.size[1]/2)]
+            for a in self.LINK["drones"]:
+                if self.linePath(PS2,[a.pos[0]+(a.size[0]/2),a.pos[1]+(a.size[1]/2)]):
+                    return True
+        return False
+    def NPCDoorLoop(self): #Called by an NPC that is programmed to attack doors
+        if time.time()>self.__NPCDoorUpdate:
+            self.__NPCDoorUpdate = time.time()+ATTACK_DOOR_UPDATE
+            if random.randint(0,100)<ATTACK_DOOR_PERCENT: #Decide to attack a door inside the room
+                ps = self.findPosition() #Gets the NPCs position
+                alE = False
+                for a in self.LINK["drones"]: #Go through all drones and check if atleast 1 is alive and not in stealth
+                    if a.alive and not a.stealth:
+                        alE = True
+                        break
+                if type(ps)==self.getEnt("room") and alE: #NPC is inside a room and there is a valid drone to track in the map
+                    dr = random.randint(0,len(self.LINK["drones"])-1) #Select random drone
+                    while not self.LINK["drones"][dr].alive: #Keep trying a random drone till theres a valid one found (checked if there are any valid ones above)
+                        dr = random.randint(0,len(self.LINK["drones"])-1)
+                    #Modified version of the "pathTo" function
+                    self.__DIJdist = []
+                    self.__DIJvisit = []
+                    dPos = self.LINK["drones"][dr].findPosition() #Find the drones position
+                    if type(dPos)==self.getEnt("room"): #Make sure the drones inside a room
+                        P = self.__dij(dPos,True) #Dijstra algorithm but ignore closed doors
+                        fin = self.__turnDijToPath(P[2]) #Make sense of the dijstra results
+                        if type(fin)!=int: #A path was found
+                            if len(fin)!=0: #The path isn't empty
+                                if not fin[0][2].settings["open"] and type(fin[0][2])==self.getEnt("door"): #The closest door is open and is a door
+                                    if fin[0][2].settings["attack"]: #The door is attackable (decided in map designer)
+                                        self.NPCATTACK = fin[0][2] #Set the door as a target
+                                        self.stopNavigation()
+                                        self.__VentDirect = None
+    def NPCVentLoop(self): #Used to find vents inside the room to target
+        PS = self.findPosition() #Get NPC's position
+        if type(PS)==self.getEnt("room"): #NPCs position is inside a room
+            Ents = PS.EntitiesInside() #Get all entities inside the room
+            vents = []
+            VentObject = self.getEnt("vent")
+            for a in Ents: #Loop through and find all vents in the room.
+                if type(a)==VentObject:
+                    vents.append(a)
+            if len(vents)!=0: #There is atleast 1 vent in the room
+                rvent = vents[random.randint(0,len(vents)-1)] #Select a random vent
+                self.stopNavigation()
+                self.paths.append([2,[ [rvent.pos[0]+(rvent.size[0]/2),rvent.pos[1]+(rvent.size[1]/2),rvent] ]])
+                #Head towards vent and set it as the target
+                self.__VentDirect = rvent
+    def NPCloop(self,vents=False): #NPC AI
+        if time.time()<self.__NPCUpdate:
+            return 0
+        self.__NPCUpdate = time.time()+(1/NPCUpdate_rate)
+        if (random.randint(0,100)<VENT_TRAVEL_PERC or not self.__VentDirect is None) and vents and not self.__onPath(2) and not self.__onPath(0) and self.NPCATTACK is None:
+            if self.__VentDirect is None: #Not heading towards a vent
+                self.NPCVentLoop()
+            else: #Finished heading to a vent, teleport.
+                rvent = self.LINK["IDref"]["vent"][random.randint(0,len(self.LINK["IDref"]["vent"])-1)]
+                self.pos[0] = rvent.pos[0]+(self.size[0]/2)
+                self.pos[1] = rvent.pos[1]+(self.size[1]/2)
+                self.__VentDirect = None
+        if not self.__onPath(2) and not self.__onPath(0) and self.NPCATTACK is None and self.__VentDirect is None:
+            Rm = self.findPosition() #Get the current room the NPC is in
+            P = self.__randomRoomPosition() #Get a random position in the room incase we can't go through any doors
+            if type(Rm)==self.getEnt("room"): #NPC is inside a room
+                Doors = []
+                for a in Rm.doors: #Loop through every door of the room the NPC is in
+                    if a.settings["open"]: #Door is open
+                        Doors.append(a)
+                if len(Doors)==0: #No open doors in current room
+                    self.paths.append([2,[ [P[0],P[1],self.findPosition()] ]])
+                    self.stopNavigation(0)
+                else: #Atleast 1 door is open in the room
+                    rDoor = Doors[random.randint(0,len(Doors)-1)] #Select a random door
+                    #Head towards the doors oposite room
+                    if rDoor.room1 == Rm:
+                        self.pathTo(rDoor.room2)
+                        self.stopNavigation(2)
+                    else:
+                        self.pathTo(rDoor.room1)
+                        self.stopNavigation(2)
+            else: #No room, go to random position
+                self.paths.append([2,[ [P[0],P[1],self.findPosition()] ]])
+                self.stopNavigation(0)
+        else: #Moving to random position or is attacking player
+            self.__NPCScanForTargets()
+            if not self.NPCATTACK is None: #NPC is attacking something
+                self.__VentDirect = None
+                dist = math.sqrt(( (self.pos[0]-self.NPCATTACK.pos[0])**2 ) + ( (self.pos[1]-self.NPCATTACK.pos[1])**2 ))
+                if type(self.NPCATTACK)==self.getEnt("door"): #Attacking a door
+                    if dist>self.NPCDist+1: #Door is not close enough to attack
+                        self.stopNavigation()
+                        self.paths.append([4,[ [self.NPCATTACK.pos[0]+(self.NPCATTACK.size[0]/2),self.NPCATTACK.pos[1]+(self.NPCATTACK.size[1]/2),self.NPCATTACK] ]])
+                    elif self.__onPath(4): #Door is close enough but is still heading towards
+                        self.stopNavigation(4) #Stop heading towards door
+                    if self.NPCATTACK.settings["open"]: #If the door just opened then stop attacking
+                        self.stopNavigation()
+                        self.NPCATTACK = None
+                        return 0
+                elif dist>self.NPCDist+1: #Target is far away, get into position
+                    TPos = self.NPCATTACK.findPosition()
+                    Spos = self.findPosition()
+                    if self.linePath(self.pos,[self.NPCATTACK.pos[0]+(self.NPCATTACK.size[0]/2),self.NPCATTACK.pos[1]+(self.NPCATTACK.size[1]/2)],[25,25]):
+                        self.stopNavigation()
+                        self.paths.append([3,[ [self.NPCATTACK.pos[0]+(self.NPCATTACK.size[0]/2),self.NPCATTACK.pos[1]+(self.NPCATTACK.size[1]/2),self.NPCATTACK] ]])
+                    elif TPos!=Spos and not self.__onPath(0): #Target cannot be seen, use path finding.
+                        self.stopNavigation(3)
+                        if not self.pathTo(self.NPCATTACK): #Failed to find path, going back into roaming mode
+                            self.NPCATTACK = None
+                            return 0
+                if self.linePath([self.pos[0]+(self.size[0]),self.pos[1]+(self.size[1]/2)],[self.NPCATTACK.pos[0]+(self.NPCATTACK.size[0]/2),self.NPCATTACK.pos[1]+(self.NPCATTACK.size[1]/2)]) or type(self.NPCATTACK)==self.getEnt("door"):
+                    self.NPCAttackLoop(dist)
+                if not self.NPCATTACK.alive or self.NPCATTACK.REQUEST_DELETE: #Target is dead or been deleted, stop hunting and go into roaming mode
+                    self.stopNavigation()
+                    self.NPCATTACK = None
     def getEnt(self,name): #Returns the entity with the name
         if name in self.LINK["ents"]: #Does the entity exist?
             return self.LINK["ents"][name].Main #Return the sucsessful entity
         else: #Raise an error and return a null entity
             self.LINK["errorDisplay"]("Tried to get entity but doesen't exist '"+name+"'")
         return self.LINK["null"]
-    def teleported(self): #Called when this entity has been teleported, used in ship docking
-        pass
     def loop(self,lag):
         pass
     def EntitiesInside(self,includeRoom=False,pos=None,size=None,bsize=1): #Returns all entities inside this one (game). Ignores airlocks, rooms and doors
@@ -164,17 +391,17 @@ class Main(object):
                     if DIR: #Is left to right door/airlock
                         if lastPos[0]>ent.pos[0]:
                             res.append([ent.pos[0]+(ent.size[0]*1.5),ent.pos[1]+(ent.size[1]/2),ent])
-                            res.append([ent.pos[0]-(ent.size[0]/2),ent.pos[1]+(ent.size[1]/2),None])
+                            res.append([ent.pos[0]-(ent.size[0]/2),ent.pos[1]+(ent.size[1]/2),ent])
                         else:
                             res.append([ent.pos[0]-(ent.size[0]/2),ent.pos[1]+(ent.size[1]/2),ent])
-                            res.append([ent.pos[0]+(ent.size[0]*1.5),ent.pos[1]+(ent.size[1]/2),None])
+                            res.append([ent.pos[0]+(ent.size[0]*1.5),ent.pos[1]+(ent.size[1]/2),ent])
                     else: #Is up to down door/airlock
                         if lastPos[1]>ent.pos[1]:
                             res.append([ent.pos[0]+(ent.size[0]/2),ent.pos[1]+(ent.size[1]*1.5),ent])
-                            res.append([ent.pos[0]+(ent.size[0]/2),ent.pos[1]-(ent.size[1]/2),None])
+                            res.append([ent.pos[0]+(ent.size[0]/2),ent.pos[1]-(ent.size[1]/2),ent])
                         else:
                             res.append([ent.pos[0]+(ent.size[0]/2),ent.pos[1]-(ent.size[1]/2),ent])
-                            res.append([ent.pos[0]+(ent.size[0]/2),ent.pos[1]+(ent.size[1]*1.5),None])
+                            res.append([ent.pos[0]+(ent.size[0]/2),ent.pos[1]+(ent.size[1]*1.5),ent])
                     if ent.room2 is None and type(ent)==self.getEnt("airlock"): #Is an open but empty airlock
                         res.pop() #Make sure the drone goes straight into the airlock
                 elif a==spl[-1]: #End of the path room
@@ -256,7 +483,10 @@ class Main(object):
             sp = [self.pos[0]+(self.size[0]/2),self.pos[1]+(self.size[1]/2)] #Entities center position
             angle = math.atan2(sp[0]-a[1][0][0],sp[1]-a[1][0][1])*180/math.pi #Angle of the target
             angle = int(angle) % 360 #Put into the range 0-360
-            if a[0]==0 or a[0]==2:
+            if (a[0]==0 or a[0]==2 or a[0]==4) and self.isNPC:
+                self.angle = angle+0
+                speed = self.speed*lag
+            elif a[0]!=1:
                 dist2 = 0 #Angular distance from the entities angle and the targets angle
                 if angle > self.angle: #This is an algorithm for turning in a proper direction smothly
                     if angle - self.angle > 180:
@@ -280,7 +510,7 @@ class Main(object):
             else: #Being sucked out an airlock
                 speed = 6*lag
             bpos = [self.pos[0]+0,self.pos[1]+0] #Before position
-            if a[0]==0:
+            if a[0]==0 or a[0]==3 or a[0]==4:
                 self.pos[0]-=math.sin(self.angle/180*math.pi)*speed
                 self.pos[1]-=math.cos(self.angle/180*math.pi)*speed
             else: #Being sucked out an airlock
@@ -290,7 +520,7 @@ class Main(object):
             HIT = self.applyPhysics(lag) #Apply hit-box detection
             dist = math.sqrt(((sp[0]-a[1][0][0])**2)+((sp[1]-a[1][0][1])**2)) #Distance from the target node
             if type(a[1][0][2]) == self.getEnt("airlock") or type(a[1][0][2]) == self.getEnt("door"):
-                if not a[1][0][2].settings["open"] and a[0]!=2:
+                if not a[1][0][2].settings["open"] and a[0]!=2 and a[0]!=4:
                     if type(self)==self.getEnt("drone") and a[0]==0:
                         self.LINK["outputCommand"]("Drone navigation opstructed",(255,255,0),self)
                     rem.append(a)
@@ -301,7 +531,11 @@ class Main(object):
                 if type(a[1][-1][2])==self.getEnt("room"):
                     if not a[1][-1][2].settings["open"]:
                         rem.append(a)
-            if dist<12.5 or (type(a[1][0][2]) == self.getEnt("room") and HIT): #Finished going through the path.
+            if a[0]==3:
+                DIS = self.NPCDist+0
+            else:
+                DIS = 12.5
+            if dist<DIS or (type(a[1][0][2]) == self.getEnt("room") and HIT): #Finished going through the path.
                 if len(a[1])==1 and a[0]==1 and type(a[1][0][2])==self.getEnt("airlock"):
                     REACH_END = True
                 a[1].pop(0)
@@ -320,10 +554,10 @@ class Main(object):
         pass
     def deleting(self): #Called when this entity is being deleted
         pass
-    def stopNavigation(self,typ=0): #Stops all navigation paths on the specific one
+    def stopNavigation(self,typ=None): #Stops all navigation paths on the specific one
         rem = []
         for a in self.paths:
-            if a[0]==typ or (a[0]==2 and typ==0):
+            if a[0]==typ or ((a[0]==2 or a[0]==0 or a[0]==3 or a[0]==4) and typ is None):
                 rem.append(a)
         for a in rem:
             self.paths.remove(a)
@@ -343,6 +577,26 @@ class Main(object):
                             inside = inside or (pos[0]+size[0]>=ENT.pos[0] and pos[0]+size[0]<=ENT.pos[0]+ENT.size[0] and pos[1]>=ENT.pos[1] and pos[1]<=ENT.pos[1]+ENT.size[1])
                             inside = inside or (pos[0]+size[0]>=ENT.pos[0] and pos[0]+size[0]<=ENT.pos[0]+ENT.size[0] and pos[1]+size[1]>=ENT.pos[1] and pos[1]+size[1]<=ENT.pos[1]+ENT.size[1])
                             inside = inside or (pos[0]>=ENT.pos[0] and pos[0]<=ENT.pos[0]+ENT.size[0] and pos[1]+size[1]>=ENT.pos[1] and pos[1]+size[1]<=ENT.pos[1]+ENT.size[1])
+                            if inside:
+                                if type(ENT)==self.getEnt("room") or type(ENT)==self.getEnt("door") or type(ENT)==self.getEnt("airlock"):
+                                    return ENT
+        return -1
+    def findPositionAbsolute(self,pos=None,size=None): #The same as findPosition but will only return room if position is FULLY inside a room
+        if pos is None:
+            pos = self.pos
+        if size is None:
+            size = self.size
+        bsize = 1
+        for x in range(int(pos[0]/MESH_BLOCK_SIZE)-bsize,int(pos[0]/MESH_BLOCK_SIZE)+int(size[0]/MESH_BLOCK_SIZE)+bsize): #Loop through a 3x3 square in MESH to find entities
+            if x in self.LINK["mesh"]: #X column exists
+                for y in range(int(pos[1]/MESH_BLOCK_SIZE)-bsize,int(pos[1]/MESH_BLOCK_SIZE)+int(size[1]/MESH_BLOCK_SIZE)+bsize):
+                    if y in self.LINK["mesh"][x]: #Y column exists
+                        for ENT in self.LINK["mesh"][x][y]:
+                            #Check if this entity is atall inside or touching the possible room/door/airlock
+                            inside = (pos[0]>=ENT.pos[0] and pos[0]<=ENT.pos[0]+ENT.size[0] and pos[1]>=ENT.pos[1] and pos[1]<=ENT.pos[1]+ENT.size[1])
+                            inside = inside and (pos[0]+size[0]>=ENT.pos[0] and pos[0]+size[0]<=ENT.pos[0]+ENT.size[0] and pos[1]>=ENT.pos[1] and pos[1]<=ENT.pos[1]+ENT.size[1])
+                            inside = inside and (pos[0]+size[0]>=ENT.pos[0] and pos[0]+size[0]<=ENT.pos[0]+ENT.size[0] and pos[1]+size[1]>=ENT.pos[1] and pos[1]+size[1]<=ENT.pos[1]+ENT.size[1])
+                            inside = inside and (pos[0]>=ENT.pos[0] and pos[0]<=ENT.pos[0]+ENT.size[0] and pos[1]+size[1]>=ENT.pos[1] and pos[1]+size[1]<=ENT.pos[1]+ENT.size[1])
                             if inside:
                                 if type(ENT)==self.getEnt("room") or type(ENT)==self.getEnt("door") or type(ENT)==self.getEnt("airlock"):
                                     return ENT

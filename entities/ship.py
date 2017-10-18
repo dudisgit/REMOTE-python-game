@@ -108,9 +108,8 @@ class Main(base.Main):
                         a.pos = [a.pos[0]+(self.room.pos[0]-bpos[0]),a.pos[1]+(self.room.pos[1]-bpos[1])]
                         a.pos = [self.room.pos[0]+(a.pos[1]-self.room.pos[1]),self.room.pos[1]+(a.pos[0]-self.room.pos[0])]
                         a.changeMesh(bpos3)
-            if self.LINK["multi"]==2: #Is server
-                for a in allE: #Tell all entities they where teleported if this is a server
-                    a.teleported()
+            for a in allE: #Tell all entities they where teleported
+                a.teleported()
         self.room.changeMesh(bpos)
         self.room.reloadSize()
         self.changeMesh(bpos2)

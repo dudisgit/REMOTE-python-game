@@ -3,7 +3,7 @@ import pygame,client,time,screenLib,math,os,sys,render,importlib
 print("Loading pygame")
 pygame.init()
 print("Building varaibles")
-FPS = 30 #Default FPS
+FPS = 60 #Default FPS
 RESLUTION = [1000,700]
 
 def ERROR(*info): #This function is called whenever an unexspected error occures. It is mainly so it can be displayed on the screen without the game crashing
@@ -54,6 +54,7 @@ LINK["controll"]["escape"] = pygame.K_ESCAPE #Escaping key for closing menus
 LINK["mesh"] = {} #Used for fast entity discovery
 LINK["upgradeIDCount"] = 0 #ID count for upgrades
 LINK["scrapCollected"] = 0 #Amount of scrap colected
+LINK["fuelCollected"] = 0 #Amount of fuel colected
 LINK["allPower"] = True #Enable global power, a cheat for development
 LINK["multi"] = 0 #Is the game currently multiplayer, -1 = Map editor, 0 = Single player, 1 = Client, 2 = Server
 
@@ -127,11 +128,12 @@ LINK["drones"] = [] #Drone list of the players drones
 for i in range(0,3):
     LINK["drones"].append(LINK["ents"]["drone"].Main(i*60,0,LINK,-2-i,i+1))
 LINK["drones"][0].settings["upgrades"][0] = ["motion",0,-1]
-LINK["drones"][0].settings["upgrades"][1] = ["stealth",1,-1]
+LINK["drones"][0].settings["upgrades"][1] = ["gather",1,-1]
 LINK["drones"][1].settings["upgrades"][0] = ["generator",0,-1]
 LINK["drones"][1].settings["upgrades"][1] = ["sensor",1,-1]
 LINK["drones"][2].settings["upgrades"][0] = ["interface",2,-1]
 LINK["drones"][2].settings["upgrades"][1] = ["tow",0,-1]
+LINK["drones"][2].settings["upgrades"][2] = ["stealth",0,-1]
 LINK["drones"][0].loadUpgrades()
 LINK["drones"][1].loadUpgrades()
 LINK["drones"][2].loadUpgrades()
@@ -141,7 +143,7 @@ LINK["shipEnt"].settings["upgrades"][1] = ["overload",2,-1]
 LINK["shipEnt"].loadUpgrades()
 
 if LINK["multi"]==1: #Client
-    CLI = client.Client("127.0.1.1")
+    CLI = client.Client("127.0.0.1")
     LINK["cli"] = CLI
 loadScreen("game") #Load the main game screen (TEMPORY)
 if LINK["multi"]!=1:
@@ -151,6 +153,8 @@ run = True
 lastTime = time.time()-0.1
 while run:
     lag = (time.time()-lastTime)*30
+    if lag>6: #Limit to how slow the game can skip
+        lag = 6
     lastTime = time.time()
     KeyEvent = [] #A list of key events to send to all users
     for event in pygame.event.get():

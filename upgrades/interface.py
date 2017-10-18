@@ -13,7 +13,8 @@ class Main(base.Main):
         self.__connectedInterface = None #The interface this upgrade is attached to
         self.hitFunction = self.InterfaceHit
     def commandAllowed(self,com):
-        if (com=="scan" or com=="defence") and self.__connectedInterface is None: #Requested to do an interface command but it this upgrade is not connected
+        spl = com.split(" ")
+        if (spl[0]=="scan" or spl[0]=="defence") and self.__connectedInterface is None: #Requested to do an interface command but it this upgrade is not connected
             return "Upgrade not connected to an interface"
         elif not self.__connectedInterface is None: #An interface is connected to this upgrade
             if com=="scan" and not self.__connectedInterface.settings["scan"]: #Scan the ship
@@ -60,9 +61,10 @@ class Main(base.Main):
             if dist>45 or not self.__connectedInterface.powered: #Check distance to interface and disconnect if too far away
                 self.__connectedInterface = None
     def doCommand(self,com,usrObj=None): #Runs a command on this upgrade (only if sucsessful)
-        if com=="scan": #Scan all rooms
+        spl = com.split(" ")
+        if spl[0]=="scan": #Scan all rooms
             self.__connectedInterface.scanShip()
-        elif com=="defence": #Turn defences on/off
+        elif spl[0]=="defence": #Turn defences on/off
             self.__connectedInterface.toggleDefence()
         else: #Connect to the closest interface
             Droom = self.drone.findPosition() #Get the drones room

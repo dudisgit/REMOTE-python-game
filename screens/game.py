@@ -3,12 +3,12 @@ import pygame, time, pickle, sys, socket
 
 VERSION = 0.1
 
-SCROLL_SPEED = 2 #Scematic scroll speed
+SCROLL_SPEED = 4 #Scematic scroll speed
 CONSOLE_SIZE = [440,205] #Size of the console
 DRONE_VIEW_SCALE = 3 #Drone view zoom in
 DEF_RES = [1000,700] #Default reslution, this will be used to scale up the screen if required
 MESH_BLOCK_SIZE = 125 #Size of a single mesh block
-DEFAULT_COMMANDS = ["navigate","open","close","say","name","dock","swap"] #Default commands other than upgrade ones
+DEFAULT_COMMANDS = ["navigate","open","close","say","name","dock","swap","pickup"] #Default commands other than upgrade ones
 
 def getMapMash(MAP): #Gets the map hash for the specific map
     file = open("maps/"+MAP,"rb")
@@ -49,6 +49,9 @@ class GameEventHandle: #Used to simulate and handle the events of the game world
             self.IDLINK[ID] = self.Map[-1]
             self.addToMesh(self.Map[-1])
             self.Map[-1].afterLoad()
+            if not name in self.Ref:
+                self.Ref[name] = []
+            self.Ref[name].append(self.Map[-1])
             if self.__LINK["multi"]==2: #Is a server
                 for a in self.__LINK["serv"].users:
                     self.__LINK["serv"].users[a].sendTrigger("mke",name,pos,self.__IDMAX+0,*tuple(args))
@@ -67,6 +70,8 @@ class GameEventHandle: #Used to simulate and handle the events of the game world
                     self.Mesh[a][b].remove(c)
     def loop(self): # Called continuesly as an event loop for all entities in the map
         lag = (time.time()-self.__lastTime)*30 # Used to vary lag
+        if lag>6: #Limit to how much the game can jump
+            lag = 6
         self.__lastTime = time.time()
         rem = []
         for a in self.Map: # Loop through all objects and call their event loop
@@ -81,6 +86,10 @@ class GameEventHandle: #Used to simulate and handle the events of the game world
             if a in self.drones:
                 self.drones.remove(a)
             self.Map.remove(a) #Finaly remove them from the map
+            NAM = a.SaveFile()[0] #Get the name of the entity
+            if NAM in self.Ref:
+                if a in self.Ref[NAM]:
+                    self.Ref[NAM].remove(a)
         if len(rem)!=0:
             self.scanMESH()
     def getEnt(self,name): #Returns the entity with the name
@@ -154,6 +163,7 @@ class GameEventHandle: #Used to simulate and handle the events of the game world
         for a in self.Map: #Used to load content after the map has loaded sucsessfuly (e.g. special connections)
             a.afterLoad()
         self.__LINK["scrapCollected"] = 0 #Amount of scrap colected
+        self.__LINK["fuelCollected"] = 0 #Amount of fuel colected
         if self.__LINK["multi"] != 1: #Is not a client
             if defaultAir is None:
                 self.__LINK["log"]("There is no default airlock, finding one...")
@@ -338,6 +348,8 @@ class GameEventHandle: #Used to simulate and handle the events of the game world
                                 reason = upgrade.commandAllowed(text) #Is command valid or not according to the upgrade?
                                 if reason==True: #Execute the upgrade command
                                     out = upgrade.doCommand(text,usrObj)
+                                    if type(out)!=str:
+                                        out = "NOMES"
                                     col = (0,255,0)
                                     break
                                 elif type(reason)==str:
@@ -481,7 +493,7 @@ class Main: #Used as the screen object for rendering and interaction
                 tex,col = self.__Event.doCommand(command,-1)
             else:
                 tex,col = self.__Event.doCommand(command,self.__Event.drones.index(self.currentDrone))
-            if tex!="":
+            if tex!="" and tex!="NOMES":
                 self.__command.addLine(tex,col)
             self.__command.addLine(">",(255,255,255))
     def __isAtStart(self,str1,str2): #Returns true/false if the string is at the start of the other string
@@ -653,7 +665,9 @@ class Main: #Used as the screen object for rendering and interaction
         if self.scematic: #Is inside the scematic view
             if self.__LINK["DEVDIS"]:
                 self.__LINK["render"].drawDevMesh(self.__scemPos[0],self.__scemPos[1],0.8,surf,self.__LINK) #DEVELOPMENT
-            self.__renderFunc.render(self.__scemPos[0],self.__scemPos[1],0.8,surf) #Render the map.
+            #self.__renderFunc.render(self.__scemPos[0],self.__scemPos[1],0.8,surf) #Render the map.
+            #TEMPORY
+            self.__renderFunc.render(self.__scemPos[0],self.__scemPos[1],1,surf) #Render the map.
         elif not self.currentDrone is None:
             drpos = [self.currentDrone.pos[0]*DRONE_VIEW_SCALE*scale,self.currentDrone.pos[1]*DRONE_VIEW_SCALE*scale] #Find the drones position in screen coordinates
             if self.__LINK["DEVDIS"]:

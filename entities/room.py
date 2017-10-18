@@ -429,9 +429,6 @@ class Main(base.Main):
             textSize = list(textSurf.get_size()) #Get the size of the text rendered
             pygame.draw.rect(surf,(0,0,0),[x+(((self.size[0]/2)-(textSize[0]/2))*scale),y+((self.size[1]/4)*scale)]+textSize) #Draw a black background for the text to be displayed infront of
             surf.blit(textSurf,(x+(((self.size[0]/2)-(textSize[0]/2))*scale),y+((self.size[1]/4)*scale))) #Render text
-        if not edit and self.LINK["DEVDIS"]: #Development display, display room ID
-            textSurf = self.LINK["font42"].render("ID: "+str(self.ID),16,(0,150,0))
-            surf.blit(textSurf,(x+((self.size[0]/2)*scale),y+((self.size[1]/2)*scale))) #Render text
         if self.radiation or not self.air: #Draw warning sign
             surf.blit(self.getImage("warning"),(x+int((self.size[0]/2)*scale)-(25*scale),y+int((self.size[1]/2)*scale)-(25*scale)))
         if self.HINT:

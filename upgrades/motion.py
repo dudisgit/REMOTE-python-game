@@ -56,7 +56,6 @@ class Main(base.Main):
                         self.__scanChange[i] = a.SCAN+0
                     elif self.__scanChange[i] != a.SCAN: #Scan has changed state
                         self.__scanChange[i] = a.SCAN+0
-                        print("CHANGE")
                         if a.SCAN==3: #Bad
                             self.LINK["outputCommand"]("Motion triggered in R"+str(a.number),(255,0,0))
                         elif a.SCAN==1: #Safe

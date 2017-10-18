@@ -15,6 +15,7 @@ class Main(base.Main):
         self.__inRoom = False #Is true if the Ship upgrade is inside a room
         self.size = [25,25]
         self.beingSucked = False #Make this entity suckable out of an airlock
+        self.forcePos = None
         self.hintMessage = "Dont spawn"
     def SaveFile(self): #Give all infomation about this object ready to save to a file
         return ["ShipUpgrade",self.ID,self.pos]
@@ -37,6 +38,13 @@ class Main(base.Main):
         elif self.LINK["multi"]==2: #Server
             self.LINK["serv"].SYNC["e"+str(self.ID)] = self.GiveSync()
         if self.LINK["multi"]!=1: #Is not a client
+            if not self.forcePos is None:
+                bpos = [self.pos[0]+0,self.pos[1]+0]
+                self.pos[0] = self.forcePos[0]+0
+                self.pos[1] = self.forcePos[1]+0
+                self.forcePos = None
+                self.changeMesh(bpos)
+                self.applyPhysics()
             self.movePath(lag)
     def sRender(self,x,y,scale,surf=None,edit=False): #Render in scematic view
         if surf is None:

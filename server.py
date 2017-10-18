@@ -7,13 +7,13 @@ TCP_port = 3746 #Port for serious data transfer, e.g. chat messages
 TCP_BUF_SIZE = 4046 #Receiving buffer size
 MAX_PLAYER = 60
 PING_INTERVAL = 5 #Seconds to send a ping interval again
-SLOW_UPDATE_SPEED = 0.15 #Seconds between sending a slow update packet, (initaly syncing variables when joining a server or changing map) TCP connection.
-MAX_FREQUENT = 5 #Max number of variables allowed in the frequently changed list, increasing may resolve sync issues but would also slow network down
-FREQUENT_TIME = 5 #Seconds to update all users with frequently changed variables
+SLOW_UPDATE_SPEED = 0.25 #Seconds between sending a slow update packet, (initaly syncing variables when joining a server or changing map) TCP connection.
+MAX_FREQUENT = 12 #Max number of variables allowed in the frequently changed list, increasing may resolve sync issues but would also slow network down
+FREQUENT_TIME = 4 #Seconds to update all users with frequently changed variables
 ERROR = None #Function to call when an error happens
 MAX_KEEP = 60 # Maximum packets to keep for users to access if missed, the higher this the more memory used and possibly a user could request a packet from a while ago.
 MAX_PACKET = 200 #Maximum size of one packet sent to a user
-WORLD_UPDATE_TICK = 0.05 #Time to wait until updating the world again
+WORLD_UPDATE_TICK = 0.08 #Time to wait until updating the world again
 
 def nameIP(IP): #Turns an IP into hexadecimal charicters
     res = ""
@@ -119,6 +119,7 @@ class Player: #Class used to store a player
                 self.tsock.send(pickle.dumps(sending)) #Send the packet
         elif len(self.updateSlow)!=0 and time.time()>self.updateSlowTimer: #This will be ran initialy to send the SYNC dictionary to the user
             self.updateSlowTimer = time.time()+SLOW_UPDATE_SPEED
+            print("Sending ",self.updateSlow[0])
             if type(self.updateSlow[0])==list: #Send the message as a list
                 self.tsock.send(pickle.dumps([self.__IDSend]+self.updateSlow[0])) #Send the packet to the client
                 self.SendingBuffer[self.__IDSend] = self.updateSlow.pop(0) #Add the a buffer so the user can request this packet if it doesen't arrive
@@ -530,7 +531,7 @@ def loadLINK(serv): #Loads all content
     for i in range(0,3):
         LINK["drones"].append(LINK["ents"]["drone"].Main(i*60,0,LINK,-2-i,i+1))
     LINK["drones"][0].settings["upgrades"][0] = ["generator",0,-1]
-    LINK["drones"][0].settings["upgrades"][1] = ["stealth",2,-1]
+    LINK["drones"][0].settings["upgrades"][1] = ["gather",2,-1]
     LINK["drones"][0].settings["upgrades"][2] = ["speed",1,-1]
     LINK["drones"][1].settings["upgrades"][0] = ["pry",0,-1]
     LINK["drones"][1].settings["upgrades"][1] = ["motion",1,-1]
@@ -635,7 +636,7 @@ class GameServer:
 if __name__=="__main__": #If not imported the run as a server without a game running in the background.
     ERROR = enError
     IP = socket.gethostbyname(socket.gethostname())
-    IP = "127.0.1.1"
+    IP = "127.0.0.1"
     Game = GameServer(IP)
     while True:
         Game.loop()

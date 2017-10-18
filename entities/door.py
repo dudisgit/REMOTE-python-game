@@ -15,8 +15,10 @@ class Main(base.Main):
         self.settings["power"] = [] #Contains a list of generators the door is powered by
         self.settings["lr"] = True #This determines the direction of the door (Left right / Up down)
         self.powered = False #If the door is powered on not
+        self.health = 160 #Health of the door
         self.trying = False #Is the door trying to close?
         self.__isVac = False #Is outisde the door a vacuum
+        self.__lastHit = -1 #Time the door was last attacked
         self.__sShow = True #Show in games scematic view
         self.__inRoom = False #Is true if the door is inside a room
         self.hintMessage = "A door must be placed between two rooms. It can be opened or closed as long as its powered by a generator or room. \nIf linked to a generator, the rooms next to it will not power it!"
@@ -38,6 +40,17 @@ class Main(base.Main):
                 self.settings["power"].append(idRef[a])
             else:
                 self.LINK["errorDisplay"]("Loading power link "+str(a)+"(ID) failed in door "+str(self.ID)+"(ID).")
+    def takeDamage(self,dmg,reason=""):
+        bh = self.health+0
+        self.health -= dmg
+        if self.health<0 and bh!=0:
+            self.LINK["outputCommand"]("D"+str(self.number)+" has been destroyed.",(255,0,0))
+            self.health = 0
+            self.settings["open"] = True
+            self.alive = False
+        elif self.__lastHit==-1 or time.time()>self.__lastHit:
+            self.__lastHit = time.time()+8
+            self.LINK["outputCommand"]("D"+str(self.number)+" is being attacked",(255,255,0))
     def pry(self): #Pry's open this door (used to display animation and open door)
         if not self.settings["open"]: #Door is not open
             if random.randint(0,100)<PRY_DIE: #Destroy the door if random chance is true
@@ -65,12 +78,15 @@ class Main(base.Main):
         self.trying = data["T"]
         self.alive = data["A"]
         self.powered = data["P"]
+        if data["W"]: #Door is being attacked
+            self.__lastHit = time.time()+1
     def GiveSync(self): #Returns the synced data for this drone
         res = {}
         res["O"] = self.settings["open"]
         res["T"] = self.trying
         res["A"] = self.alive
         res["P"] = self.powered
+        res["W"] = time.time()<self.__lastHit #Door being attacked
         return res
     def loop2(self,lag): #This is "loop" but will apply actions to the door (single player/server, not client)
         if self.trying and self.powered:
@@ -82,7 +98,7 @@ class Main(base.Main):
                 self.__isVac = True
                 if random.randint(0,100)<RANDOM_DIE: #Random chance wether the door should be destroyed or not
                     self.alive = False
-                    self.LINK["outputCommand"]("Door "+str(self.number)+" has been destroyed due to outside exposure.",(255,0,0))
+                    self.LINK["outputCommand"]("D"+str(self.number)+" has been destroyed due to outside exposure.",(255,0,0))
             elif self.room1.air and self.room2.air:
                 self.__isVac = False
         self.powered = False #Make the door unpowered
@@ -259,6 +275,8 @@ class Main(base.Main):
             if self.alive and not self.powered: #If the door is not powered
                 dead = "Power"
             elif not self.alive:
+                dead = "Dead"
+            if time.time()<self.__lastHit and ((time.time()-int(time.time()))*3)%1>0.5:
                 dead = "Dead"
         if self.settings["open"]: #Door is open
             if self.trying and (time.time()-int(time.time()))>0.5:
