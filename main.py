@@ -61,7 +61,7 @@ LINK["scrapCollected"] = 0 #Amount of scrap colected
 LINK["fuelCollected"] = 0 #Amount of fuel colected
 LINK["allPower"] = True #Enable global power, a cheat for development
 LINK["absoluteDoorSync"] = True #Send packets randomly to make doors in SYNC perfectly (bigger the map the more packets)
-LINK["simpleModels"] = True #Enable/disable simple models
+LINK["simpleModels"] = False #Enable/disable simple models
 LINK["multi"] = 0 #Is the game currently multiplayer, -1 = Map editor, 0 = Single player, 1 = Client, 2 = Server
 
 print("Loading content")
