@@ -2,12 +2,16 @@
 import pygame
 import entities.base as base
 
+FUEL_COL = (0,204,255)
+
 class Main(base.Main):
     def __init__(self,x,y,LINK,ID):
         self.init(x,y,LINK) #Init on the base class, __init__ is not called because its used for error detection.
         self.ID = ID
         self.settings["god"] = False
         self.used = False #Has the fuel outlet been used by a drone.
+        self.renderSize = [-60,-60,110,110] #Used to have a bigger radius when rendering in 3D (does not effect scale)
+        self.__wallAngle = -1 #Wall angle the interface is laying on, left, right, up, down
         self.__sShow = True #Show in games scematic view
         self.__inRoom = False #Is true if the fuel outlet is inside a room
         self.hintMessage = "Fuel outlets can be collected by drones to allow the player to move forward to different ships. \nUnless godmode is turned on, they can be destroyed by air locks."
@@ -18,6 +22,16 @@ class Main(base.Main):
         self.settings["god"] = data[3]
     def SyncData(self,data): #Syncs the data with this lure
         self.used = data["U"]
+    def afterLoad(self):
+        self.__curRoom = self.findPosition()
+        if self.pos[0]==self.__curRoom.pos[0]:
+            self.__wallAngle = 0
+        elif self.pos[0]+self.size[0]==self.__curRoom.pos[0]+self.__curRoom.size[0]:
+            self.__wallAngle = 1
+        elif self.pos[1]==self.__curRoom.pos[1]:
+            self.__wallAngle = 2
+        elif self.pos[1]+self.size[1]==self.__curRoom.pos[1]+self.__curRoom.size[1]:
+            self.__wallAngle = 3
     def GiveSync(self): #Returns the synced data for this lure
         res = {}
         res["U"] = self.used
@@ -87,3 +101,23 @@ class Main(base.Main):
                 surf.blit(self.getImage("fuelDead"),(x,y))
         if self.HINT:
             self.renderHint(surf,self.hintMessage,[x,y])
+    def canShow(self,Dview=False,arcSiz=-1): #Should the generator render in scematic view
+        return not Dview
+    def render(self,x,y,scale,ang,surf=None,arcSiz=-1,eAng=None): #Render the fuel port in 3D
+        if surf is None:
+            surf = self.LINK["main"]
+        sx,sy = surf.get_size()
+        if self.LINK["simpleModels"]:
+            simp = "Simple"
+        else:
+            simp = ""
+        if self.__wallAngle==-1:
+            self.LINK["render"].renderModel(self.LINK["models"]["fuel"+simp],x+(25*scale),y+(12*scale),0,scale/2.5,surf,FUEL_COL,ang,eAng,arcSiz)
+        elif self.__wallAngle==0: #Left
+            self.LINK["render"].renderModel(self.LINK["models"]["fuelWall"+simp],x+(23*scale),y+(12.5*scale),270,scale/2.5,surf,FUEL_COL,ang,eAng,arcSiz)
+        elif self.__wallAngle==1: #Right
+            self.LINK["render"].renderModel(self.LINK["models"]["fuelWall"+simp],x+(25*scale),y+(18*scale),90,scale/2.5,surf,FUEL_COL,ang,eAng,arcSiz)
+        elif self.__wallAngle==2: #Up
+            self.LINK["render"].renderModel(self.LINK["models"]["fuelWall"+simp],x+(18*scale),y+(23*scale),180,scale/2.5,surf,FUEL_COL,ang,eAng,arcSiz)
+        elif self.__wallAngle==3: #Down
+            self.LINK["render"].renderModel(self.LINK["models"]["fuelWall"+simp],x+(18*scale),y+(27*scale),0,scale/2.5,surf,FUEL_COL,ang,eAng,arcSiz)

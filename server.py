@@ -1,4 +1,4 @@
-import socket,select,pickle,time,render, os, importlib, sys
+import socket,select,pickle,time,render, os, importlib, sys, traceback
 import entities.base as base
 
 VERSION = 0.1 #Version number, used so clients with incorrect versions cannot connect
@@ -7,7 +7,7 @@ TCP_port = 3746 #Port for serious data transfer, e.g. chat messages
 TCP_BUF_SIZE = 4046 #Receiving buffer size
 MAX_PLAYER = 60
 PING_INTERVAL = 5 #Seconds to send a ping interval again
-SLOW_UPDATE_SPEED = 0.25 #Seconds between sending a slow update packet, (initaly syncing variables when joining a server or changing map) TCP connection.
+SLOW_UPDATE_SPEED = 0.1 #0.25 #Seconds between sending a slow update packet, (initaly syncing variables when joining a server or changing map) TCP connection.
 MAX_FREQUENT = 12 #Max number of variables allowed in the frequently changed list, increasing may resolve sync issues but would also slow network down
 FREQUENT_TIME = 4 #Seconds to update all users with frequently changed variables
 ERROR = None #Function to call when an error happens
@@ -270,8 +270,6 @@ class Server: #Class for a server
         change = detectChanges(self.__SYNCBefore,self.SYNC)
         if len(change)!=0:
             sendChange = self.sensify(change)
-            sendUDP = [] #A list containing all the UDP data to send
-            sendTCP = [] #A list containing all the TCP data to send
             for a in sendChange: #Loop through the changes and detect if a message is TCP or UDP
                 tcp = False
                 path = [] #Path to the variable being edited/deleted
@@ -286,16 +284,14 @@ class Server: #Class for a server
                     self.__frequent.append(path)
                     if len(self.__frequent)>MAX_FREQUENT:
                         self.__frequent.pop(0)
-                if tcp:
-                    sendTCP.append(a)
-                else:
-                    sendUDP.append(a)
-            for a in self.users: #Send the UDP and TCP data to every player in the game
-                if not self.users[a].sender:
-                    if len(sendTCP)!=0:
-                        self.users[a].sendTCP(sendTCP)
-                    if len(sendUDP)!=0:
-                        self.users[a].sendUDP(sendUDP)
+                if tcp: #Is a TCP variable
+                    for c in self.users: #Send the TCP data to every player in the game
+                        if not self.users[c].sender:
+                            self.users[c].sendTCP(a)
+                else: #Is a UDP variable
+                    for c in self.users: #Send the UDP data to every player in the game
+                        if not self.users[c].sender:
+                            self.users[c].sendUDP(a)
             self.__SYNCBefore = varInitial(self.SYNC) #Apply the changes so further changes in SYNC can be detected.
     def uploadFrequent(self): #Sends frequently changed variables full value to all players if timer has expired
         if time.time()>self.__UpdateFrequent:
@@ -305,7 +301,10 @@ class Server: #Class for a server
             for a in self.__frequent:
                 try:
                     msg.append(["s",self.getValue(a,self.SYNC)]+a)
+                except KeyError: #Variable probebly doesen't exist anymore
+                    rem.append(a)
                 except:
+                    ERROR("Error occured when getting value in LINK, variable info:",a,"error:",traceback.format_exc())
                     rem.append(a)
             for a in rem:
                 self.__frequent.remove(a)
@@ -452,8 +451,11 @@ class Server: #Class for a server
                                 self.users[pname].sender = True
                                 self.receive(data,sock) #Receive normal
 
-def enError(err):
-    print("Error, ",err)
+def enError(*err):
+    print("Error:")
+    for a in err:
+        print("\t",a)
+    print()
 
 def ERROR(*info): #This function is called whenever an unexspected error occures. It is mainly so it can be displayed on the screen without the game crashing
     print("Err: ",info) #Tempory
@@ -500,6 +502,11 @@ def loadLINK(serv): #Loads all content
     LINK["log"] = ADDLOG #Used to log infomation (not seen in game unless developer console is turned on)
     LINK["mesh"] = {} #Used for fast entity discovery
     LINK["upgradeIDCount"] = 0 #Upgrade ID Count
+    LINK["NPCignorePlayer"] = False #Used for development
+    LINK["floorScrap"] = False #Enable/disable floor scrap
+    LINK["absoluteDoorSync"] = False #Send packets randomly to make doors in SYNC perfectly (bigger the map the more packets)
+    LINK["particles"] = False #Disable particle effects on server
+    LINK["simpleModels"] = True #Simple models
     LINK["multi"] = 2 #Running as server
     #Screens
     files = os.listdir("screens")
@@ -534,7 +541,7 @@ def loadLINK(serv): #Loads all content
     LINK["drones"][0].settings["upgrades"][1] = ["gather",2,-1]
     LINK["drones"][0].settings["upgrades"][2] = ["speed",1,-1]
     LINK["drones"][1].settings["upgrades"][0] = ["pry",0,-1]
-    LINK["drones"][1].settings["upgrades"][1] = ["motion",1,-1]
+    LINK["drones"][1].settings["upgrades"][1] = ["interface",1,-1]
     LINK["drones"][1].settings["upgrades"][2] = ["tow",0,-1]
     LINK["drones"][0].loadUpgrades() #Tempory
     LINK["drones"][1].loadUpgrades() #Tempory

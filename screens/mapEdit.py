@@ -211,14 +211,21 @@ class Main:
             self.__mouseStart = [mouse[1]+0,mouse[2]+0]
         for event in kBuf: #Keyboard event loop
             if event.type == 6 and not insideSelect: #Scrollwheel
+                sx,sy = self.__LINK["main"].get_size() #Get the size of the screen
+                siz = [self.__scroll[0]*self.__zoom,self.__scroll[1]*self.__zoom,self.__zoom+0]
                 if event.button == 4: #Mouse wheel up
                     self.__zoom *= ZOOM_SPEED
-                    if self.__zoom > 10:
-                        self.__zoom = 10
+                    if self.__zoom > 3:
+                        self.__zoom = 3
+                    else:
+                        self.__scroll[0] = ((self.__scroll[0]+mouse[1])*ZOOM_SPEED) - mouse[1]
+                        self.__scroll[1] = ((self.__scroll[1]+mouse[2])*ZOOM_SPEED) - mouse[2]
                 elif event.button == 5: #Mouse wheel down
                     self.__zoom /= ZOOM_SPEED
-                    if self.__zoom<0.1:
-                        self.__zoom = 0.1
+                    self.__scroll[0] = ((self.__scroll[0]+mouse[1])/ZOOM_SPEED) - mouse[1]
+                    self.__scroll[1] = ((self.__scroll[1]+mouse[2])/ZOOM_SPEED) - mouse[2]
+                    if self.__zoom<0.2:
+                        self.__zoom = 0.2
         if self.__click != mouse[0]: #Mouse click was changed
             self.__click = mouse[0] == True
             if mouse[0]: #Mouse down

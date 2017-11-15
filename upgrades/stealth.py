@@ -41,7 +41,7 @@ class Main(base.Main):
                 self.__value -= lag
                 if self.drone.colision: #Drone has colided with a wall
                     self.__value -= lag*8
-            if self.__value<=0: #Stealth percentage has ran out
+            if self.__value<=0 or not self.drone.alive: #Stealth percentage has ran out
                 self.__value = 0
                 self.__active = False
                 self.drone.stealth = False

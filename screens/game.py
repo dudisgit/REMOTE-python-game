@@ -1,6 +1,8 @@
 #Main screen for drones
 import pygame, time, pickle, sys, socket
 
+import math #tempory
+
 VERSION = 0.1
 
 SCROLL_SPEED = 4 #Scematic scroll speed
@@ -383,10 +385,12 @@ class Main: #Used as the screen object for rendering and interaction
         self.mapLoaded = False #Is the map loaded or not
         self.mapLoading = False #Is the map loading
         self.__renderFunc = LINK["render"].Scematic(LINK,False) #Class to render entities
+        self.__droneFeed = LINK["render"].DroneFeed(LINK) #Class to render entities in 3D as in drone feed
         self.__command = LINK["render"].CommandLine(LINK,3) #Class to render command line
         self.__reslution = LINK["reslution"] #Reslution of the game
         self.__Event = GameEventHandle(LINK) # Stores the class "GameEventHandle" to handle events for entities
         self.__renderFunc.ents = self.Map #Make sure the rendering class gets updates from this one through a pointer
+        self.__droneFeed.ents = self.Map
         self.scematic = True #If viewing in scematic view
         self.__scemPos = [0,0] #Scematic position
         self.__HoldKeys = {} #Keys being held down
@@ -410,6 +414,7 @@ class Main: #Used as the screen object for rendering and interaction
             self.__LINK["cli"].TRIGGER["rbud"] = self.__dlBubble #Remove all visual bubbles in a room
             self.__LINK["cli"].TRIGGER["cupg"] = self.__callUpgrade #Call an upgrade on a drone to work client-side (not recomended but used for menu's)
             self.__LINK["cli"].TRIGGER["mke"] = self.__Event.createEnt #Create a new entity in the map
+            self.__LINK["cli"].TRIGGER["duc"] = self.__airTarget #Make a drone being sucked by an airlock
             self.name = socket.gethostbyname(socket.gethostname())
             self.IP = nameIP(self.name)
             mapLoading = True
@@ -423,6 +428,12 @@ class Main: #Used as the screen object for rendering and interaction
             if a.name==upgradeName: #Found the upgrade
                 a.clientCall(*tuple(args))
                 break
+    def __airTarget(self,ID,airID): #An airlock is targeting a drone
+        if airID==False and type(airID)==bool: #Drone has stopped being sucked out an airlock
+            self.__Event.IDLINK[ID].beingSucked = False
+        elif self.__Event.IDLINK[ID].pathTo(self.__Event.IDLINK[airID]): #Drone is being sucked out an airlock
+            self.__Event.IDLINK[ID].paths[-1][0] = 1
+            self.__Event.IDLINK[ID].beingSucked = True
     def __mkBubble(self,ID,pos): #Creates a vacuum bubble in a room requested by the server
         self.__Event.IDLINK[ID].airBurst(pos,"",-1)
     def __mkRad(self,ID,pos): #Creates a radiation bubble in the room requested by the server
@@ -435,7 +446,7 @@ class Main: #Used as the screen object for rendering and interaction
         self.__Event.ship.dockTo(self.__Event.Ref[TO],True)
     def addCommands(self,tex,drone,extr=-1): #Called by the server to add text to a command line
         if drone==-1: #Scematic view
-            dr = len(self.__Event.drones)
+            dr = len(self.__command.tabs)-1
         elif drone==-2: #All views
             for i in range(0,len(self.__Event.drones)+1):
                 if tex!="":
@@ -464,6 +475,7 @@ class Main: #Used as the screen object for rendering and interaction
             self.currentDrone = droneNums[number] #Set the current drone object to the one specified
             self.scematic = False #Is not viewing in scematic view
             self.__command.activeTab = number-1 #Switch to the specific tab of the drone
+            self.__UpdateRender = 0
     def putLine(self,tex,col,Tab=None): #Adds a line to the current command line
         if Tab is None:
             TB = None
@@ -483,6 +495,8 @@ class Main: #Used as the screen object for rendering and interaction
             if len(command)>175: #Max text limit for text
                 self.putLine("Gone over max text limit",(255,255,255))
             else:
+                if not self.currentDrone in self.__Event.drones:
+                    self.currentDrone = None
                 if self.currentDrone is None:
                     self.__LINK["cli"].sendTrigger("com",command,-1)
                 else:
@@ -651,6 +665,7 @@ class Main: #Used as the screen object for rendering and interaction
     def open(self,name): #Opens a map
         self.__Event.open(name)
         self.__renderFunc.ents = self.__Event.Map
+        self.__droneFeed.ents = self.__Event.Map
         self.__scemPos = [self.__Event.ship.pos[0]-(self.__LINK["reslution"][0]/2),self.__Event.ship.pos[1]-(self.__LINK["reslution"][1]/2)] #Start the scematic position at the ships position
         self.__command.activeTab = len(self.__Event.drones)
         for i,a in enumerate(self.__Event.drones):
@@ -665,16 +680,17 @@ class Main: #Used as the screen object for rendering and interaction
         if self.scematic: #Is inside the scematic view
             if self.__LINK["DEVDIS"]:
                 self.__LINK["render"].drawDevMesh(self.__scemPos[0],self.__scemPos[1],0.8,surf,self.__LINK) #DEVELOPMENT
-            #self.__renderFunc.render(self.__scemPos[0],self.__scemPos[1],0.8,surf) #Render the map.
-            #TEMPORY
-            self.__renderFunc.render(self.__scemPos[0],self.__scemPos[1],1,surf) #Render the map.
+            self.__renderFunc.render(self.__scemPos[0],self.__scemPos[1],0.8,surf) #Render the map.
         elif not self.currentDrone is None:
             drpos = [self.currentDrone.pos[0]*DRONE_VIEW_SCALE*scale,self.currentDrone.pos[1]*DRONE_VIEW_SCALE*scale] #Find the drones position in screen coordinates
             if self.__LINK["DEVDIS"]:
                 self.__LINK["render"].drawDevMesh(drpos[0]-(self.__LINK["reslution"][0]/2)+(25*scale),drpos[1]-(self.__LINK["reslution"][1]/2)+(25*scale),DRONE_VIEW_SCALE*scale,surf,self.__LINK) #DEVELOPMENT
-            self.__renderFunc.render(drpos[0]-(self.__LINK["reslution"][0]/2)+(25*scale),drpos[1]-(self.__LINK["reslution"][1]/2)+(25*scale),DRONE_VIEW_SCALE*scale,surf) #Render the map through drone view.
+            self.__renderFunc.render(drpos[0]-(self.__LINK["reslution"][0]/2)+(25*scale),drpos[1]-(self.__LINK["reslution"][1]/2)+(25*scale),DRONE_VIEW_SCALE*scale,surf,True) #Render the map through drone view.
+            self.__droneFeed.render(drpos[0]-(self.__LINK["reslution"][0]/2)+(25*scale),drpos[1]-(self.__LINK["reslution"][1]/2)+(25*scale),DRONE_VIEW_SCALE*scale,self.currentDrone.angle+90,self.currentDrone.findPosition(),self.currentDrone,surf) #Render map in 3D
         if self.__LINK["DEVDIS"]:
             self.__LINK["render"].drawConnection(10,10,surf,self.__LINK)
         self.__command.render(self.__reslution[0]-CONSOLE_SIZE[0]-20,self.__reslution[1]-CONSOLE_SIZE[1]-20,CONSOLE_SIZE[0],CONSOLE_SIZE[1],surf) #Render command line
         for a in self.force:
             a[2](surf,list(surf.get_size()))
+
+

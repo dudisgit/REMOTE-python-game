@@ -30,6 +30,8 @@ class Main(base.Main):
             return "Allredey scanning rooms"
         elif self.scansLeft<=0: #Ran out of scans to scan a room
             return "Ran out of scans"
+        elif not self.drone.alive: #Drone is dead
+            return "Drone is disabled"
         return True #Sucsessful
     def upgradeDelete(self):
         self.LINK["serv"].SYNC.pop("u"+str(self.ID))
@@ -61,7 +63,7 @@ class Main(base.Main):
                         elif a.SCAN==1: #Safe
                             self.LINK["outputCommand"]("Motion un-triggered in R"+str(a.number),(255,255,0))
                 self.__scanAgain = time.time()+(1/UPDATE_RATE)
-            if [int(self.drone.pos[0]),int(self.drone.pos[1])]!=self.__savePos: #Has the drone moved from when the upgrade was first turned on?
+            if [int(self.drone.pos[0]),int(self.drone.pos[1])]!=self.__savePos or not self.drone.alive: #Has the drone moved from when the upgrade was first turned on?
                 self.__inUse = False
                 for a in self.__scanRooms: #Go through every room and disable their scan lines
                     a.SCAN = 0

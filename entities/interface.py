@@ -2,7 +2,8 @@
 import pygame, random
 import entities.base as base
 
-RANDOM_DIE = 30 #Percentage chance the generator will be destroyed when the room is vacuumed
+RANDOM_DIE = 30 #Percentage chance the interface will be destroyed when the room is vacuumed
+INTERFACE_COL = (0,204,255) #Colour of the interface when rendered in 3D
 
 class Main(base.Main):
     def __init__(self,x,y,LINK,ID):
@@ -15,6 +16,7 @@ class Main(base.Main):
         self.defence = False #Activate/deactivate defences
         self.linkable = ["inter"] #Make the interface accept link upgrades
         self.__sShow = True #Show in games scematic view
+        self.__wallAngle = -1 #Wall angle the interface is laying on, left, right, up, down
         self.__inRoom = False #Is true if the interface is inside a room
         self.__isVac = False #Used to detect change in air pressure inside the current room
         self.powered = False #Is this interface powered or not
@@ -33,6 +35,14 @@ class Main(base.Main):
         pass
     def afterLoad(self):
         self.__curRoom = self.findPosition()
+        if self.pos[0]==self.__curRoom.pos[0]:
+            self.__wallAngle = 0
+        elif self.pos[0]+self.size[0]==self.__curRoom.pos[0]+self.__curRoom.size[0]:
+            self.__wallAngle = 1
+        elif self.pos[1]==self.__curRoom.pos[1]:
+            self.__wallAngle = 2
+        elif self.pos[1]+self.size[1]==self.__curRoom.pos[1]+self.__curRoom.size[1]:
+            self.__wallAngle = 3
     def loop2(self,lag): #Ran if single player or server
         self.powered = False #Make the interface unpowered
         if len(self.settings["power"])==0: #Check if either room is powered
@@ -47,7 +57,17 @@ class Main(base.Main):
             if not self.__isVac and random.randint(0,100)<RANDOM_DIE and not self.settings["god"]: #Destroy the generator
                 self.alive = False
                 self.LINK["outputCommand"]("Interface in R"+str(self.__curRoom.number)+" has been destroyed due to outside exposure.",(255,0,0))
+    def SyncData(self,data): #Syncs the data with this interface
+        self.alive = data["A"]
+    def GiveSync(self): #Returns the synced data for this interface
+        res = {}
+        res["A"] = self.alive
+        return res
     def loop(self,lag):
+        if self.LINK["multi"]==1: #Client
+            self.SyncData(self.LINK["cli"].SYNC["e"+str(self.ID)])
+        elif self.LINK["multi"]==2: #Server
+            self.LINK["serv"].SYNC["e"+str(self.ID)] = self.GiveSync()
         if self.LINK["multi"]!=1: #Single player or server
             self.loop2(lag)
     def LoadFile(self,data,idRef): #Load from a file
@@ -140,9 +160,39 @@ class Main(base.Main):
             else:
                 surf.blit(self.getImage("interfaceDead"),(x,y))
         else:
-            if self.alive:
-                surf.blit(self.getImage("interface"),(x,y))
-            else:
-                surf.blit(self.getImage("interfaceDead"),(x,y))
+            if self.alive: #Interface is alive
+                D = ""
+            else: #Interface is dead
+                D = "Dead"
+            if self.__wallAngle==-1: #Not againsed a wall
+                surf.blit(self.getImage("interface"+D),(x,y))
+            elif self.__wallAngle==0: #Left
+                surf.blit(self.getImage("interfaceWall"+D),(x,y))
+            elif self.__wallAngle==1: #Right
+                surf.blit(pygame.transform.rotate(self.getImage("interfaceWall"+D),180),(x,y))
+            elif self.__wallAngle==2: #Up
+                surf.blit(pygame.transform.rotate(self.getImage("interfaceWall"+D),90),(x,y-(25*scale)))
+            elif self.__wallAngle==3: #Down
+                surf.blit(pygame.transform.rotate(self.getImage("interfaceWall"+D),270),(x,y+(25*scale)))
         if self.HINT:
             self.renderHint(surf,self.hintMessage,[x,y])
+    def canShow(self,Dview=False,arcSiz=-1): #Should the generator render in scematic view
+        return not Dview
+    def render(self,x,y,scale,ang,surf=None,arcSiz=-1,eAng=None): #Render the interface in 3D
+        if surf is None:
+            surf = self.LINK["main"]
+        sx,sy = surf.get_size()
+        if self.LINK["simpleModels"]:
+            simp = "Simple"
+        else:
+            simp = ""
+        if self.__wallAngle==-1:
+            self.LINK["render"].renderModel(self.LINK["models"]["interface"+simp],x+(25*scale),y+(12*scale),0,scale/2,surf,INTERFACE_COL,ang,eAng,arcSiz)
+        elif self.__wallAngle==0: #Left
+            self.LINK["render"].renderModel(self.LINK["models"]["interfaceWall"+simp],x+(12*scale),y+(12.5*scale),90,scale/1.6,surf,INTERFACE_COL,ang,eAng,arcSiz)
+        elif self.__wallAngle==1: #Right
+            self.LINK["render"].renderModel(self.LINK["models"]["interfaceWall"+simp],x+(40*scale),y+(12.5*scale),270,scale/1.6,surf,INTERFACE_COL,ang,eAng,arcSiz)
+        elif self.__wallAngle==2: #Up
+            self.LINK["render"].renderModel(self.LINK["models"]["interfaceWall"+simp],x+(18*scale),y+(12.5*scale),0,scale/1.6,surf,INTERFACE_COL,ang,eAng,arcSiz)
+        elif self.__wallAngle==3: #Down
+            self.LINK["render"].renderModel(self.LINK["models"]["interfaceWall"+simp],x+(18*scale),y+(40*scale),180,scale/1.6,surf,INTERFACE_COL,ang,eAng,arcSiz)

@@ -1,6 +1,9 @@
 #Do not run this file, it is a module!
-import pygame, random
+import pygame, random, math, time
 import entities.base as base
+
+RANDOM_DIE = 30 #Percentage chance the turret will be destroyed when the room is vacuumed
+SPARK_SIZE = 0.5 #Size length of a spark
 
 class Main(base.Main):
     def __init__(self,x,y,LINK,ID):
@@ -12,9 +15,23 @@ class Main(base.Main):
         self.turretActive = False #Is the turret currently active
         self.powered = False #Is this turret powered?
         self.__activeChange = False #Used to detect changes in the turret being active
+        self.__room = None #Room the turret is inside of
+        self.__turretTarget = None #Entity the turret is shooting
+        self.__bullets = [] #Used to render bullets
+        #Syntax
+        #0: Percentage path
+        #1: Start pos
+        #2: End pos
+        self.__fireSide = False #Side the gun fires
+        self.__fireAgain = time.time()+0.1 #Time until the turret fires again
+        self.__particle = None #Particle effects
+        self.__aliveChange = True #Detects changes in alive status (used in mutliplayer)
+        self.__isVac = False #Used to detect change in air pressure inside the current room
         self.__sShow = True #Show in games scematic view
         self.__inRoom = False #Is true if the turret is inside a room
         self.hintMessage = "A turret is a player controlled ship defence, the player can turn on/off turrets using an interface whilst the turret is powered. \nWhen active it will kill anything in the room (including the player)"
+    def __renderParticle(self,x,y,scale,alpha,surf,a):
+        pygame.draw.line(surf,(255,255,0),[x-(math.cos(a[2]/180*math.pi)*SPARK_SIZE*scale*a[3]),y-(math.sin(a[2]/180*math.pi)*SPARK_SIZE*scale*a[3])],[x+(math.cos(a[2]/180*math.pi)*SPARK_SIZE*scale*a[3]),y+(math.sin(a[2]/180*math.pi)*SPARK_SIZE*scale*a[3])],int(1*scale))
     def SaveFile(self): #Give all infomation about this object ready to save to a file
         pows = []
         for i,a in enumerate(self.settings["power"]):
@@ -45,44 +62,113 @@ class Main(base.Main):
             if a.defence: #Interface is requesting this turret to turn on
                 self.turretActive = True
                 break
-        if self.turretActive and self.powered and self.alive: #Active turret
-            Rom = self.findPosition() #Get the room the turret is in
-            if Rom!=-1 and type(Rom)==self.getEnt("room"): #Position and room is valid
-                Ents = Rom.EntitiesInside() #Get all entities in the rooms
-                DroneObject = self.getEnt("drone") #Drone object
-                Ems = 0
-                for a in Ents: #Go through every entity in the room
-                    if (a.isNPC or type(a)==DroneObject) and a.alive: #Is an NPC or drone thats alive
-                        if a.health>0: #Health is still above 0
-                            if a.takeDamage(lag,"turret"):
-                                self.LINK["outputCommand"]("Turret in R"+str(Rom.number)+" has killed an object",(255,255,0))
-                        if type(a)==self.getEnt("swarm"): #Swarm NPC
-                            Ems += random.randint(25,35)
-                        else:
-                            Ems += 1
-                if not self.__activeChange: #The turrets first time turning on from its off state
-                    self.__activeChange = True
-                    if Ems==0:
-                        self.LINK["outputCommand"]("Turret in R"+str(Rom.number)+" activated",(0,255,0))
+        if self.__room.air != self.__isVac and not self.__room is None: #Check wether the air pressure inside the room has changed
+            self.__isVac = self.__room.air == True
+            if not self.__isVac and random.randint(0,100)<RANDOM_DIE and not self.settings["god"]: #Destroy the turret
+                self.alive = False
+                self.LINK["outputCommand"]("Turret in R"+str(self.__room.number)+" has been destroyed due to outside exposure.",(255,0,0))
+                if self.LINK["particles"]: #Generate particle effects
+                    self.__particle = self.LINK["render"].ParticleEffect(self.LINK,self.pos[0]+(self.size[0]/2),self.pos[1]+(self.size[1]/2),0,360,12,0.9,10,0.5,1.5,1)
+                    self.__particle.renderParticle = self.__renderParticle
+        if self.turretActive and self.powered and self.alive and self.__turretTarget is None and not self.__room is None: #Active turret
+            Ents = self.__room.EntitiesInside() #Get all entities in the rooms
+            DroneObject = self.getEnt("drone") #Drone object
+            self.angle += lag*5
+            Ems = 0
+            for a in Ents: #Go through every entity in the room
+                if (a.isNPC or type(a)==DroneObject) and a.alive and not a.stealth: #Is an NPC or drone thats alive
+                    if a.health>0: #Health is still above 0
+                        self.__turretTarget = a
+                    if type(a)==self.getEnt("swarm"): #Swarm NPC
+                        Ems += random.randint(25,35)
                     else:
-                        self.LINK["outputCommand"]("Turret in R"+str(Rom.number)+" attacking "+str(Ems)+" objects",(255,255,0))
+                        Ems += 1
+            if not self.__activeChange: #The turrets first time turning on from its off state
+                self.__activeChange = True
+                if Ems==0:
+                    self.LINK["outputCommand"]("Turret in R"+str(self.__room.number)+" activated",(0,255,0))
+                else:
+                    self.LINK["outputCommand"]("Turret in R"+str(self.__room.number)+" attacking "+str(Ems)+" objects",(255,255,0))
+        elif not self.__turretTarget is None: #Fire at target
+            self.angle+=90
+            if time.time()>self.__fireAgain and self.LINK["multi"]!=2: #Is not a server and can fire a bullet
+                self.__fireBullet()
+                self.__fireAgain = time.time()+0.1
+            if self.__turretTarget.takeDamage(lag,"turret"): #Damage targt, true if target is dead
+                self.__turretTarget = None
+                self.LINK["outputCommand"]("Turret in R"+str(self.__room.number)+" has killed an object",(255,255,0))
+            elif self.__turretTarget.findPosition()!=self.__room: #Target ran away
+                self.__turretTarget = None
+            else: #Aim at target
+                self.angle = math.atan2(self.pos[0]-self.__turretTarget.pos[0],self.pos[1]-self.__turretTarget.pos[1])*180/math.pi
+                self.angle+=90
         else:
             self.__activeChange = False
+    def __fireBullet(self): #Fires a visual bullet
+        ang2 = -math.atan2(self.pos[0]+(self.size[0]/2)-(self.__turretTarget.pos[0]+(self.__turretTarget.size[0]/2)),self.pos[1]+(self.size[1]/2)-(self.__turretTarget.pos[1]+(self.__turretTarget.size[1]/2)))
+        PS = [25+(math.sin(self.angle/180*math.pi)*4),25+(math.cos(self.angle/180*math.pi)*4)]
+        if self.__fireSide: #Fire on the left cannon
+            Start = [self.pos[0]+PS[0]+(math.cos(ang2-2)*8),self.pos[1]+PS[1]+(math.sin(ang2-2)*8)]
+        else: #Fire on the right cannon
+            Start = [self.pos[0]+PS[0]+(math.cos(ang2-1)*8),self.pos[1]+PS[1]+(math.sin(ang2-1)*8)]
+        #Create and fire new bullet
+        self.__bullets.append([0,Start,[self.__turretTarget.pos[0]+(self.__turretTarget.size[0]/2),self.__turretTarget.pos[1]+(self.__turretTarget.size[1]/2)]])
+        self.__fireSide = not self.__fireSide #Switch cannon
     def SyncData(self,data): #Syncs the data with this drone
+        if data["T"]==-1: #Turret is idle
+            self.__turretTarget = None
+        else: #Turret is attacking
+            self.__turretTarget = self.LINK["IDs"][data["T"]]
         self.turretActive = data["A"] == True
         self.alive = data["L"] == True
+        if self.alive != self.__aliveChange: #Alive status has changed
+            self.__aliveChange = self.alive == True
+            if not self.alive and self.LINK["particles"]: #Generate particle effects
+                self.__particle = self.LINK["render"].ParticleEffect(self.LINK,self.pos[0]+(self.size[0]/2),self.pos[1]+(self.size[1]/2),0,360,12,0.9,10,0.5,1.5,1)
+                self.__particle.renderParticle = self.__renderParticle
+    def afterLoad(self): #Called when the map is first loaded
+        self.__room = self.findPosition()
+        if not type(self.__room)==self.getEnt("room") or self.__room==-1:
+            self.__room = None
     def GiveSync(self): #Returns the synced data for this drone
         res = {}
+        if self.__turretTarget is None: #No target
+            res["T"] = -1
+        else: #Targeting something
+            res["T"] = self.__turretTarget.ID
         res["A"] = self.turretActive
         res["L"] = self.alive
         return res
     def loop(self,lag):
         if self.LINK["multi"]==1: #Client
             self.SyncData(self.LINK["cli"].SYNC["e"+str(self.ID)])
+            if not self.__turretTarget is None and self.alive: #Turret is targeting something that is alive
+                self.angle+=90
+                if time.time()>self.__fireAgain and self.LINK["multi"]!=2: #Is not a server and can fire a bullet
+                    self.__fireBullet()
+                    self.__fireAgain = time.time()+0.1
+                self.angle = math.atan2(self.pos[0]-self.__turretTarget.pos[0],self.pos[1]-self.__turretTarget.pos[1])*180/math.pi
+                self.angle+=90
+            elif self.turretActive and self.alive: #Turret is idle
+                self.angle+=lag*5
         elif self.LINK["multi"]==2: #Server
             self.LINK["serv"].SYNC["e"+str(self.ID)] = self.GiveSync()
         if self.LINK["multi"]!=1: #Is not client, single player or server
             self.loop2(lag)
+        if self.LINK["multi"]!=2: #Is not a server
+            rem = []
+            if not self.NPCATTACK is None:
+                dist = math.sqrt(((self.pos[0]-self.NPCATTACK.pos[0])**2)+((self.pos[1]-self.NPCATTACK.pos[1])**2))
+            else:
+                dist = 100
+            for a in self.__bullets: #Go through all bullets and make them move forwards
+                a[0]+=(lag/10)*(100/dist)
+                if a[0]>=1: #Bullet has finished path, deleting
+                    rem.append(a)
+            for a in rem: #Delete bullets
+                self.__bullets.remove(a)
+            if not self.__particle is None: #Event loop for particle system if the android is dead
+                self.__particle.loop(lag)
     def LoadFile(self,data,idRef): #Load from a file
         self.pos = data[2]
         self.settings["god"] = data[3]
@@ -199,3 +285,29 @@ class Main(base.Main):
                 surf.blit(self.getImage("turret"),(x,y))
         if self.HINT:
             self.renderHint(surf,self.hintMessage,[x,y])
+    def canShow(self,Dview=False): #Should the turret render in scematic view
+        return not Dview
+    def render(self,x,y,scale,ang,surf=None,arcSiz=-1,eAng=None,isActive=False): #Render turret in 3D
+        if surf is None:
+            surf = self.LINK["main"]
+        sx,sy = surf.get_size()
+        self.LINK["render"].renderModel(self.LINK["models"]["turretBase"],x+(25*scale),y+(12*scale),0,scale/1.75,surf,(0,204,255),ang,eAng,arcSiz)
+        if self.LINK["simpleModels"]:
+            self.LINK["render"].renderModel(self.LINK["models"]["turretSimple"],x+(25*scale),y+(25*scale),self.angle,scale/1.75,surf,(0,204,255),ang,eAng,arcSiz)
+        else:
+            self.LINK["render"].renderModel(self.LINK["models"]["turret"],x+(25*scale),y+(25*scale),self.angle,scale/1.75,surf,(0,204,255),ang,eAng,arcSiz)
+        scrpos = [(self.pos[0]*scale)-x,(self.pos[1]*scale)-y] #Scroll position
+        for a in self.__bullets: #Render all bullets
+            #Draw a line to reprisent a bullet
+            PS = [a[1][0]-((a[1][0]-a[2][0])*a[0]),a[1][1]-((a[1][1]-a[2][1])*a[0])]
+            PS2 = [a[1][0]-((a[1][0]-a[2][0])*(a[0]+0.02)),a[1][1]-((a[1][1]-a[2][1])*(a[0]+0.02))]
+            if ang is None:
+                pygame.draw.line(surf,(0,255,255),[int((PS[0]*scale)-scrpos[0]),int((PS[1]*scale)-scrpos[1])],[int((PS2[0]*scale)-scrpos[0]),int((PS2[1]*scale)-scrpos[1])],int(2*scale))
+            elif self.LINK["render"].insideArc([int((PS[0]*scale)-scrpos[0]),int((PS[1]*scale)-scrpos[1])],[sx/2,sy/2],ang):
+                pygame.draw.line(surf,(0,255,255),[int((PS[0]*scale)-scrpos[0]),int((PS[1]*scale)-scrpos[1])],[int((PS2[0]*scale)-scrpos[0]),int((PS2[1]*scale)-scrpos[1])],int(2*scale))
+            elif eAng is None:
+                pass
+            elif self.LINK["render"].insideArc([int((PS[0]*scale)-scrpos[0]),int((PS[1]*scale)-scrpos[1])],[sx/2,sy/2],eAng):
+                pygame.draw.line(surf,(0,255,255),[int((PS[0]*scale)-scrpos[0]),int((PS[1]*scale)-scrpos[1])],[int((PS2[0]*scale)-scrpos[0]),int((PS2[1]*scale)-scrpos[1])],int(2*scale))
+        if not self.__particle is None: #Particle effects for when the android dies
+            self.__particle.render(x-((self.pos[0]-self.__particle.pos[0])*scale),y-((self.pos[1]-self.__particle.pos[1])*scale),scale,ang,eAng,surf)

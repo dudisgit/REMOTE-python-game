@@ -1,9 +1,11 @@
 #Do not run this file, it is a module!
-import pygame, time, random
+import pygame, time, random, math
 import entities.base as base
 
 RANDOM_DIE = 10 #Percentage change that the door will get destroyed when a room gets vacuumed
 PRY_DIE = 20 #Percentage change that the door will get gestroyed when its pried open
+DOOR_COL = (255,255,255) #Colour of the door when rendered in 3D
+SPARK_SIZE = 0.5 #Size length of a spark
 
 class Main(base.Main):
     def __init__(self,x,y,LINK,ID,number=-1):
@@ -18,10 +20,17 @@ class Main(base.Main):
         self.health = 160 #Health of the door
         self.trying = False #Is the door trying to close?
         self.__isVac = False #Is outisde the door a vacuum
+        self.__wait = 0 #Time to wait until this door can open
         self.__lastHit = -1 #Time the door was last attacked
+        self.__updateAgain = time.time()+random.randint(4,9) #Time until the door will update all users that its still open/closed
         self.__sShow = True #Show in games scematic view
         self.__inRoom = False #Is true if the door is inside a room
+        self.Attacker = None #The entity that is attacking this door
+        self.__attackChange = False #Used to detect changes in the door being attacked (client side)
+        self.__parts = [None,None] #A list of particle effects going on, order = Up,Down or Left,Right
         self.hintMessage = "A door must be placed between two rooms. It can be opened or closed as long as its powered by a generator or room. \nIf linked to a generator, the rooms next to it will not power it!"
+    def __renderParticle(self,x,y,scale,alpha,surf,a):
+        pygame.draw.line(surf,(255,255,0),[x-(math.cos(a[2]/180*math.pi)*SPARK_SIZE*scale*a[3]),y-(math.sin(a[2]/180*math.pi)*SPARK_SIZE*scale*a[3])],[x+(math.cos(a[2]/180*math.pi)*SPARK_SIZE*scale*a[3]),y+(math.sin(a[2]/180*math.pi)*SPARK_SIZE*scale*a[3])],int(1*scale))
     def SaveFile(self): #Give all infomation about this object ready to save to a file
         pows = []
         for i,a in enumerate(self.settings["power"]):
@@ -46,16 +55,38 @@ class Main(base.Main):
         if self.health<0 and bh!=0:
             self.LINK["outputCommand"]("D"+str(self.number)+" has been destroyed.",(255,0,0))
             self.health = 0
+            if self.LINK["particles"]:
+                self.__parts = [self.LINK["render"].ParticleEffect(self.LINK,self.pos[0]+(self.size[0]/2),self.pos[1]+(self.size[1]/2),0,360,12,0.9,30,0.5,1.5,1)]
             self.settings["open"] = True
             self.alive = False
         elif self.__lastHit==-1 or time.time()>self.__lastHit:
-            self.__lastHit = time.time()+8
             self.LINK["outputCommand"]("D"+str(self.number)+" is being attacked",(255,255,0))
+            if self.__parts[0] is None and self.LINK["particles"]: #Apply particle effects to signify door is being attacked
+                if self.settings["lr"]: #Door is left to right
+                    self.__parts = [self.LINK["render"].ParticleEffect(self.LINK,self.pos[0]-15,self.pos[1]+(self.size[1]/2),0,15,12,0.8,20,0.2,0.3,1),
+                        self.LINK["render"].ParticleEffect(self.LINK,self.pos[0]+self.size[0]+15,self.pos[1]+(self.size[1]/2),180,15,12,0.8,20,0.2,0.3,1)]
+                else: #Door is up to down
+                    self.__parts = [self.LINK["render"].ParticleEffect(self.LINK,self.pos[0]+(self.size[0]/2),self.pos[1]-15,90,15,12,0.8,20,0.2,0.3,1),
+                        self.LINK["render"].ParticleEffect(self.LINK,self.pos[0]+(self.size[0]/2),self.pos[1]+self.size[1]+15,270,15,12,0.8,20,0.2,0.3,1)]
+        for a in self.__parts: #Make all particle effects use the correct rendering function
+            if not a is None:
+                a.renderParticle = self.__renderParticle
+        self.__lastHit = time.time()+8
     def pry(self): #Pry's open this door (used to display animation and open door)
         if not self.settings["open"]: #Door is not open
             if random.randint(0,100)<PRY_DIE: #Destroy the door if random chance is true
                 self.alive = False
             self.settings["open"] = True #Open the door
+    def __roomAddDirection(self,RM): #Adds this door to the rooms door position checking (used for 3D rendering when missing walls for door spaces)
+        if self.pos[1]+self.size[1]==RM.pos[1]: #Door is on the TOP side of the room
+            RM.dirDoors[0].append(self)
+        if self.pos[1]==RM.pos[1]+RM.size[1]: #Door is on the BOTTOM side of the room
+            RM.dirDoors[1].append(self)
+        if self.pos[0]+self.size[0]==RM.pos[0]: #Door is on the LEFT side of the room
+            RM.dirDoors[2].append(self)
+        if self.pos[0]==RM.pos[0]+RM.size[0]: #Door is on the RIGHT side of the room
+            RM.dirDoors[3].append(self)
+        RM.reloadCorners() #Reload the rooms corners for fast rendering
     def afterLoad(self): #Called after the entity has loaded
         if self.LINK["multi"] != -1: #Is not loaded in map editor
             #This is for finding the connected rooms to this door
@@ -73,13 +104,28 @@ class Main(base.Main):
                 self.room2 = None
             else:
                 self.room2.doors.append(self)
+            self.__roomAddDirection(self.room1)
+            self.__roomAddDirection(self.room2)
     def SyncData(self,data): #Syncs the data with this drone
         self.settings["open"] = data["O"]
         self.trying = data["T"]
         self.alive = data["A"]
+        if not self.alive and len(self.__parts)!=1 and self.settings["open"] and self.LINK["particles"]:
+            self.__parts = [self.LINK["render"].ParticleEffect(self.LINK,self.pos[0]+(self.size[0]/2),self.pos[1]+(self.size[1]/2),0,360,12,0.9,30,0.5,1.5,1)]
         self.powered = data["P"]
         if data["W"]: #Door is being attacked
             self.__lastHit = time.time()+1
+        if self.__attackChange!=data["W"]: #Used to detect changes in being attacked to display the right particle effects
+            self.__attackChange = data["W"] == True
+            if data["W"] and self.LINK["particles"]: #Being attacked
+                if self.settings["lr"]: #Door is left to right
+                    self.__parts = [self.LINK["render"].ParticleEffect(self.LINK,self.pos[0]-15,self.pos[1]+(self.size[1]/2),0,15,12,0.8,20,0.2,0.3,1),
+                        self.LINK["render"].ParticleEffect(self.LINK,self.pos[0]+self.size[0]+15,self.pos[1]+(self.size[1]/2),180,15,12,0.8,20,0.2,0.3,1)]
+                else: #Door is up to down
+                    self.__parts = [self.LINK["render"].ParticleEffect(self.LINK,self.pos[0]+(self.size[0]/2),self.pos[1]-15,90,15,12,0.8,20,0.2,0.3,1),
+                        self.LINK["render"].ParticleEffect(self.LINK,self.pos[0]+(self.size[0]/2),self.pos[1]+self.size[1]+15,270,15,12,0.8,20,0.2,0.3,1)]
+            elif self.alive: #Door is fine
+                self.__parts = [None,None]
     def GiveSync(self): #Returns the synced data for this drone
         res = {}
         res["O"] = self.settings["open"]
@@ -93,12 +139,28 @@ class Main(base.Main):
             if len(self.EntitiesInside())==0:
                 self.CLOSE()
                 self.trying = False
+        if self.LINK["multi"]==2 and time.time()>self.__updateAgain and self.LINK["absoluteDoorSync"]: #Is a server, this will update all users telling them the door is still open
+            #This is incase the very unlikely chance the door doesen't sync its open/closed state
+            self.__updateAgain = time.time()+random.randint(5,12) #Update again in a random time
+            send = [["s",self.settings["open"]==True,"e"+str(self.ID),"O"]]
+            for a in self.LINK["serv"].users: #Send data to all users
+                self.LINK["serv"].users[a].sendUDP(send)
         if not self.room1 is None and not self.room2 is None and self.alive: #Door is valid
             if (not self.room1.air or not self.room2.air) and not self.__isVac: #A room has been vacuumed without the door knowing
                 self.__isVac = True
                 if random.randint(0,100)<RANDOM_DIE: #Random chance wether the door should be destroyed or not
                     self.alive = False
                     self.LINK["outputCommand"]("D"+str(self.number)+" has been destroyed due to outside exposure.",(255,0,0))
+                    if self.LINK["particles"]:
+                        if self.settings["lr"]: #Door is left to right
+                            self.__parts = [self.LINK["render"].ParticleEffect(self.LINK,self.pos[0]-15,self.pos[1]+(self.size[1]/2),0,15,12,0.8,20,0.2,0.3,1),
+                                self.LINK["render"].ParticleEffect(self.LINK,self.pos[0]+self.size[0]+15,self.pos[1]+(self.size[1]/2),180,15,12,0.8,20,0.2,0.3,1)]
+                        else: #Door is up to down
+                            self.__parts = [self.LINK["render"].ParticleEffect(self.LINK,self.pos[0]+(self.size[0]/2),self.pos[1]-15,90,15,12,0.8,20,0.2,0.3,1),
+                                self.LINK["render"].ParticleEffect(self.LINK,self.pos[0]+(self.size[0]/2),self.pos[1]+self.size[1]+15,270,15,12,0.8,20,0.2,0.3,1)]
+                        for a in self.__parts: #Make all particles use correct render function
+                            if not a is None:
+                                a.renderParticle = self.__renderParticle
             elif self.room1.air and self.room2.air:
                 self.__isVac = False
         self.powered = False #Make the door unpowered
@@ -112,6 +174,12 @@ class Main(base.Main):
                 if a.active:
                     self.powered = True
                     break
+        if not self.Attacker is None: #Door is being attacked by something
+            if self.Attacker.NPCATTACK != self: #Object is attacking something else
+                if self.settings["open"]:
+                    self.__wait = time.time()+1.5
+                self.Attacker = None
+                self.__lastHit = 0
         if not self.powered: #Is not powered, make sure the attempt closing animation is not ran
             self.trying = False
         if self.LINK["allPower"]:
@@ -123,6 +191,24 @@ class Main(base.Main):
             self.LINK["serv"].SYNC["e"+str(self.ID)] = self.GiveSync()
         if self.LINK["multi"]!=1: #Is not a client
             self.loop2(lag)
+        if not self.LINK["multi"]==2: #Is not a server
+            for a in self.__parts: #Go through every particle and do its event loop.
+                if not a is None: #Particle exists
+                    a.loop(lag)
+            if time.time()>self.__lastHit and not self.__parts[0] is None and self.alive: #Door has stopped being attacked, stop all particles
+                self.__parts = [None,None]
+            if not self.alive and self.settings["open"] and len(self.__parts)==2 and self.LINK["particles"]: #Door has opened whilest dead, probebly pryed open, display different particle effect
+                self.__parts = [self.LINK["render"].ParticleEffect(self.LINK,self.pos[0]+(self.size[0]/2),self.pos[1]+(self.size[1]/2),0,360,12,0.9,30,0.5,1.5,1)]
+            if not self.settings["open"] and not self.alive and self.__parts[0] is None and self.LINK["particles"]: #Door is closed but is not alive, display particle effect
+                if self.settings["lr"]: #Door is left to right
+                    self.__parts = [self.LINK["render"].ParticleEffect(self.LINK,self.pos[0]-15,self.pos[1]+(self.size[1]/2),0,15,12,0.8,20,0.2,0.3,1),
+                        self.LINK["render"].ParticleEffect(self.LINK,self.pos[0]+self.size[0]+15,self.pos[1]+(self.size[1]/2),180,15,12,0.8,20,0.2,0.3,1)]
+                else: #Door is up to down
+                    self.__parts = [self.LINK["render"].ParticleEffect(self.LINK,self.pos[0]+(self.size[0]/2),self.pos[1]-15,90,15,12,0.8,20,0.2,0.3,1),
+                        self.LINK["render"].ParticleEffect(self.LINK,self.pos[0]+(self.size[0]/2),self.pos[1]+self.size[1]+15,270,15,12,0.8,20,0.2,0.3,1)]
+            for a in self.__parts: #Make all particles use correct render function
+                if not a is None:
+                    a.renderParticle = self.__renderParticle
     def toggle(self): #Open/close the door and return any errors
         errs = ""
         if self.powered:
@@ -145,6 +231,8 @@ class Main(base.Main):
         return errs
     def CLOSE(self): #Closes the door
         errs = ""
+        if self.__wait>time.time(): #Solves NPC attack exploit
+            return "Door is repairing"
         if not self.alive:
             errs = "Door has been destroyed"
         elif self.powered:
@@ -304,3 +392,62 @@ class Main(base.Main):
             surf.blit(textSurf,(x+(((self.size[0]/2)-(textSize[0]/2))*scale),y+((self.size[1]/4)*scale))) #Render text
         if self.HINT:
             self.renderHint(surf,self.hintMessage,[x,y])
+    def canShow(self,Dview=False): #Should the door render in scematic view
+        return not Dview
+    def render(self,x,y,scale,ang,surf=None,arcSiz=-1,eAng=None): #Render the door in 3D
+        if surf is None:
+            surf = self.LINK["main"]
+        sx,sy = surf.get_size()
+        if self.LINK["simpleModels"]:
+            simp = "Simple"
+        else:
+            simp = ""
+        C = (255,255,255)
+        AP = [0,0] #Door offset position
+        if self.trying and (time.time()-int(time.time()))>0.5: #Door is trying to open
+            C = (255,255,0)
+        elif time.time()<self.__lastHit and ((time.time()-int(time.time()))*3)%1>0.5: #Door is being attacked
+            C = (255,0,0)
+            AP = [random.randint(-4,4),random.randint(-4,4)] #Make door shake
+        elif not self.alive:
+            C = (255,0,0)
+        for a in self.__parts: #Render all particles
+            if not a is None: #Particle exists
+                if not self.settings["open"]: #Door is closed
+                    if x-((self.pos[0]-a.pos[0])*scale)<x and x<sx/2: #Particle is not inside the room (left)
+                        Allow=False
+                    elif x-((self.pos[0]-a.pos[0])*scale)>x and x>sx/2: #Particle is not inside the room (right)
+                        Allow=False
+                    else:
+                        Allow = True
+                    if y-((self.pos[1]-a.pos[1])*scale)<y and y<sy/2: #Particle is not inside the room (up)
+                        Allow = False
+                    elif y-((self.pos[1]-a.pos[1])*scale)>y and y>sy/2: #Particle is not inside the room (down)
+                        Allow=False
+                else: #Render both sparks (door is open)
+                    Allow = True
+                if Allow: #Particle's effect is allowed to render
+                    a.render(x-((self.pos[0]-a.pos[0])*scale),y-((self.pos[1]-a.pos[1])*scale),scale,ang,eAng,surf)
+        if self.number != -1: #Draw the number the door is
+            textSurf = self.LINK["font16"].render("D"+str(self.number),16,C) #Create a surface that is the rendered text
+            textSize = list(textSurf.get_size()) #Get the size of the text rendered
+            textSurf = pygame.transform.scale(textSurf,(int(textSize[0]*scale*1.2),int(textSize[1]*scale*1.2)))
+            textSize2 = list(textSurf.get_size()) #Get the size of the text rendered
+            pygame.draw.rect(surf,(0,0,0),[x+(((self.size[0]/2)-(textSize[0]/2))*scale),y+((self.size[1]/4)*scale)]+textSize2) #Draw a black background for the text to be displayed infront of
+            surf.blit(textSurf,(x+(((self.size[0]/2)-(textSize[0]/2))*scale),y+((self.size[1]/4)*scale))) #Render text
+        if self.settings["open"]: #Door is open
+            if self.settings["lr"]: #Door is left to right
+                self.LINK["render"].renderModel(self.LINK["models"]["doorOpen"],x+(20*scale),y+(22*scale),0,scale/2.5,surf,DOOR_COL,ang,eAng,arcSiz,)
+            else: #Door is up to down
+                self.LINK["render"].renderModel(self.LINK["models"]["doorOpen"],x+(20*scale),y+(30*scale),90,scale/2.5,surf,DOOR_COL,ang,eAng,arcSiz)
+        else: #Door is closed
+            if self.settings["lr"]: #Door is left to right
+                if x<sx/2: #Door is on the right side
+                    self.LINK["render"].renderModel(self.LINK["models"]["doorClose"+simp],x+(14.5*scale)+(AP[0]*scale),y+(22*scale)+(AP[1]*scale),0,scale/2.5,surf,DOOR_COL,ang,eAng,arcSiz)
+                else: #Door is on the left side
+                    self.LINK["render"].renderModel(self.LINK["models"]["doorClose"+simp],x+(36*scale)+(AP[0]*scale),y+(26*scale)+(AP[1]*scale),180,scale/2.5,surf,DOOR_COL,ang,eAng,arcSiz)
+            else: #Door is up to down
+                if y>sy/2: #Door is on the top bottom side
+                    self.LINK["render"].renderModel(self.LINK["models"]["doorClose"+simp],x+(23*scale)+(AP[0]*scale),y+(36*scale)+(AP[1]*scale),90,scale/2.5,surf,DOOR_COL,ang,eAng,arcSiz)
+                else: #Door is on the top side
+                    self.LINK["render"].renderModel(self.LINK["models"]["doorClose"+simp],x+(26*scale)+(AP[0]*scale),y+(16*scale)+(AP[1]*scale),270,scale/2.5,surf,DOOR_COL,ang,eAng,arcSiz)

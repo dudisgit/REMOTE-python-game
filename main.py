@@ -31,8 +31,12 @@ LINK["loadScreen"] = loadScreen #Used so other scripts can load the map
 LINK["render"] = render #Used so other scripts can use its tools for rendering
 LINK["screenLib"] = screenLib #Used as a GUI tool for the map designer
 LINK["log"] = ADDLOG #Used to log infomation (not seen in game unless developer console is turned on)
-LINK["DEVDIS"] = True #Development display
+LINK["DEVDIS"] = False #Development display
 LINK["showFPS"] = True #If the FPS counter should be shown
+LINK["NPCignorePlayer"] = True #Used for development
+LINK["floorScrap"] = True #Enable/disable floor scrap
+LINK["particles"] = True #Enable/disable particle effects
+LINK["popView"] = False #Cause rooms to pop into view (reduced CPU load but ajasent rooms arn't rendered)
 
 main = pygame.display.set_mode(RESLUTION)
 pygame.display.set_caption("REMOTE")
@@ -56,6 +60,8 @@ LINK["upgradeIDCount"] = 0 #ID count for upgrades
 LINK["scrapCollected"] = 0 #Amount of scrap colected
 LINK["fuelCollected"] = 0 #Amount of fuel colected
 LINK["allPower"] = True #Enable global power, a cheat for development
+LINK["absoluteDoorSync"] = True #Send packets randomly to make doors in SYNC perfectly (bigger the map the more packets)
+LINK["simpleModels"] = True #Enable/disable simple models
 LINK["multi"] = 0 #Is the game currently multiplayer, -1 = Map editor, 0 = Single player, 1 = Client, 2 = Server
 
 print("Loading content")
@@ -74,10 +80,13 @@ for a in files:
         LINK["ents"][a[:-3]] = importlib.import_module("entities."+a[:-3])
 #Content
 files = os.listdir("content")
-LINK["content"] = {}
+LINK["content"] = {} #Images
+LINK["models"] = {} #3D models
 for a in files:
     if a[-4:]==".png":
         LINK["content"][a[:-4]] = pygame.image.load("content/"+a)
+    elif a[-4:]==".obj":
+        LINK["models"][a[:-4]] = render.openModel("content/"+a)
 LINK["cont"] = {} #This is used for storing "content" in LINK but is resized every frame.
 #Maps
 LINK["maps"] = os.listdir("maps")
@@ -128,9 +137,11 @@ LINK["drones"] = [] #Drone list of the players drones
 for i in range(0,3):
     LINK["drones"].append(LINK["ents"]["drone"].Main(i*60,0,LINK,-2-i,i+1))
 LINK["drones"][0].settings["upgrades"][0] = ["motion",0,-1]
-LINK["drones"][0].settings["upgrades"][1] = ["gather",1,-1]
-LINK["drones"][1].settings["upgrades"][0] = ["generator",0,-1]
+LINK["drones"][0].settings["upgrades"][1] = ["pry",1,-1]
+LINK["drones"][0].settings["upgrades"][2] = ["gather",1,-1]
+LINK["drones"][1].settings["upgrades"][0] = ["lure",0,-1]
 LINK["drones"][1].settings["upgrades"][1] = ["sensor",1,-1]
+LINK["drones"][1].settings["upgrades"][2] = ["speed",1,-1]
 LINK["drones"][2].settings["upgrades"][0] = ["interface",2,-1]
 LINK["drones"][2].settings["upgrades"][1] = ["tow",0,-1]
 LINK["drones"][2].settings["upgrades"][2] = ["stealth",0,-1]
@@ -146,6 +157,7 @@ if LINK["multi"]==1: #Client
     CLI = client.Client("127.0.0.1")
     LINK["cli"] = CLI
 loadScreen("game") #Load the main game screen (TEMPORY)
+#currentScreen.openAs("Testing map.map")
 if LINK["multi"]!=1:
     currentScreen.open("Testing map.map") #Open the map for the game (TEMPORY)
 print("Going into event loop")

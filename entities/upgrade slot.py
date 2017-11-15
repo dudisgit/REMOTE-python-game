@@ -1,6 +1,10 @@
 #Do not run this file, it is a module!
-import pygame, random
+import pygame, random, math
 import entities.base as base
+
+UPG_COL = (0,204,255)
+DISCONNECT_DIST = 40
+SPARK_SIZE = 0.5
 
 class Main(base.Main):
     def __init__(self,x,y,LINK,ID):
@@ -11,6 +15,9 @@ class Main(base.Main):
         self.settings["perm"] = False #Is perminantly installed
         self.settings["upgrade"] = "Empty" #What upgrade this supplies
         self.__upg = None #Ship upgrade entity
+        self.__upgPos = None
+        self.__used = False
+        self.__particle = None
         self.hintMessage = "This is to give the player new ship upgrades. It can be destroyed or sucked out of an airlock."
     def SaveFile(self): #Give all infomation about this object ready to save to a file
         return ["upgrade slot",self.ID,self.pos,self.settings["perm"],self.settings["upgrade"]]
@@ -21,8 +28,38 @@ class Main(base.Main):
         if self.LINK["multi"]==0 or self.LINK["multi"]==2: #Is single player or server
             #Create the upgrade in this slot
             self.__upg = self.LINK["create"]("ShipUpgrade",[self.pos[0]+(self.size[0]/4),self.pos[1]+(self.size[1]/4)],data[4],self.settings["perm"])
+            self.__upgPos = [self.__upg.pos[0]+0,self.__upg.pos[1]+0]
+    def __renderParticle(self,x,y,scale,alpha,surf,a):
+        pygame.draw.line(surf,(255,255,0),[x-(math.cos(a[2]/180*math.pi)*SPARK_SIZE*scale*a[3]),y-(math.sin(a[2]/180*math.pi)*SPARK_SIZE*scale*a[3])],[x+(math.cos(a[2]/180*math.pi)*SPARK_SIZE*scale*a[3]),y+(math.sin(a[2]/180*math.pi)*SPARK_SIZE*scale*a[3])],int(1*scale))
+    def SyncData(self,data): #Syncs the data with this upgrade
+        if data["U"]!=self.__used:
+            if data["U"] and self.LINK["particles"]:
+                self.__particle = self.LINK["render"].ParticleEffect(self.LINK,self.pos[0]+(self.size[0]/2),self.pos[1]+(self.size[1]/2),0,360,12,0.8,5,0.5,3,1)
+                self.__particle.renderParticle = self.__renderParticle
+
+        self.__used = data["U"]
+    def deleting(self): #Called when this entity is being deleted
+        if self.LINK["multi"]==2: #Is server
+            self.LINK["serv"].SYNC.pop("e"+str(self.ID))
+    def GiveSync(self): #Returns the synced data for this upgrade
+        res = {}
+        res["U"] = self.__used
+        return res
     def loop(self,lag):
-        pass
+        if self.LINK["multi"]==1: #Client
+            self.SyncData(self.LINK["cli"].SYNC["e"+str(self.ID)])
+        elif self.LINK["multi"]==2: #Server
+            self.LINK["serv"].SYNC["e"+str(self.ID)] = self.GiveSync()
+        if not self.__used and not self.__upg is None:
+            dis = math.sqrt(((self.__upg.pos[0]-self.__upgPos[0])**2)+((self.__upg.pos[1]-self.__upgPos[1])**2))
+            if dis>DISCONNECT_DIST:
+                self.__used = True
+                if self.LINK["particles"]: #Particles are enabled
+                    self.__particle = self.LINK["render"].ParticleEffect(self.LINK,self.pos[0]+(self.size[0]/2),self.pos[1]+(self.size[1]/2),0,360,12,0.8,5,0.5,3,1)
+                    self.__particle.renderParticle = self.__renderParticle
+        if not self.LINK["multi"]==2: #Is not a server
+            if not self.__particle is None: #Event loop for particle system if the android is dead
+                self.__particle.loop(lag)
     def __ChangePerm(self,LINK,state): #Change if the upgrade slot should be perminantly installed or not
         self.settings["perm"] = state == True
         self.angle = random.randint(0,360)
@@ -94,3 +131,20 @@ class Main(base.Main):
             surf.blit(self.getImage("upgradeEmpty"),(x,y))
         if self.HINT:
             self.renderHint(surf,self.hintMessage,[x,y])
+    def canShow(self,dview):
+        return not dview
+    def render(self,x,y,scale,ang,surf=None,arcSiz=-1,eAng=None): #Render upgade slot in 3D
+        if surf is None:
+            surf = self.LINK["main"]
+        sx,sy = surf.get_size()
+        scrpos = [(self.pos[0]*scale)-x,(self.pos[1]*scale)-y] #Scroll position
+        if self.LINK["simpleModels"]:
+            simp = "Simple"
+        else:
+            simp = ""
+        if self.__used:
+            self.LINK["render"].renderModel(self.LINK["models"]["upgradeSlotBroken"+simp],x+(25*scale),y+(25*scale),0,scale,surf,UPG_COL,ang,eAng,arcSiz)
+        else:
+            self.LINK["render"].renderModel(self.LINK["models"]["upgradeSlot"+simp],x+(25*scale),y+(25*scale),0,scale,surf,UPG_COL,ang,eAng,arcSiz)
+        if not self.__particle is None: #Particle effects for when the android dies
+            self.__particle.render(x-((self.pos[0]-self.__particle.pos[0])*scale),y-((self.pos[1]-self.__particle.pos[1])*scale),scale,ang,eAng,surf)

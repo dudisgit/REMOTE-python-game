@@ -2,6 +2,8 @@
 import pygame, random, time
 import entities.base as base
 
+LURE_COL = (0,204,255)
+
 class Main(base.Main):
     def __init__(self,x,y,LINK,ID):
         self.init(x,y,LINK) #Init on the base class, __init__ is not called because its used for error detection.
@@ -79,10 +81,24 @@ class Main(base.Main):
             surf = self.LINK["main"]
         if self.alive: #Is the lure alive
             if time.time()<self.__beingDamaged and time.time()-int(time.time())>0.5: #Make damage icon flickr when being damaged
-                surf.blit(self.getImage("lureDamage"),(x,y))
+                surf.blit(self.getImage("lureDamage"),(x-(12*scale),y-(12*scale)))
             else: #Render normaly
-                surf.blit(self.getImage("lure"),(x,y))
+                surf.blit(self.getImage("lure"),(x-(12*scale),y-(12*scale)))
         else: #Lure is dead
-            surf.blit(self.getImage("lureDead"),(x,y))
+            surf.blit(self.getImage("lureDead"),(x-(12*scale),y-(12*scale)))
         if self.HINT:
             self.renderHint(surf,self.hintMessage,[x,y])
+    def canShow(self,Dview=False): #Should the lure render in scematic view
+        return True
+    def render(self,x,y,scale,ang,surf=None,arcSiz=-1,eAng=None): #Render lure in 3D
+        if surf is None:
+            surf = self.LINK["main"]
+        sx,sy = surf.get_size()
+        if self.alive: #Lure is alive
+            D = ""
+        else: #Lure is dead
+            D = "Dead"
+        if self.LINK["simpleModels"]: #Simple models is enabled
+            self.LINK["render"].renderModel(self.LINK["models"]["lure"+D+"Simple"],x,y,0,scale/2,surf,LURE_COL,ang,eAng,arcSiz)
+        else:
+            self.LINK["render"].renderModel(self.LINK["models"]["lure"+D],x,y,0,scale/2,surf,LURE_COL,ang,eAng,arcSiz)

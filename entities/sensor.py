@@ -3,6 +3,7 @@ import pygame, random, time, math
 import entities.base as base
 
 SCAN_RATE = 10 #Scan a room 10 times a second
+SENSOR_COL = (0,204,255) #Colour of the sensor in 3D
 
 class Main(base.Main):
     def __init__(self,x,y,LINK,ID):
@@ -85,7 +86,7 @@ class Main(base.Main):
         if self.LINK["multi"]!=1: #Is not a client
             self.loop2(lag)
             self.movePath(lag)
-        if not self.__room is None and time.time()>self.__updateRate:
+        if not self.__room is None and time.time()>self.__updateRate and self.alive:
             self.__updateRate = time.time()+(1/SCAN_RATE)
             Ents = self.__room.EntitiesInside() #Get all entities inside the room
             self.__scan = 1 #Safe
@@ -104,11 +105,11 @@ class Main(base.Main):
             surf = self.LINK["main"]
         if self.alive: #Is the sensor alive
             if time.time()<self.__beingDamaged and ((time.time()-int(time.time()))*4)%1>0.5: #Make damage icon flickr when being damaged
-                surf.blit(self.getImage("sensorDamage"),(x,y))
+                surf.blit(self.getImage("sensorDamage"),(x-(12*scale),y-(12*scale)))
             else: #Render normaly
-                surf.blit(self.getImage("sensor"),(x,y))
+                surf.blit(self.getImage("sensor"),(x-(12*scale),y-(12*scale)))
         else: #Sensor is dead
-            surf.blit(self.getImage("sensorDead"),(x,y))
+            surf.blit(self.getImage("sensorDead"),(x-(12*scale),y-(12*scale)))
         if self.__scan!=0 and not self.__room is None and self.alive: #Inside room and scan is valid
             if self.__scan==1: #Bad
                 col = (0,255,0)
@@ -122,3 +123,13 @@ class Main(base.Main):
             pygame.draw.rect(surf,col,[x-((x-rpos[0])*perc),y-((y-rpos[1])*perc),self.__room.size[0]*scale*perc,self.__room.size[1]*scale*perc],int(2*scale))
         if self.HINT:
             self.renderHint(surf,self.hintMessage,[x,y])
+    def canShow(self,Dview=False): #Should the sensor render in scematic view
+        return True
+    def render(self,x,y,scale,ang,surf=None,arcSiz=-1,eAng=None): #Render sensor in 3D
+        if surf is None:
+            surf = self.LINK["main"]
+        sx,sy = surf.get_size()
+        if self.LINK["simpleModels"]: #Simple models is enabled
+            self.LINK["render"].renderModel(self.LINK["models"]["sensorSimple"],x,y,0,scale/2,surf,SENSOR_COL,ang,eAng,arcSiz)
+        else:
+            self.LINK["render"].renderModel(self.LINK["models"]["sensor"],x,y,0,scale/2,surf,SENSOR_COL,ang,eAng,arcSiz)

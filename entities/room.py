@@ -1,8 +1,9 @@
 #Do not run this file, it is a module!
-import pygame, math, time
+import pygame, math, time, random
 import entities.base as base
 
 ROOM_UPDATE_RATE = 14 #Amount of times a second to run physics events on the room
+ROOM_COL = (255,255,255) #Colour of the room when rendered
 
 class Main(base.Main):
     def __init__(self,x,y,LINK,ID,number=-1):
@@ -20,11 +21,27 @@ class Main(base.Main):
         self.radiation = False #Is the room full of radiation
         self.doors = [] #The doors attached to this room
         self.air = True #Is their air in the room
+        self.isShipRoom = False #Is this room a ship room
         self.SCAN = 0 #Scan type
         #0 = Off
         #1 = Safe
         #2 = Error
         #3 = Bad
+        self.dirDoors = [[],[],[],[]] #Used to store doors with direction
+        #Used for fast corner detecting when rendering in 3D
+        #Top left
+        self.__ULU = True
+        self.__ULL = True
+        #Top right
+        self.__URU = True
+        self.__URR = True
+        #Bottom right
+        self.__DRD = True
+        self.__DRR = True
+        #Bottom left
+        self.__DLD = True
+        self.__DLL = True
+
         self.__drawSurf = pygame.Surface((200,200)) #Surface to draw to when rendering bubbles
         self.__lastUpdate = time.time()+(1/ROOM_UPDATE_RATE) #Used to make sure rooms don't continuesly scan for new entities when in a vacuum every screen refresh
         self.__airBurst = [] #Air vacume circles that expant
@@ -33,6 +50,7 @@ class Main(base.Main):
         self.__vacumeAirlocks = [] #A list of airlocks that this room is vacumed because of
         self.__vacumeShortPath = "" #Shortest path to an airlock
         self.__sShow = True #Show in games scematic view
+        self.__scrap = [] #Floor scrap list
         self.__inRoom = False #Is true if the room is inside anouther room
         self.hintMessage = "A room is a space the drone can move about in, you can resize it using the slanted line at the bottom right"
     def __ChangeRadiation(self,LINK,state): #switches radiation on/off
@@ -41,6 +59,13 @@ class Main(base.Main):
         LINK["currentScreen"].linkItem(self,"power") #A bit bodgy but this can only be called in the map designer.
     def __UnlinkAll(self,LINK): #Deletes all links on this entity
         self.settings["power"] = []
+    def __loadScrap(self): #Loads random scrap into the room (floor scrap not collectable)
+        self.__scrap = [] #Empty the scrap list
+        if not self.LINK["floorScrap"] or self.isShipRoom: #Is floor scrap disabled
+            return None
+        rns = random.randint(0,round((self.size[0]+self.size[1])/20)) #Amount of scrap to spawn
+        for i in range(rns): #Add new scrap with random position, angle, model and scale
+            self.__scrap.append([random.randint(self.pos[0]+20,self.pos[0]+self.size[0]-20),random.randint(self.pos[1]+20,self.pos[1]+self.size[1]-20),random.randint(1,11),random.randint(0,360),random.randint(2,7)/10])
     def SyncData(self,data): #Syncs the data with this room
         self.air = data["A"]
         self.powered = data["P"]
@@ -78,9 +103,9 @@ class Main(base.Main):
                 for a in self.__airBurst: #Simulate all air pickets being vacumed.
                     if a[2]!=-1: #Is not an instant bubble
                         if a[4]==1: #Air bubble
-                            a[2] += 8*lag #Increase the bubbles size
+                            a[2] += 8 #Increase the bubbles size
                         else: #Radiation bubble
-                            a[2] += 1.2*lag #Increase the bubbles size
+                            a[2] += 1.2 #Increase the bubbles size
                     if self.LINK["multi"]!=1: #Is not a client
                         for b in ENTS: #Make all entities inside this bubble get sucked out of the airlock
                             dist = math.sqrt(((b.pos[0]-a[0][0])**2)+((b.pos[1]-a[0][1])**2)) #Distance from the start of the bubble to the door
@@ -253,7 +278,7 @@ class Main(base.Main):
                 pows.append(a.ID)
             except:
                 self.LINK["errorDisplay"]("Saving power link "+str(i)+"(index) in room "+str(self.ID)+"(ID) failed.")
-        return ["room",self.ID,self.pos,self.size,self.settings["radiation"],self.settings["scanable"],pows]
+        return ["room",self.ID,self.pos,self.size,self.settings["radiation"],self.settings["scanable"],pows,self.isShipRoom]
     def reloadSize(self): #Must be called when the room has changed size
         self.__drawSurf = pygame.Surface(self.size)
         self.__drawSurf.set_colorkey((0,0,0))
@@ -271,6 +296,9 @@ class Main(base.Main):
         if self.LINK["multi"]==-1: #In map editor
             if not data[5]:
                 self.SCAN = 2
+        if len(data)==8:
+            self.isShipRoom = data[7] #Is a ship room
+        self.__loadScrap()
     def afterLoad(self): #Link generators inside this room to the room
         Ents = self.EntitiesInside()
         GenObj = self.getEnt("generator")
@@ -427,9 +455,142 @@ class Main(base.Main):
             else:
                 textSurf = self.LINK["font42"].render("R"+str(self.number),16,(100,100,100)) #Create a surface that is the rendered text
             textSize = list(textSurf.get_size()) #Get the size of the text rendered
-            pygame.draw.rect(surf,(0,0,0),[x+(((self.size[0]/2)-(textSize[0]/2))*scale),y+((self.size[1]/4)*scale)]+textSize) #Draw a black background for the text to be displayed infront of
+            textSurf = pygame.transform.scale(textSurf,(int(textSize[0]*scale*1.2),int(textSize[1]*scale*1.2)))
+            textSize2 = list(textSurf.get_size()) #Get the size of the text rendered
+            pygame.draw.rect(surf,(0,0,0),[x+(((self.size[0]/2)-(textSize[0]/2))*scale),y+((self.size[1]/4)*scale)]+textSize2) #Draw a black background for the text to be displayed infront of
             surf.blit(textSurf,(x+(((self.size[0]/2)-(textSize[0]/2))*scale),y+((self.size[1]/4)*scale))) #Render text
         if self.radiation or not self.air: #Draw warning sign
             surf.blit(self.getImage("warning"),(x+int((self.size[0]/2)*scale)-(25*scale),y+int((self.size[1]/2)*scale)-(25*scale)))
         if self.HINT:
             self.renderHint(surf,self.hintMessage,[x,y])
+    def canShow(self,Dview=False): #Should the room render in scematic view
+        return True
+    def __doorOnLine(self,Direction,P):
+        for a in self.dirDoors[Direction]:
+            if (Direction==0 or Direction==1) and P>a.pos[0] and P<a.pos[0]+a.size[0]: #Left to right
+                return a
+            elif (Direction==2 or Direction==3) and P>a.pos[1] and P<a.pos[1]+a.size[1]: #Up to down
+                return a
+        return None
+    def reloadCorners(self): #Reloads all corners inside the room
+        #Top left
+        self.__ULU = self.__doorOnLine(0,self.pos[0]+25) is None
+        self.__ULL = self.__doorOnLine(2,self.pos[1]+25) is None
+        #Top right
+        self.__URU = self.__doorOnLine(0,self.pos[0]+self.size[0]-25) is None
+        self.__URR = self.__doorOnLine(3,self.pos[1]+25) is None
+        #Bottom right
+        self.__DRD = self.__doorOnLine(1,self.pos[0]+self.size[0]-25) is None
+        self.__DRR = self.__doorOnLine(3,self.pos[1]+self.size[1]-25) is None
+        #Bottom left
+        self.__DLD = self.__doorOnLine(1,self.pos[0]+25) is None
+        self.__DLL = self.__doorOnLine(2,self.pos[1]+self.size[1]-25) is None
+    def render(self,x,y,scale,ang,surf=None,arcSiz=-1,eAng=None): #Render the room in 3D
+        if surf is None:
+            surf = self.LINK["main"]
+        sx,sy = surf.get_size()
+        if self.LINK["simpleModels"]:
+            simp = "Simple"
+        else:
+            simp = ""
+        if self.__ULU and self.__ULL and (self.LINK["render"].insideArc([x,y],[sx/2,sy/2],ang) or self.LINK["render"].insideArc([x+(50*scale),y],[sx/2,sy/2],ang) or self.LINK["render"].insideArc([x,y+(50*scale)],[sx/2,sy/2],ang)): #Top left corner
+            self.LINK["render"].renderModel(self.LINK["models"]["corner"+simp],x,y+(9.5*scale),0,scale/2,surf,ROOM_COL,ang,eAng,arcSiz)
+        if self.__DLD and self.__DLL and (self.LINK["render"].insideArc([x,y+(self.size[1]*scale)],[sx/2,sy/2],ang) or self.LINK["render"].insideArc([x+(50*scale),y+(self.size[1]*scale)],[sx/2,sy/2],ang) or self.LINK["render"].insideArc([x,y+(self.size[1]*scale)-(50*scale)],[sx/2,sy/2],ang)): #Bottom left corner
+            self.LINK["render"].renderModel(self.LINK["models"]["corner"+simp],x+(8.5*scale),y+(self.size[1]*scale),90,scale/2,surf,ROOM_COL,ang,eAng,arcSiz)
+        scrpos = [(self.pos[0]*scale)-x,(self.pos[1]*scale)-y] #Scroll position
+        SX = self.size[0]/45
+        for X in range(0,int(SX)+1): #Render walls accross the X axis
+            XR = self.size[0]*(X/SX) #Start position of the wall (x)
+            if x+(38*scale)+(XR*scale)>sx: #Wall tile is off the right side of the screen
+                break
+            if x+(38*scale)+(XR*scale)>-(45*scale): #Wall tile is in the screen (from the left side)
+                XR2 = self.size[0]*((X+1)/SX) #End position of the wall (x)
+                #Top
+                if not (self.__ULL and self.__ULU and X == 0) and not X>=int(SX): #Wall is the range of walls
+                    if self.__doorOnLine(0,self.pos[0]+XR) is None and self.__doorOnLine(0,self.pos[0]+XR2) is None: #Render the wall normaly
+                        if self.LINK["render"].insideArc([x+(38*scale)+(XR*scale),y+scale],[sx/2,sy/2],ang) or self.LINK["render"].insideArc([x+(38*scale)+(XR2*scale),y+scale],[sx/2,sy/2],ang):
+                            self.LINK["render"].renderModel(self.LINK["models"]["wall"+simp],x+(38*scale)+(XR*scale),y+scale,270,scale/2,surf,ROOM_COL,ang,eAng,arcSiz)
+                    else: #There is a door in the way, render its walls and don't render the wall before
+                        D = self.__doorOnLine(0,self.pos[0]+XR) #Get the possible door blocking the wall
+                        if D is None: #Wrong door
+                            D = self.__doorOnLine(0,self.pos[0]+XR2) #Get the oposite door blocking the wall
+                        if D.pos[0]>self.pos[0]: #Door is on the right right side of the room and not the very left
+                            self.LINK["render"].renderModel(self.LINK["models"]["wallSimple"],(D.pos[0]*scale)-scrpos[0]-(8*scale),y+scale,270,scale/2,surf,ROOM_COL,ang,eAng,arcSiz)
+                        if D.pos[0]+D.size[0]<self.pos[0]+self.size[0]: #Door is on the left side and not the very right
+                            self.LINK["render"].renderModel(self.LINK["models"]["wallSimple"],(D.pos[0]*scale)-scrpos[0]+(88*scale),y+scale,270,scale/2,surf,ROOM_COL,ang,eAng,arcSiz)
+                elif X>=int(SX) and self.__URU: #Draw simple wall for the right edge
+                    if self.LINK["render"].insideArc([x+(38*scale)+(XR*scale),y+scale],[sx/2,sy/2],ang) or self.LINK["render"].insideArc([x+(self.size[0]*scale)-(10*scale),y+scale],[sx/2,sy/2],ang):
+                        self.LINK["render"].renderModel(self.LINK["models"]["wallSimple"],x+(self.size[0]*scale)-(10*scale),y+scale,270,scale/2,surf,ROOM_COL,ang,eAng,arcSiz)
+                #Bottom
+                if not (self.__DLL and self.__DLD and X == 0) and not X>=int(SX): #Wall is in range of walls
+                    if self.__doorOnLine(1,self.pos[0]+XR) is None and self.__doorOnLine(1,self.pos[0]+XR2) is None: #Render the wall normaly
+                        if self.LINK["render"].insideArc([x+(10*scale)+(XR*scale),y+(self.size[1]*scale)],[sx/2,sy/2],ang) or self.LINK["render"].insideArc([x+(10*scale)+(XR2*scale),y+(self.size[1]*scale)],[sx/2,sy/2],ang):
+                            self.LINK["render"].renderModel(self.LINK["models"]["wall"+simp],x+(10*scale)+(XR*scale),y+(self.size[1]*scale),90,scale/2,surf,ROOM_COL,ang,eAng,arcSiz)
+                    else: #There is a door in the way, render its walls and don't render the wall before
+                        D = self.__doorOnLine(1,self.pos[0]+XR) #Get the possible door blocking the wall
+                        if D is None: #Wrong door
+                            D = self.__doorOnLine(1,self.pos[0]+XR2) #Get the oposite door blocking the wall
+                        if D.pos[0]>self.pos[0]: #Door is on the right side of the room, and not the very left
+                            self.LINK["render"].renderModel(self.LINK["models"]["wallSimple"],(D.pos[0]*scale)-scrpos[0]-(38*scale),y+(self.size[1]*scale),90,scale/2,surf,ROOM_COL,ang,eAng,arcSiz)
+                        if D.pos[0]+D.size[0]<self.pos[0]+self.size[0]: #Door is on the left side of the room and not  the very right
+                            self.LINK["render"].renderModel(self.LINK["models"]["wallSimple"],(D.pos[0]*scale)-scrpos[0]+(58*scale),y+(self.size[1]*scale),90,scale/2,surf,ROOM_COL,ang,eAng,arcSiz)
+                elif X>=int(SX) and self.__DRD: #Draw simple wall for right edge
+                    if self.LINK["render"].insideArc([x+(38*scale)+(XR*scale),y+scale],[sx/2,sy/2],ang) or self.LINK["render"].insideArc([x+(self.size[0]*scale)-(10*scale),y+(self.size[1]*scale)],[sx/2,sy/2],ang):
+                        self.LINK["render"].renderModel(self.LINK["models"]["wallSimple"],x+(self.size[0]*scale)-(10*scale),y+(self.size[1]*scale),270,scale/2,surf,ROOM_COL,ang,eAng,arcSiz)
+        SY = self.size[1]/45
+        if self.__URR and self.__URU and (self.LINK["render"].insideArc([x+(self.size[0]*scale),y],[sx/2,sy/2],ang) or self.LINK["render"].insideArc([x+(self.size[0]*scale)-(50*scale),y],[sx/2,sy/2],ang) or self.LINK["render"].insideArc([x+(self.size[0]*scale),y+(50*scale)],[sx/2,sy/2],ang)): #Top right corner
+            self.LINK["render"].renderModel(self.LINK["models"]["corner"+simp],x+(self.size[0]*scale)-(8*scale),y+scale,270,scale/2,surf,ROOM_COL,ang,eAng,arcSiz)
+        if self.__DRR and self.__DRD and (self.LINK["render"].insideArc([x+(self.size[0]*scale),y+(self.size[1]*scale)],[sx/2,sy/2],ang) or self.LINK["render"].insideArc([x+(self.size[0]*scale)-(50*scale),y+(self.size[1]*scale)],[sx/2,sy/2],ang) or self.LINK["render"].insideArc([x+(self.size[0]*scale),y+(self.size[1]*scale)-(50*scale)],[sx/2,sy/2],ang)): #Bottom right corner
+            self.LINK["render"].renderModel(self.LINK["models"]["corner"+simp],x+(self.size[0]*scale)+(0.5*scale),y+(self.size[1]*scale)-(8.5*scale),180,scale/2,surf,ROOM_COL,ang,eAng,arcSiz)
+        for Y in range(0,int(SY)+1): #Render walls accross the Y axis
+            YR = self.size[1]*(Y/SY) #Start position of the wall (y)
+            if y+(YR*scale)-(5*scale)>sy: #Stop if the wall is going through the bottom of the screen where it won't be seen
+                break
+            if y+(YR*scale)-(5*scale)>-(45*scale): #Wall is on the screen and is not above it.
+                YR2 = self.size[1]*((Y+1)/SY) #End position of the wall (y)
+                #Left
+                if not ((self.__ULL or self.__ULU) and Y==0) and not Y>=int(SY): #Wall is in range of walls
+                    if self.__doorOnLine(2,self.pos[1]+YR) is None and self.__doorOnLine(2,self.pos[1]+YR2) is None: #Render the wall normaly
+                        if self.LINK["render"].insideArc([x,y+(YR*scale)-(5*scale)],[sx/2,sy/2],ang) or self.LINK["render"].insideArc([x,y+(YR2*scale)-(5*scale)],[sx/2,sy/2],ang):
+                            self.LINK["render"].renderModel(self.LINK["models"]["wall"+simp],x,y+(YR*scale)-(5*scale),0,scale/2,surf,ROOM_COL,ang,eAng,arcSiz)
+                    else: #A door is blocking the wall, render walls around it.
+                        D = self.__doorOnLine(2,self.pos[1]+YR) #Find door blocking
+                        if D is None: #Wrong door
+                            D = self.__doorOnLine(2,self.pos[1]+YR2) #Find oposite door blocking
+                        if D.pos[1]>self.pos[1]: #Door is below the room position and not at the very top
+                            self.LINK["render"].renderModel(self.LINK["models"]["wallSimple"],x,(D.pos[1]*scale)-scrpos[1]-(40*scale),0,scale/2,surf,ROOM_COL,ang,eAng,arcSiz)
+                        if D.pos[1]+D.size[1]<self.pos[1]+self.size[1]: #Door is above the rooms end and not at the very bottom
+                            self.LINK["render"].renderModel(self.LINK["models"]["wallSimple"],x,(D.pos[1]*scale)+(D.size[1]*scale)-scrpos[1]+(7.5*scale),0,scale/2,surf,ROOM_COL,ang,eAng,arcSiz)
+                elif self.__ULL and not self.__ULU and Y==0: #Draw simple wall for top edge
+                    if self.LINK["render"].insideArc([x,y+(YR*scale)-(5*scale)],[sx/2,sy/2],ang) or self.LINK["render"].insideArc([x,y+(10*scale)],[sx/2,sy/2],ang):
+                            self.LINK["render"].renderModel(self.LINK["models"]["wallSimple"],x,y+(10*scale),0,scale/2,surf,ROOM_COL,ang,eAng,arcSiz)
+                elif Y>=int(SY) and self.__DLL: #Draw simple wall for bottom edge
+                    if self.LINK["render"].insideArc([x,y+(YR*scale)-(5*scale)],[sx/2,sy/2],ang) or self.LINK["render"].insideArc([x,y+(self.size[1]*scale)-(40*scale)],[sx/2,sy/2],ang):
+                            self.LINK["render"].renderModel(self.LINK["models"]["wallSimple"],x,y+(self.size[1]*scale)-(40*scale),0,scale/2,surf,ROOM_COL,ang,eAng,arcSiz)
+                #Right
+                if not (self.__URR and self.__URU and Y==0) and not Y>=int(SY): #Wall is in range of walls
+                    if self.__doorOnLine(3,self.pos[1]+YR) is None and self.__doorOnLine(3,self.pos[1]+YR2) is None: #Render the wall normaly
+                        if self.LINK["render"].insideArc([x+(self.size[0]*scale)+(0.5*scale),y+(YR*scale)+(40*scale)],[sx/2,sy/2],ang) or self.LINK["render"].insideArc([x+(self.size[0]*scale)+(0.5*scale),y+(YR2*scale)+(40*scale)],[sx/2,sy/2],ang):
+                            self.LINK["render"].renderModel(self.LINK["models"]["wall"+simp],x+(self.size[0]*scale)+(0.5*scale),y+(YR*scale)+(40*scale),180,scale/2,surf,ROOM_COL,ang,eAng,arcSiz)
+                    else: #A door is blocking the wall, render walls around it
+                        D = self.__doorOnLine(3,self.pos[1]+YR) #Find the door blocking the wall
+                        if D is None: #Wrong door
+                            D = self.__doorOnLine(3,self.pos[1]+YR2) #Find the oposite door
+                        if D.pos[1]>self.pos[1]: #Door is below room position but not at the very top
+                            self.LINK["render"].renderModel(self.LINK["models"]["wallSimple"],x+(self.size[0]*scale)+(0.5*scale),(D.pos[1]*scale)-scrpos[1]-(7.5*scale),180,scale/2,surf,ROOM_COL,ang,eAng,arcSiz)
+                        if D.pos[1]+D.size[1]<self.pos[1]+self.size[1]: #Door is above rooms end but not at the very bottom
+                            self.LINK["render"].renderModel(self.LINK["models"]["wallSimple"],x+(self.size[0]*scale)+(0.5*scale),(D.pos[1]*scale)+(D.size[1]*scale)-scrpos[1]+(38*scale),180,scale/2,surf,ROOM_COL,ang,eAng,arcSiz)
+                elif Y>=int(SY) and self.__DRR: #Draw simple wall for bottom edge
+                    if self.LINK["render"].insideArc([x,y+(YR*scale)-(5*scale)],[sx/2,sy/2],ang) or self.LINK["render"].insideArc([x+(self.size[0]*scale),y+(self.size[1]*scale)-(40*scale)],[sx/2,sy/2],ang):
+                            self.LINK["render"].renderModel(self.LINK["models"]["wallSimple"],x+(self.size[0]*scale),y+(self.size[1]*scale)-(40*scale),0,scale/2,surf,ROOM_COL,ang,eAng,arcSiz)
+        #Render floor scrap
+        for a in self.__scrap:
+            self.LINK["render"].renderModel(self.LINK["models"]["floorScrap"+str(a[2])],(a[0]*scale)-scrpos[0],(a[1]*scale)-scrpos[1],a[3],scale*a[4],surf,(150,150,150),ang,eAng,arcSiz)
+        #Render floor tiles
+        for X in range(0,round(self.size[0]/45)): #Loop through the X axis
+            for Y in range(0,round(self.size[1]/45)): #Loop through the Y axis
+                tileD = self.LINK["render"].insideArc([x+((X+0.5)*45*scale),y+((Y+0.5)*45*scale)],[sx/2,sy/2],ang,arcSiz)
+                if not eAng is None:
+                    tileD = tileD and self.LINK["render"].insideArc([x+((X+0.5)*45*scale),y+((Y+0.5)*45*scale)],[sx/2,sy/2],eAng,arcSiz)
+                if tileD: #Square is in the players view
+                    pygame.draw.rect(surf,(255,255,255),[x+(X*45*scale),y+(Y*45*scale),45*scale,45*scale],1)

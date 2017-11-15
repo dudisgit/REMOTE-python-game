@@ -18,9 +18,9 @@ class Main(base.Main):
             return "Drone must be inside a room"
         else: #Drone is inside room
             for a in Droom.doors: #Go through every door of the room
-                if not a.settings["open"] and type(a)==self.getEnt("door"): #Door is open and is not an airlock
+                if not a.settings["open"] and type(a)==self.getEnt("door") and (not a.powered or not a.alive): #Door is open and is not an airlock
                     return True
-            return "No doors that arn't open"
+            return "No doors that arn't open/powered"
     def hitDoor(self,door): #Drone has reached door
         door.pry() #Pry open the door
         if door.alive:
@@ -32,7 +32,7 @@ class Main(base.Main):
         self.used = True
         closest = [None,-1] #Closest door
         for a in Droom.doors: #Go through all the doors in the room and find the closest door to the drone
-            if type(a)==self.getEnt("door") and not a.settings["open"]: #Door is not an airlock and is open
+            if type(a)==self.getEnt("door") and not a.settings["open"] and (not a.powered or not a.alive): #Door is not an airlock and is open
                 dist = math.sqrt( ((self.drone.pos[0]+(self.drone.size[0]/2)-(a.pos[0]+(a.size[0]/2)))**2) +
                         ((self.drone.pos[1]+(self.drone.size[1]/2)-(a.pos[1]+(a.size[1]/2)) )**2) ) #Distance between the drone and the scrap
                 if dist<closest[1] or closest[1]==-1: #Distance is closer than previous or it has never been set

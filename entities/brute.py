@@ -1,5 +1,5 @@
 #Do not run this file, it is a module!
-import pygame, time
+import pygame, time, math, cmath
 import entities.base as base
 
 ATTACK_DELAY = 4.5 #Seconds between charging again
@@ -17,9 +17,15 @@ class Main(base.Main):
         self.settings["attack"] = False #If this NPC should attack doors
         self.colisionType = 1
         self.Charge = [False,[0,0],[0,0],0,time.time()] #Charge attacking
+        self.renderSize = [-60,-60,110,110] #Used to have a bigger radius when rendering in 3D (does not effect scale)
         self.__first = True #First time this entity has spawned
         self.__lastScan = time.time() #Last time this NPC scanned for a drone
         self.__canSee = False #Drone can see this entity
+        self.__headAngle = 0 #Brute Head angle
+        self.__lagBefore = 1 #Used to detect the lag before rendering
+        self.__moving = False #Is the brute moving?
+        self.__seeBefore = False #Used to detect changes in self.__canSee
+        self.__clientPosChange = [0,0,0] #Used to detect changes in position as said by the server (for leg movement)
         self.beingSucked = False #Make this entity suckable in a vacum
         self.__sShow = True #Show in games scematic view
         self.__inRoom = False #Is true if the NPC is inside a room
@@ -29,6 +35,7 @@ class Main(base.Main):
         if self.health<0:
             self.health = 0
             self.alive = False
+            self.stopNavigation()
         return self.health == 0
     def SaveFile(self): #Give all infomation about this object ready to save to a file
         return ["brute",self.ID,self.pos,self.settings["attack"]]
@@ -44,11 +51,22 @@ class Main(base.Main):
         self.pos[0] = ((self.pos[0]*3)+data["x"])/4
         self.pos[1] = ((self.pos[1]*3)+data["y"])/4
         self.angle = ((self.angle*3)+data["a"])/4
+        self.alive = data["A"]
+        if not self.alive: #Brute is dead
+            self.colisionType = 0
+        if self.pos[0]!=self.__clientPosChange[0] and self.pos[1]!=self.__clientPosChange[1]:
+            self.__clientPosChange[2] = time.time()+0.5
+            self.__moving = True
+        elif time.time()>self.__clientPosChange[2]:
+            self.__moving = False
+        self.Charge[0] = data["c"]==True #Charging at a target
     def GiveSync(self): #Returns the synced data for this brute
         res = {}
         res["x"] = int(self.pos[0])+0
         res["y"] = int(self.pos[1])+0
         res["a"] = int(self.angle)+0
+        res["c"] = self.Charge[0] #Charging at a target
+        res["A"] = self.alive
         return res
     def NPCAttackLoop(self,dist): #Will only be called continuesly if there is a visual path between the target and that its chasing it.
         if dist<130 and not self.Charge[0] and time.time()>self.Charge[4]: #Target in range and charge is ready, charge!
@@ -73,6 +91,7 @@ class Main(base.Main):
             self.Charge[3] = 0
             self.Charge[4] = time.time()+ATTACK_DELAY #Time until the brute can charge again
     def loop(self,lag):
+        self.__lagBefore = lag/2
         if self.LINK["multi"]==1: #Client
             self.SyncData(self.LINK["cli"].SYNC["e"+str(self.ID)])
         elif self.LINK["multi"]==2: #Server
@@ -82,27 +101,48 @@ class Main(base.Main):
             if time.time()>self.__lastScan:
                 self.__lastScan = time.time()+(1/SHOW_RATE)
                 self.__canSee = self.NPCDroneSee()
+                if self.__canSee != self.__seeBefore: #Notice changed
+                    self.__seeBefore = self.__canSee == True
+                    if self.__canSee: #Send NPC's position over TCP so player gets the correct position of the NPC
+                        send = []
+                        send.append(["s",int(self.pos[0]),"e"+str(self.ID),"x"]) #X position
+                        send.append(["s",int(self.pos[1]),"e"+str(self.ID),"y"]) #Y position
+                        send.append(["s",int(self.angle),"e"+str(self.ID),"a"]) #Angle
+                        for a in self.LINK["serv"].users: #Send data to all users
+                            self.LINK["serv"].users[a].sendTCP(send)
         if self.LINK["multi"]!=1: #Is not a client
             if self.alive:
                 self.NPCloop()
                 if self.settings["attack"] and self.NPCATTACK is None:
                     self.NPCDoorLoop()
+                if not self.NPCATTACK is None and not self.onPath(3) and not self.onPath(2) and not self.onPath(0):
+                    sp = [self.pos[0]+(self.size[0]/2),self.pos[1]+(self.size[1]/2)] #Self center position
+                    self.angle = math.atan2(sp[0]-(self.NPCATTACK.pos[0]+(self.NPCATTACK.size[0]/2)),sp[1]-(self.NPCATTACK.pos[1]+(self.NPCATTACK.size[1]/2)))*180/math.pi #Angle of the target
+                    self.angle = int(self.angle) % 360 #Put into the range 0-360
+                    self.__moving = False #Brute is stationary
+                else:
+                    self.__moving = True #Brute is moving
             self.colisionType = 0 #Disable colisions, walls only
             self.movePath(lag)
-            self.colisionType = 1 #Turn back to circle colision
+            if self.alive: #Brute is allive
+                self.colisionType = 1 #Turn back to circle colision
             if self.Charge[0]: #Charging animation
                 self.Charge[3] += lag/10 #Increase step count
                 if self.Charge[3]>1: #Finished animation, stop charge and deal damage
                     self.Charge[0] = False
                     self.Charge[3] = 1
-                    self.NPCATTACK.takeDamage(50)
+                    if not self.NPCATTACK is None:
+                        self.NPCATTACK.takeDamage(50)
                 #Move brute into position
                 self.pos[0] = self.Charge[1][0]+((self.Charge[2][0]-self.Charge[1][0])*self.Charge[3])
                 self.pos[1] = self.Charge[1][1]+((self.Charge[2][1]-self.Charge[1][1])*self.Charge[3])
                 pSav = [self.pos[0]+0,self.pos[1]+0]
+                self.colisionType = 0 #Disable colision
                 if self.applyPhysics(): #Colided with an entity that isn't a room or door, stop animation and deal damage
                     self.Charge[0] = False
-                    self.NPCATTACK.takeDamage(50)
+                    if not self.NPCATTACK is None:
+                        self.NPCATTACK.takeDamage(50)
+                self.colisionType = 1 #Enable colision
     def rightInit(self,surf): #Initialize context menu for map designer
         self.__surface = pygame.Surface((210,75)) #Surface to render too
         self.__lastRenderPos = [0,0] #Last rendering position
@@ -168,3 +208,67 @@ class Main(base.Main):
             self.drawRotate(surf,x-((self.size[0]/2)*scale),y-((self.size[1]/2)*scale),self.getImage("brute"),self.angle)
         if self.HINT:
             self.renderHint(surf,self.hintMessage,[x,y])
+    def render(self,x,y,scale,ang,surf=None,arcSiz=-1,eAng=None): #Render brute in 3D
+        if surf is None:
+            surf = self.LINK["main"]
+        if self.LINK["simpleModels"]:
+            simp = "Simple"
+        else:
+            simp = ""
+        if self.alive: #Brute is alive
+            col = (255,0,0)
+        else:
+            col = (150,0,0)
+        if not self.alive:
+            self.LINK["render"].renderModel(self.LINK["models"]["bruteHead"+simp],x+(12*scale),y+(12*scale),self.angle,scale/1.75,surf,col,ang,eAng)
+        elif self.Charge[0]: #Charging at a target, display charging model
+            self.LINK["render"].renderModel(self.LINK["models"]["bruteHeadCharge"+simp],x+(12*scale),y+(12*scale),self.angle,scale*1.25,surf,(255,255,0),ang,eAng)
+        else:
+            self.LINK["render"].renderModel(self.LINK["models"]["bruteHead"+simp],x+(12*scale),y+(12*scale),self.angle+(math.cos(time.time()*4)*10),scale/1.75,surf,col,ang,eAng)
+        legAng = self.__headAngle/180*math.pi
+        if self.__moving and self.alive: #Brute is moving
+            legMove1 = math.cos(time.time()*5)*30 #Leg movement 1
+            legMove2 = math.sin(time.time()*5)*30 #Leg movement 2
+        elif not self.alive:
+            legMove1 = 23
+            legMove2 = -10
+        else: #Brute is stationary
+            legMove1 = 0
+            legMove2 = 0
+        #Left legs
+        self.LINK["render"].renderModel(self.LINK["models"]["bruteLegLeft"],x+(12*scale)+(math.sin(legAng+(math.pi/8))*30*scale),
+            y+(12*scale)+(math.cos(legAng+(math.pi/8))*30*scale),self.__headAngle+legMove1,scale/1.75,surf,col,ang,eAng)
+        self.LINK["render"].renderModel(self.LINK["models"]["bruteLegLeft"],x+(12*scale)+(math.sin(legAng+(math.pi/5))*20*scale),
+            y+(12*scale)+(math.cos(legAng+(math.pi/5))*20*scale),self.__headAngle+legMove2,scale/1.75,surf,col,ang,eAng)
+        self.LINK["render"].renderModel(self.LINK["models"]["bruteLegLeft"],x+(12*scale)+(math.sin(legAng+(math.pi/3))*15*scale),
+            y+(12*scale)+(math.cos(legAng+(math.pi/3))*15*scale),self.__headAngle+legMove1,scale/1.75,surf,col,ang,eAng)
+        #Right legs
+        self.LINK["render"].renderModel(self.LINK["models"]["bruteLegRight"],x+(12*scale)+(math.sin(legAng-(math.pi/8))*30*scale),
+            y+(12*scale)+(math.cos(legAng-(math.pi/8))*30*scale),self.__headAngle+legMove2,scale/1.75,surf,col,ang,eAng)
+        self.LINK["render"].renderModel(self.LINK["models"]["bruteLegRight"],x+(12*scale)+(math.sin(legAng-(math.pi/5))*20*scale),
+            y+(12*scale)+(math.cos(legAng-(math.pi/5))*20*scale),self.__headAngle+legMove1,scale/1.75,surf,col,ang,eAng)
+        self.LINK["render"].renderModel(self.LINK["models"]["bruteLegRight"],x+(12*scale)+(math.sin(legAng-(math.pi/3))*15*scale),
+            y+(12*scale)+(math.cos(legAng-(math.pi/3))*15*scale),self.__headAngle+legMove2,scale/1.75,surf,col,ang,eAng)
+        dist2 = 0 #Angular distance from the head angle to the back angle
+        if self.angle > self.__headAngle: #This is an algorithm for turning in a proper direction smothly
+            if self.angle - self.__headAngle > 180:
+                dist2 = 180 - (self.angle - 180 - self.__headAngle)
+                self.__headAngle-=self.__lagBefore*(dist2**0.7)
+            else:
+                dist2 = self.angle - self.__headAngle
+                self.__headAngle+=self.__lagBefore*(dist2**0.7)
+        else:
+            if self.__headAngle - self.angle > 180:
+                dist2 = 180 - (self.__headAngle - 180 - self.angle)
+                self.__headAngle+=self.__lagBefore*(dist2**0.7)
+            else:
+                dist2 = self.__headAngle - self.angle
+                self.__headAngle-=self.__lagBefore*(dist2**0.7)
+        try:
+            self.__headAngle = int(self.__headAngle) % 360 #Make sure this entitys angle is not out of range
+        except:
+            self.__headAngle = int(cmath.phase(self.__headAngle)) % 360 #Do the same before but unconvert it from a complex number
+        if not self.alive: #Brute is alive 
+            self.__headAngle = self.angle+80
+        PS = [x+(12*scale)+(math.sin(self.angle/180*math.pi)*8*scale),y+(12*scale)+(math.cos(self.angle/180*math.pi)*8*scale)]
+        self.LINK["render"].renderModel(self.LINK["models"]["bruteBack"+simp],PS[0],PS[1],self.__headAngle,scale/1.75,surf,col,ang,eAng)

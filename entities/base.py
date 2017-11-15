@@ -23,10 +23,12 @@ class Main(object):
     def init(self,x,y,LINK): #Called to initialize variables
         self.pos = [x,y] #Position of the entity
         self.size = [50,50] #Size of the entity
+        self.renderSize = [0,0,50,50] #Size of the entity when rendering in 3D
         self.speed = 2 #Speed of navigating the entity
         self.isNPC = False #Is this entity and NPC
         self.angle = 0 #Angle of the entity
         self.stealth = False #Is the entity stealthing?
+        self.AllwaysRender = False #Should this entity allways render in 3D regardless of position
         self.NPCATTACK = None #Is the NPC in attack mode (only if this entitiy is an NPC)
         self.__NPCUpdate = time.time() #Used to slow down update rates on NPCs
         self.__NPCDoorUpdate = time.time()+0 #When to generate a random number again for breaking down doors
@@ -44,7 +46,9 @@ class Main(object):
         self.hintMessage = "NO HINT" #Hinting message
     def takeDamage(self,dmg,reason=""):
         return False
-    def __onPath(self,typ): #Return if the path type is active
+    def render(self,x,y,scale,ang,surf=None,arcSiz=-1,eAng=None):
+        pass
+    def onPath(self,typ): #Return if the path type is active
         for a in self.paths:
             if a[0]==typ:
                 return True
@@ -117,14 +121,17 @@ class Main(object):
                 targets = self.LINK["drones"]+self.LINK["IDref"]["lure"]
             else:
                 targets = self.LINK["drones"]
+        DroneObject = self.getEnt("drone")
+        SensorObject = self.getEnt("sensor")
         closest = [-1,None] #Used for finding the closest target
         for a in targets: #Detect if this NPC can see any of the targets
             dist = math.sqrt(( (self.pos[0]-a.pos[0])**2 ) + ( (self.pos[1]-a.pos[1])**2 ))
-            if (not a.stealth or dist<DETECT_DIST) and a.alive: #Target is not in stealth mode
+            if (not a.stealth or dist<DETECT_DIST) and a.alive and not (type(a)==DroneObject and self.LINK["NPCignorePlayer"]): #Target is not in stealth mode
                 if self.linePath([self.pos[0]+(self.size[0]),self.pos[1]+(self.size[1]/2)],[a.pos[0]+(a.size[0]/2),a.pos[1]+(a.size[1]/2)]):
                     if dist<closest[0] or closest[0]==-1:
-                        closest[0] = dist+0
-                        closest[1] = a
+                        if not (type(closest[1])==DroneObject and type(a)==SensorObject): #Target drones over sensors
+                            closest[0] = dist+0
+                            closest[1] = a
                     if type(a)==self.getEnt("lure"): #If the NPC see a lure it must attack it.
                         closest[1] = a
                         break
@@ -180,6 +187,7 @@ class Main(object):
                                 if not fin[0][2].settings["open"] and type(fin[0][2])==self.getEnt("door"): #The closest door is open and is a door
                                     if fin[0][2].settings["attack"]: #The door is attackable (decided in map designer)
                                         self.NPCATTACK = fin[0][2] #Set the door as a target
+                                        self.NPCATTACK.Attacker = self #Tell door that this NPC is attacking it
                                         self.stopNavigation()
                                         self.__VentDirect = None
     def NPCVentLoop(self): #Used to find vents inside the room to target
@@ -201,7 +209,7 @@ class Main(object):
         if time.time()<self.__NPCUpdate:
             return 0
         self.__NPCUpdate = time.time()+(1/NPCUpdate_rate)
-        if (random.randint(0,100)<VENT_TRAVEL_PERC or not self.__VentDirect is None) and vents and not self.__onPath(2) and not self.__onPath(0) and self.NPCATTACK is None:
+        if (random.randint(0,100)<VENT_TRAVEL_PERC or not self.__VentDirect is None) and vents and not self.onPath(2) and not self.onPath(0) and self.NPCATTACK is None:
             if self.__VentDirect is None: #Not heading towards a vent
                 self.NPCVentLoop()
             else: #Finished heading to a vent, teleport.
@@ -209,7 +217,7 @@ class Main(object):
                 self.pos[0] = rvent.pos[0]+(self.size[0]/2)
                 self.pos[1] = rvent.pos[1]+(self.size[1]/2)
                 self.__VentDirect = None
-        if not self.__onPath(2) and not self.__onPath(0) and self.NPCATTACK is None and self.__VentDirect is None:
+        if not self.onPath(2) and not self.onPath(0) and self.NPCATTACK is None and self.__VentDirect is None:
             Rm = self.findPosition() #Get the current room the NPC is in
             P = self.__randomRoomPosition() #Get a random position in the room incase we can't go through any doors
             if type(Rm)==self.getEnt("room"): #NPC is inside a room
@@ -224,9 +232,10 @@ class Main(object):
                     rDoor = Doors[random.randint(0,len(Doors)-1)] #Select a random door
                     #Head towards the doors oposite room
                     if rDoor.room1 == Rm:
-                        self.pathTo(rDoor.room2)
-                        self.stopNavigation(2)
-                    else:
+                        if not rDoor.room2 is None:
+                            self.pathTo(rDoor.room2)
+                            self.stopNavigation(2)
+                    elif not rDoor.room1 is None:
                         self.pathTo(rDoor.room1)
                         self.stopNavigation(2)
             else: #No room, go to random position
@@ -241,7 +250,7 @@ class Main(object):
                     if dist>self.NPCDist+1: #Door is not close enough to attack
                         self.stopNavigation()
                         self.paths.append([4,[ [self.NPCATTACK.pos[0]+(self.NPCATTACK.size[0]/2),self.NPCATTACK.pos[1]+(self.NPCATTACK.size[1]/2),self.NPCATTACK] ]])
-                    elif self.__onPath(4): #Door is close enough but is still heading towards
+                    elif self.onPath(4): #Door is close enough but is still heading towards
                         self.stopNavigation(4) #Stop heading towards door
                     if self.NPCATTACK.settings["open"]: #If the door just opened then stop attacking
                         self.stopNavigation()
@@ -253,7 +262,7 @@ class Main(object):
                     if self.linePath(self.pos,[self.NPCATTACK.pos[0]+(self.NPCATTACK.size[0]/2),self.NPCATTACK.pos[1]+(self.NPCATTACK.size[1]/2)],[25,25]):
                         self.stopNavigation()
                         self.paths.append([3,[ [self.NPCATTACK.pos[0]+(self.NPCATTACK.size[0]/2),self.NPCATTACK.pos[1]+(self.NPCATTACK.size[1]/2),self.NPCATTACK] ]])
-                    elif TPos!=Spos and not self.__onPath(0): #Target cannot be seen, use path finding.
+                    elif TPos!=Spos and not self.onPath(0): #Target cannot be seen, use path finding.
                         self.stopNavigation(3)
                         if not self.pathTo(self.NPCATTACK): #Failed to find path, going back into roaming mode
                             self.NPCATTACK = None
@@ -657,7 +666,7 @@ class Main(object):
                     if (bpos[1]>=ENT.pos[1] and bpos[1]+self.size[1]<=ENT.pos[1]+ENT.size[1] and bpos[0]+self.size[0]>ENT.pos[0] and bpos[0]<ENT.pos[0]+ENT.size[0]) or (bpos[1]>=ENT.pos[1] and bpos[1]+self.size[1]<=ENT.pos[1]+ENT.size[1] and bpos[0]+self.size[0]>ENT.pos[0]-ROOM_BORDER and bpos[0]<ENT.pos[0]+ENT.size[0]+ROOM_BORDER):
                         if "a" in opts: #Tell other rooms that they cannot colide with this entity
                             self.pos = bpos.copy()
-                            res = "d"
+                        res = "d"
                         #Colide with doors walls
                         if self.pos[1]<ENT.pos[1]+DOOR_BORDER:
                             self.pos[1] = ENT.pos[1]+DOOR_BORDER
@@ -667,7 +676,7 @@ class Main(object):
                     if (bpos[0]>=ENT.pos[0] and bpos[0]+self.size[0]<=ENT.pos[0]+ENT.size[0] and bpos[1]+self.size[1]>ENT.pos[1] and bpos[1]<ENT.pos[1]+ENT.size[1]) or (bpos[0]>=ENT.pos[0] and bpos[0]+self.size[0]<=ENT.pos[0]+ENT.size[0] and bpos[1]+self.size[1]>ENT.pos[1]-ROOM_BORDER and bpos[1]<ENT.pos[1]+ENT.size[1]+ROOM_BORDER):
                         if "a" in opts: #Tell other rooms that they cannot colide with this entity
                             self.pos = bpos.copy()
-                            res = "d"
+                        res = "d"
                         #Colide with doors walls
                         if self.pos[0]<ENT.pos[0]+DOOR_BORDER:
                             self.pos[0] = ENT.pos[0]+DOOR_BORDER
@@ -775,7 +784,7 @@ class Main(object):
         if self.__surface is None:
             return [0,0,0,0]
         return [self.__lastRenderPos[0]+0,self.__lastRenderPos[1]+0]+list(self.__surface.get_size())
-    def canShow(self): #Return wether the entitie should show on a scematic view in the game (doesen't apply to map editor)
+    def canShow(self,Dview=False): #Return wether the entitie should show on a scematic view in the game (doesen't apply to map editor)
         return self.__sShow == True
     def drawRotate(self,applySurf,x,y,surf,angle): #This function will rotate a surface round its center and draw it to the screen.
         siz = list(surf.get_size())

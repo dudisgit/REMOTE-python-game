@@ -2,6 +2,8 @@
 import pygame, random
 import entities.base as base
 
+VENT_COL = (0,204,255)
+
 class Main(base.Main):
     def __init__(self,x,y,LINK,ID):
         self.init(x,y,LINK) #Init on the base class, __init__ is not called because its used for error detection.
@@ -63,3 +65,13 @@ class Main(base.Main):
             surf.blit(self.getImage("vent"),(x,y))
         if self.HINT:
             self.renderHint(surf,self.hintMessage,[x,y])
+    def canShow(self,dview):
+        return not dview
+    def render(self,x,y,scale,ang,surf=None,arcSiz=-1,eAng=None): #Render vent in 3D
+        if surf is None:
+            surf = self.LINK["main"]
+        sx,sy = surf.get_size()
+        if self.LINK["simpleModels"]:
+            self.LINK["render"].renderModel(self.LINK["models"]["ventSimple"],x+(25*scale),y+(25*scale),0,scale/1.5,surf,VENT_COL,ang,eAng,arcSiz)
+        else:
+            self.LINK["render"].renderModel(self.LINK["models"]["vent"],x+(25*scale),y+(25*scale),0,scale/1.5,surf,VENT_COL,ang,eAng,arcSiz)

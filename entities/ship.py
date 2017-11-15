@@ -17,6 +17,7 @@ class Main(base.Main):
         self.room = self.getEnt("room")(x+50,y,LINK,-6,1) #The ships room
         self.room.size = [120,250]
         self.room.ship = self #Giving the ships room a link to the ship
+        self.room.isShipRoom = True #Make the room attached a ship room
         self.LR = False #Left to right direction
         self.settings["upgrades"] = []
         self.PERM_UPG = [] #Not used
@@ -30,7 +31,6 @@ class Main(base.Main):
         self.pos = data[2]
         self.settings["upgrades"] = data[3]
         self.loadUpgrades()
-        print("Loaded",self.settings)
     def loadUpgrades(self): #Loads all the upgrades into the ship
         self.upgrades = []
         for i,a in enumerate(self.settings["upgrades"]):
@@ -75,25 +75,31 @@ class Main(base.Main):
         else: #First time docking to an airlock
             self.airlock = airlock
         self.dockTime = time.time()+DOCK_DELAY #Make sure nothing can open or dock until the ship has finished docking to the airlock
+        self.room.dirDoors = [[],[],[],[]] #Used to store doors with direction
         bpos = [self.room.pos[0]+0,self.room.pos[1]+0]
         bpos2 = [self.pos[0]+0,self.pos[1]+0]
         allE = self.room.EntitiesInside()
         if airlock.settings["dir"] == 1: #Up
             self.pos = [airlock.pos[0]-(self.size[0]/2),airlock.pos[1]-self.size[1]]
+            self.room.dirDoors[1] = [airlock] #Add this airlock to the BOTTOM of the room
         elif airlock.settings["dir"] == 0: #Down
             self.pos = [airlock.pos[0]-(self.size[0]/2),airlock.pos[1]+50]
+            self.room.dirDoors[0] = [airlock] #Add this airlock to the TOP side of the room
         elif airlock.settings["dir"] == 2: #Right
             self.pos = [airlock.pos[0]+50,airlock.pos[1]-(self.size[0]/2)]
+            self.room.dirDoors[2] = [airlock] #Add this airlock to the LEFT side of the room
         elif airlock.settings["dir"] == 3: #Left
             self.pos = [airlock.pos[0]-self.size[1],airlock.pos[1]-(self.size[0]/2)]
+            self.room.dirDoors[3] = [airlock] #Add this airlock to the RIGHT side of the room
         if airlock.settings["dir"] <= 1:
-            self.room.size = [120,250]
+            self.room.size = [150,250]
             self.LR = False
-            self.room.pos = [self.pos[0]+60,self.pos[1]]
+            self.room.pos = [self.pos[0]+50,self.pos[1]]
         else:
-            self.room.size = [250,120]
+            self.room.size = [250,150]
             self.LR = True
-            self.room.pos = [self.pos[0],self.pos[1]+60]
+            self.room.pos = [self.pos[0],self.pos[1]+50]
+        self.room.reloadCorners() #Reload the ship rooms corners for fast rendering
         if not first:
             if (self.airlock.settings["dir"]>1 and airlock.settings["dir"]>1) or (self.airlock.settings["dir"]<=1 and airlock.settings["dir"]<=1):
                 for a in allE: #Move all entities inside the ship room to the new location

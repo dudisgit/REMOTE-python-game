@@ -3,6 +3,7 @@ import pygame, math, time, random
 import entities.base as base
 
 DEFAULT_SIZE = 3 #Defualt upgrade slots for a drone
+SUCK_SIZE = 1 #Air sucking particle effect size
 
 class Main(base.Main):
     def __init__(self,x,y,LINK,ID,number=-1):
@@ -21,6 +22,7 @@ class Main(base.Main):
             self.alive = False
         if LINK["multi"]==-1: #Map editor
             self.size = [50,50]
+        self.renderSize = [-20,-20,70,70] #Used to have a bigger radius when rendering in 3D (does not effect scale)
         self.settings["maxHealth"] = 100 #Maximum health of the drone
         self.settings["angle"] = 0 #Angle of the drone
         self.settings["name"] = "Name" #Name of the drone
@@ -39,18 +41,23 @@ class Main(base.Main):
         self.__healthBefore = 100 #Used to track health change in multiplayer
         self.__aliveChange = True #Detects changes in the alive status of this drone
         self.__sShow = True #Show in games scematic view
+        self.__model = random.randint(1,3) #Model of the drone
         self.__SYNCChange = [] #Used to detect if the SYNC has changed
         self.__inRoom = False #Is true if the drone is inside a room
         self.__lastRoom = None #Last room this drone was found inside of
+        self.__airParts = [] #Air particle effects when air is vacuumed
         self.beingSucked = False #Make this entity suckable in a vacum
+        self.__suckChange = False #Change in air sucking
         self.hintMessage = "This is a disabled drone, you can add items, change health and name in the context/options menu."
+    def canShow(self,Dview=False):
+        return not Dview
     def hasUpgrade(self,name): #Returns true if this drone has the specific upgrade
         for a in self.upgrades: #Loop through all the drones upgrades
             if a.name==name: #Found upgrade
                 return True
         return False
     def takeDamage(self,dmg,reason=""): #Damage the drone
-        self.health -= dmg
+        self.health -= dmg*0
         if self.ID<0 and self.health<1: #Damage it as a player drone
             self.health = 1
             self.alive = False
@@ -94,7 +101,7 @@ class Main(base.Main):
     def SaveFile(self): #Give all infomation about this object ready to save to a file
         return ["drone",self.ID,self.pos,
             self.settings["angle"]+0,self.settings["health"]+0,self.settings["maxHealth"]+0,
-            self.settings["name"]+"",self.settings["upgrades"],self.number]
+            self.settings["name"]+"",self.settings["upgrades"],self.number,self.__model]
     def __forceRoom(self,lag): #Forces the drone back in a room if outside the map
         R = self.findPosition()
         if R==-1 and not self.__lastRoom is None: #Outside the map
@@ -119,6 +126,8 @@ class Main(base.Main):
         self.settings["upgrades"] = data[7]
         if len(data)>8:
             self.number = data[8]+0
+        if len(data)>9:
+            self.__model = data[9]+0 #Model of this drone
         #Deprivated, will remove if no bugs are found
         #self.upgrades = [] #Empty upgrades on the drone
         #for a in self.settings["upgrades"]: #Start loading the upgrades as objects rather than strings.
@@ -226,6 +235,41 @@ class Main(base.Main):
                 a.clientLoop(lag)
         elif self.LINK["multi"]==0: #Singple player
             self.loop2(lag)
+        if self.LINK["multi"]!=2: #Is not a server
+            if self.beingSucked!=self.__suckChange: #Air vacuum status has changed
+                self.__suckChange = self.beingSucked == True
+                if self.beingSucked and self.LINK["particles"]: #IS being sucked out an airlock
+                    self.__fillAirEffects() #Display particle effects
+                else:
+                    self.__airParts = [] #Remove all particle effects
+            for a in self.__airParts: #Moving loop for all particle effects
+                a.loop(lag)
+        else: #Is a server
+            if self.beingSucked!=self.__suckChange: #Air vacuum status has changed
+                self.__suckChange = self.beingSucked == True
+                if self.beingSucked: #Drone is being sucked out an airlock
+                    AR = None
+                    for a in self.paths: #Find airlock entity that the drone is being sucked towards
+                        if a[0]==1:
+                            if len(a[1])!=0:
+                                AR = a[1][-1][2]
+                    if not AR is None: #Found an airlock
+                        self.LINK["Broadcast"]("duc",self.ID,AR.ID) #Make all clients know that this drone is being sucked out the airlock
+                else: #Drone has stopped being sucked out an airlock
+                    self.LINK["Broadcast"]("duc",self.ID,False)
+    def __renderParticle(self,x,y,scale,alpha,surf,a): #Function to call when rendering an air strike
+        pygame.draw.line(surf,(255,255,255),[x-(math.cos(a[2]/180*math.pi)*SUCK_SIZE*scale*a[3]),y-(math.sin(a[2]/180*math.pi)*SUCK_SIZE*scale*a[3])],[x+(math.cos(a[2]/180*math.pi)*SUCK_SIZE*scale*a[3]),y+(math.sin(a[2]/180*math.pi)*SUCK_SIZE*scale*a[3])],int(1*scale))
+    def __fillAirEffects(self): #Creates particle effects for when drone is being sucked out the airlock
+        for a in self.paths: #Go through all the paths of the drone and find one that is an airlock sucking type
+            if a[0]==1: #Airlock sucktion path type
+                last = [self.pos[0]+(self.size[0]/2),self.pos[1]+(self.size[1]/2)] #Used for particle positions
+                for c in a[1]: #Go through every point of the path and add a particle effects for air strikes
+                    ang = (math.atan2(last[1]-c[1],last[0]-c[0])*180/math.pi)+180 #Angle to last point
+                    dist = math.sqrt(((last[0]-c[0])**2)+((last[1]-c[1])**2)) #Dist to last point
+                    self.__airParts.append(self.LINK["render"].ParticleEffect(self.LINK,last[0],last[1],ang,0,10,0,10,0,None,dist/180,30,True)) #Add particle effect
+                    self.__airParts[-1].renderParticle = self.__renderParticle #Particle render function
+                    last = [c[0]+0,c[1]+0] #Make this point the last point for the next point
+                break
     def turn(self,DIR): #Turn the drone is a specific direction
         if self.aliveShow: #Drone is alive
             self.angle += DIR
@@ -420,3 +464,38 @@ class Main(base.Main):
                 self.drawRotate(surf,x-((self.size[0]/2)*scale),y-((self.size[1]/2)*scale),self.getImage("droneDisabled"),self.angle)
         if self.HINT:
             self.renderHint(surf,self.hintMessage,[x,y])
+    def render(self,x,y,scale,Rang,surf=None,arcSiz=-1,eAng=None,isActive=False): #Render drone in 3D
+        if surf is None:
+            surf = self.LINK["main"]
+        sx,sy = surf.get_size()
+        ang = (self.angle+90)/180*math.pi #Used for centering model since its center is not exact
+        if isActive: #Drone is the source of rendering, make it render despite arc
+            Rang2 = None
+            eAng2 = None
+        else:
+            Rang2 = Rang
+            eAng2 = eAng
+        PS = [x+(math.sin(ang)*0.5*scale)+(12*scale),y+(math.cos(ang)*0.5*scale)+(12*scale)]
+        if self.LINK["simpleModels"]: #Enable/disable simple models
+            simp = "Simple"
+        else:
+            simp = ""
+        if self.__model!=3: #Is not model 3 (circle drone)
+            modl = "drone"+str(self.__model)+simp
+        if self.settings["health"]==0 or self.stealth: #Perminantly dead or in stealth mode
+            col = (150,0,0)
+        elif self.ID <= -1 and self.aliveShow: #Normal
+            col = (255,255,255)
+        else: #Disabled
+            col = (255,255,0)
+        if self.__model!=3: #Render drone model normaly
+            self.LINK["render"].renderModel(self.LINK["models"][modl],PS[0],PS[1],self.angle-90,scale/1.75,surf,col,Rang2,eAng2,arcSiz)
+        else: #Keep base steady and render a head that rotates with the angle of the drone
+            if (self.settings["health"]==0 or self.stealth) or not (self.ID <= -1 and self.aliveShow): #Drone is disabled/dead, don't rotate
+                self.LINK["render"].renderModel(self.LINK["models"]["drone3"+simp],PS[0],PS[1],0,scale/1.75,surf,col,Rang2,eAng2,arcSiz)
+            else:
+                self.LINK["render"].renderModel(self.LINK["models"]["drone3"+simp],PS[0],PS[1],math.cos(time.time())*40,scale/1.75,surf,col,Rang2,eAng2,arcSiz)
+            self.LINK["render"].renderModel(self.LINK["models"]["drone3Head"+simp],PS[0],PS[1],self.angle-90,scale/1.75,surf,col,Rang2,eAng2,arcSiz)
+        for a in self.__airParts: #Render all air particles
+            a.render(x-((self.pos[0]-a.pos[0])*scale),y-((self.pos[1]-a.pos[1])*scale),scale,Rang,eAng,surf)
+

@@ -2,6 +2,8 @@
 import pygame, random
 import entities.base as base
 
+UPG_COL = (255,255,0)
+
 class Main(base.Main):
     def __init__(self,x,y,LINK,ID,typ="",perm=False):
         self.init(x,y,LINK) #Init on the base class, __init__ is not called because its used for error detection.
@@ -52,3 +54,13 @@ class Main(base.Main):
         surf.blit(self.getImage("upgrade"),(x-int((self.size[0]/2)*scale),y-int((self.size[1]/2)*scale))) #Render upgrade
         if self.HINT:
             self.renderHint(surf,self.hintMessage,[x,y])
+    def canShow(self,dview):
+        return not dview
+    def render(self,x,y,scale,ang,surf=None,arcSiz=-1,eAng=None): #Render the ship upgrade in 3D
+        if surf is None:
+            surf = self.LINK["main"]
+        sx,sy = surf.get_size()
+        if self.LINK["simpleModels"]:
+            self.LINK["render"].renderModel(self.LINK["models"]["upgradeSimple"],x+(13*scale),y+(13*scale),self.angle,scale/2,surf,UPG_COL,ang,eAng,arcSiz)
+        else:
+            self.LINK["render"].renderModel(self.LINK["models"]["upgrade"],x+(13*scale),y+(13*scale),self.angle,scale/2,surf,UPG_COL,ang,eAng,arcSiz)

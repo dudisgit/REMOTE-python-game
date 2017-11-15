@@ -1,8 +1,9 @@
 #Do not run this file, it is a module!
-import pygame, time
+import pygame, time, random
 import entities.base as base
 
 RADIATION_DELAY = 6 #Delay until the airlock will fill the room with radiation
+AIRLOCK_COL = (255,255,255) #Colour of the airlock
 
 class Main(base.Main):
     def __init__(self,x,y,LINK,ID,number=-1):
@@ -18,6 +19,7 @@ class Main(base.Main):
         self.room1 = None #The room the airlock is attached to.
         self.room2 = None #The room of the ship (will be none if not docked)
         self.trying = False #Is the airlock trying to close
+        self.__updateAgain = time.time()+random.randint(4,9) #Time until the door will update all users that its still open/closed
         self.__sShow = True #Show in games scematic view
         self.__inRoom = False #Is true if the door is inside a room
         self.__radFill = 0 #Time until the airlock should fill the room with radiation
@@ -30,6 +32,16 @@ class Main(base.Main):
             except:
                 self.LINK["errorDisplay"]("Saving power link "+str(i)+"(index) in airlock "+str(self.ID)+"(ID) failed.")
         return ["airlock",self.ID,self.pos,self.settings["dir"],self.settings["default"],self.settings["fail"],pows]
+    def __roomAddDirection(self,RM): #Adds this door to the rooms door position checking (used for 3D rendering when missing walls for door spaces)
+        if self.pos[1]+self.size[1]==RM.pos[1]: #Door is on the TOP side of the room
+            RM.dirDoors[0].append(self)
+        if self.pos[1]==RM.pos[1]+RM.size[1]: #Door is on the BOTTOM side of the room
+            RM.dirDoors[1].append(self)
+        if self.pos[0]+self.size[0]==RM.pos[0]: #Door is on the LEFT side of the room
+            RM.dirDoors[2].append(self)
+        if self.pos[0]==RM.pos[0]+RM.size[0]: #Door is on the RIGHT side of the room
+            RM.dirDoors[3].append(self)
+        RM.reloadCorners() #Reload the rooms corners for fast rendering
     def afterLoad(self): #Called after the entity has loaded
         if self.LINK["multi"] != -1: #Is not loaded in map editor
             #This is for finding the connected rooms to this door
@@ -37,15 +49,32 @@ class Main(base.Main):
                 self.room1 = self.findPosition([self.pos[0]+25,self.pos[1]-25],[1,1])
                 if self.room1==-1:
                     self.room1 = self.findPosition([self.pos[0]+25,self.pos[1]+75],[1,1])
+                elif self.room1.isShipRoom:
+                    self.__roomAddDirection(self.room1)
+                    self.room2 = self.findPosition([self.pos[0]+25,self.pos[1]-25],[1,1])
+                    self.room1 = self.findPosition([self.pos[0]+25,self.pos[1]+75],[1,1])
+                else:
+                    self.room2 = self.findPosition([self.pos[0]+25,self.pos[1]+75],[1,1])
+                    if self.room2 == -1:
+                        self.room2 = None
             else:
                 self.room1 = self.findPosition([self.pos[0]-25,self.pos[1]+25],[1,1])
                 if self.room1==-1:
                     self.room1 = self.findPosition([self.pos[0]+75,self.pos[1]+25],[1,1])
+                elif self.room1.isShipRoom:
+                    self.room2 = self.findPosition([self.pos[0]-25,self.pos[1]+25],[1,1])
+                    self.__roomAddDirection(self.room1)
+                    self.room1 = self.findPosition([self.pos[0]+75,self.pos[1]+25],[1,1])
+                else:
+                    self.room2 = self.findPosition([self.pos[0]+75,self.pos[1]+25],[1,1])
+                    if self.room2 == -1:
+                        self.room2 = None
             if self.room1 == -1:
                 self.room1 = None
                 self.LINK["errorDisplay"]("Failed to link airlock to room, outside map? ("+str(self.ID)+")")
             else:
                 self.room1.doors.append(self)
+                self.__roomAddDirection(self.room1)
     def deleting(self): #Called when this entity is being deleted
         if self.LINK["multi"]==2: #Is server
             self.LINK["serv"].SYNC.pop("e"+str(self.ID))
@@ -64,6 +93,12 @@ class Main(base.Main):
             if len(self.EntitiesInside())==0:
                 self.CLOSE()
                 self.trying = False
+        if self.LINK["multi"]==2 and time.time()>self.__updateAgain and self.LINK["absoluteDoorSync"]: #Is a server, this will update all users telling them the door is still open
+            #This is incase the very unlikely chance the door doesen't sync its open/closed state
+            self.__updateAgain = time.time()+random.randint(5,12) #Update again in a random time
+            send = [["s",self.settings["open"]==True,"e"+str(self.ID),"O"]]
+            for a in self.LINK["serv"].users: #Send data to all users
+                self.LINK["serv"].users[a].sendUDP(send)
         self.powered = False
         for a in self.settings["power"]:
             if a.active:
@@ -285,3 +320,41 @@ class Main(base.Main):
             surf.blit(textSurf,(x+(((self.size[0]/2)-(textSize[0]/2))*scale),y+((self.size[1]/4)*scale))) #Render text
         if self.HINT:
             self.renderHint(surf,self.hintMessage,[x,y])
+    def canShow(self,Dview=False): #Should the airlock render in scematic view
+        return not Dview
+    def render(self,x,y,scale,ang,surf=None,arcSiz=-1,eAng=None): #Render the airlock in 3D
+        if surf is None:
+            surf = self.LINK["main"]
+        sx,sy = surf.get_size()
+        if self.LINK["simpleModels"]:
+            simp = "Simple"
+        else:
+            simp = ""
+        C = (255,255,255)
+        if self.trying and (time.time()-int(time.time()))>0.5: #Airlock is trying to open/close
+            C = (255,255,0)
+        elif not self.alive:
+            C = (255,0,0)
+        if self.number != -1: #Draw the number the airlock is
+            textSurf = self.LINK["font16"].render("A"+str(self.number),16,C) #Create a surface that is the rendered text
+            textSize = list(textSurf.get_size()) #Get the size of the text rendered
+            textSurf = pygame.transform.scale(textSurf,(int(textSize[0]*scale*1.2),int(textSize[1]*scale*1.2)))
+            textSize2 = list(textSurf.get_size()) #Get the size of the text rendered
+            pygame.draw.rect(surf,(0,0,0),[x+(((self.size[0]/2)-(textSize[0]/2))*scale),y+((self.size[1]/4)*scale)]+textSize2) #Draw a black background for the text to be displayed infront of
+            surf.blit(textSurf,(x+(((self.size[0]/2)-(textSize[0]/2))*scale),y+((self.size[1]/4)*scale))) #Render text
+        if self.settings["open"]: #Airlock is open
+            if self.settings["dir"]>=2: #Airlock is left to right
+                self.LINK["render"].renderModel(self.LINK["models"]["doorOpen"],x+(20*scale),y+(22*scale),0,scale/2.5,surf,AIRLOCK_COL,ang,eAng,arcSiz)
+            else: #Airlock is up to down
+                self.LINK["render"].renderModel(self.LINK["models"]["doorOpen"],x+(20*scale),y+(30*scale),90,scale/2.5,surf,AIRLOCK_COL,ang,eAng,arcSiz)
+        else: #Airlock is closed
+            if self.settings["dir"]>=2: #Airlock is left to right
+                if ((self.settings["dir"]==2 and not self.room2 is None) or self.settings["dir"]==3) and x<sx/2:
+                    self.LINK["render"].renderModel(self.LINK["models"]["doorClose"+simp],x+(14.5*scale),y+(22*scale),0,scale/2.5,surf,AIRLOCK_COL,ang,eAng,arcSiz)
+                if ((self.settings["dir"]==3 and not self.room2 is None) or self.settings["dir"]==2) and x>=sx/2:
+                    self.LINK["render"].renderModel(self.LINK["models"]["doorClose"+simp],x+(36*scale),y+(26*scale),180,scale/2.5,surf,AIRLOCK_COL,ang,eAng,arcSiz)
+            else: #Airlock is up to down
+                if ((self.settings["dir"]==1 and not self.room2 is None) or self.settings["dir"]==0) and y>sy/2:
+                    self.LINK["render"].renderModel(self.LINK["models"]["doorClose"+simp],x+(23*scale),y+(36*scale),90,scale/2.5,surf,AIRLOCK_COL,ang,eAng,arcSiz)
+                if ((self.settings["dir"]==0 and not self.room2 is None) or self.settings["dir"]==1) and y<=sy/2:
+                    self.LINK["render"].renderModel(self.LINK["models"]["doorClose"+simp],x+(26*scale),y+(16*scale),270,scale/2.5,surf,AIRLOCK_COL,ang,eAng,arcSiz)

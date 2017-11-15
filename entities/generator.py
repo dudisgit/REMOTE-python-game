@@ -3,6 +3,7 @@ import pygame, random
 import entities.base as base
 
 RANDOM_DIE = 30 #Percentage chance the generator will be destroyed when the room is vacuumed
+GENERATOR_COL = (0,204,255) #Colour of the generator when rendered in 3D
 
 class Main(base.Main):
     def __init__(self,x,y,LINK,ID):
@@ -106,3 +107,13 @@ class Main(base.Main):
                 surf.blit(self.getImage("generatorOff"),(x,y))
         if self.HINT:
             self.renderHint(surf,self.hintMessage,[x,y])
+    def canShow(self,Dview=False): #Should the generator render in scematic view
+        return not Dview
+    def render(self,x,y,scale,ang,surf=None,arcSiz=-1,eAng=None): #Render generator in 3D
+        if surf is None:
+            surf = self.LINK["main"]
+        sx,sy = surf.get_size()
+        if self.LINK["simpleModels"]:
+            self.LINK["render"].renderModel(self.LINK["models"]["generatorSimple"],x+(25*scale),y+(25*scale),0,scale/1.5,surf,GENERATOR_COL,ang,eAng,arcSiz)
+        else:
+            self.LINK["render"].renderModel(self.LINK["models"]["generator"],x+(25*scale),y+(25*scale),0,scale/1.5,surf,GENERATOR_COL,ang,eAng,arcSiz)

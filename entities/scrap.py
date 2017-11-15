@@ -2,6 +2,8 @@
 import pygame, random
 import entities.base as base
 
+SCRAP_COL = (200,200,0)
+
 class Main(base.Main):
     def __init__(self,x,y,LINK,ID):
         self.init(x,y,LINK) #Init on the base class, __init__ is not called because its used for error detection.
@@ -9,8 +11,9 @@ class Main(base.Main):
         self.__model = random.randint(1,3) #What model to use for the scrap
         self.__sShow = True #Show in games scematic view
         self.__inRoom = False #Is true if the scrap is inside a room
-        self.size = [40,40]
+        self.size = [25,25]
         self.beingSucked = False #Make this entity suckable out of an airlock
+        self.__Rmodel = random.randint(1,11) #Render model
         self.hintMessage = "Scrap is used to reward players, use it like coins."
     def SaveFile(self): #Give all infomation about this object ready to save to a file
         return ["scrap",self.ID,self.pos]
@@ -82,3 +85,10 @@ class Main(base.Main):
             surf.blit(self.getImage("scrap"+str(self.__model)),(x,y))
         if self.HINT:
             self.renderHint(surf,self.hintMessage,[x,y])
+    def canShow(self,Dview=False): #Should the scrap render in scematic view
+        return True
+    def render(self,x,y,scale,ang,surf=None,arcSiz=-1,eAng=None): #Render scrap in 3D
+        if surf is None:
+            surf = self.LINK["main"]
+        sx,sy = surf.get_size()
+        self.LINK["render"].renderModel(self.LINK["models"]["floorScrap"+str(self.__Rmodel)],x+(25*scale),y+(25*scale),0,scale/3,surf,SCRAP_COL,ang,eAng,arcSiz)
