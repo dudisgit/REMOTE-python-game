@@ -1,5 +1,5 @@
 import upgrades.base as base
-import math
+import math, time
 
 class Main(base.Main):
     def __init__(self,LINK,ID=-1):
@@ -39,11 +39,12 @@ class Main(base.Main):
     def scrapHit(self,scrap): #Function to call when a scrap as been hit
         if type(scrap)==self.getEnt("fuel"):
             scrap.used = True
-            self.LINK["outputCommand"]("Collected fuel",(0,255,0)) #Send command message that the upgrade collected scrap
+            self.drone.pause = time.time()+1.5
+            self.LINK["outputCommand"]("Gathering fuel...",(0,255,0),False,self.drone) #Send command message that the upgrade collected scrap
             self.LINK["fuelCollected"] += 1 #Increment scrap amount
         else:
             scrap.REQUEST_DELETE = True #Delete the scrap
-            self.LINK["outputCommand"]("Collected scrap",(0,255,0)) #Send command message that the upgrade collected scrap
+            self.LINK["outputCommand"]("Collected scrap",(0,255,0),False) #Send command message that the upgrade collected scrap
             self.LINK["scrapCollected"] += 1 #Increment scrap amount
         if not self.__single: #Collect multiple scrap
             self.__goTowardsClosestScrap([scrap])
@@ -69,5 +70,9 @@ class Main(base.Main):
                 self.headTowards(closest[0],30)
     def doCommand(self,com,usrObj=None): #Execute the command
         self.used = True #Upgrade has been used before
-        self.__single = len(com.split(" "))==1 #Check if there are more paramiters, this will mean to gather all scrap (paramiters checked in commandAllowed)
+        spl = com.split(" ")
+        if len(spl)>1:
+            self.__single = spl[1]!="all"
+        else:
+            self.__single = True
         self.__goTowardsClosestScrap() #Collect the nearest scrap

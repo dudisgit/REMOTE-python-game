@@ -12,11 +12,19 @@ class Main(base.Main):
         self.settings["god"] = True
         self.active = False #Is the generator currently on
         self.linkable = ["power"] #A list of names that can connect to this entity
+        if LINK["multi"]!=2: #Is not a server
+            if self.LINK["simpleModels"]:
+                self.__gen = LINK["render"].Model(LINK,"generatorSimple")
+            else:
+                self.__gen = LINK["render"].Model(LINK,"generator")
         self.__sShow = True #Show in games scematic view
         self.__inRoom = False #Is true if the generator is inside a room
         self.__isVac = False #Used to detect changes in room pressure
         self.__curRoom = None #Room the generator is in
         self.hintMessage = "A generator powers electronics around the ship and can be accessed using a drone or a ship upgrade. \nIt can power other stuff like doors, rooms, airlocks, etc"
+        self.gameHint = "Use 'generator' upgrade to interact. \nWill power rooms and equipment."
+        if self.LINK["multi"]!=-1 and self.LINK["hints"]:
+            self.HINT = True #Show hints
     def __ChangeGod(self,LINK,state): #switches godmode on/off on the generator
         self.settings["god"] = state == True
     def SaveFile(self): #Give all infomation about this object ready to save to a file
@@ -29,10 +37,12 @@ class Main(base.Main):
     def SyncData(self,data): #Syncs the data with this drone
         self.active = data["O"]
         self.alive = data["A"]
+        self.discovered = data["D"]
     def GiveSync(self): #Returns the synced data for this drone
         res = {}
         res["O"] = self.active
         res["A"] = self.alive
+        res["D"] = self.discovered
         return res
     def loop(self,lag):
         if self.LINK["multi"]==1: #Client
@@ -42,14 +52,17 @@ class Main(base.Main):
         if not self.alive:
             self.active = False
         if self.LINK["multi"]!=1: #Is not a client, single player or server
-            if self.__curRoom.air != self.__isVac:
+            if self.__curRoom.air != self.__isVac and self.alive:
                 self.__isVac = self.__curRoom.air == True
                 if not self.__isVac and random.randint(0,100)<RANDOM_DIE and not self.settings["god"]: #Destroy the generator
                     self.alive = False
                     self.active = False
-                    self.LINK["outputCommand"]("Generator in R"+str(self.__curRoom.number)+" has been destroyed due to outside exposure.",(255,0,0))
+                    self.LINK["outputCommand"]("Generator in "+self.__curRoom.reference()+" has been destroyed due to outside exposure.",(255,0,0),False)
             if self.LINK["allPower"]:
                 self.active = True
+        if self.LINK["multi"]!=2: #Is not server
+            if "gen" in self.LINK["hintDone"] or (self.LINK["multi"]==1 and self.active):
+                self.HINT = False
     def rightInit(self,surf): #Initialize context menu for map designer
         self.__surface = pygame.Surface((210,100)) #Surface to render too
         self.__lastRenderPos = [0,0] #Last rendering position
@@ -90,7 +103,7 @@ class Main(base.Main):
         if type(self.insideRoom(ents)) == bool:
             return "No room (generator)"
         return False
-    def sRender(self,x,y,scale,surf=None,edit=False): #Render in scematic view
+    def sRender(self,x,y,scale,surf=None,edit=False,droneView=False): #Render in scematic view
         if surf is None:
             surf = self.LINK["main"]
         if edit:
@@ -105,7 +118,7 @@ class Main(base.Main):
                 surf.blit(self.getImage("generatorOn"),(x,y))
             else:
                 surf.blit(self.getImage("generatorOff"),(x,y))
-        if self.HINT:
+        if self.HINT and self.LINK["multi"]==-1:
             self.renderHint(surf,self.hintMessage,[x,y])
     def canShow(self,Dview=False): #Should the generator render in scematic view
         return not Dview
@@ -113,7 +126,6 @@ class Main(base.Main):
         if surf is None:
             surf = self.LINK["main"]
         sx,sy = surf.get_size()
-        if self.LINK["simpleModels"]:
-            self.LINK["render"].renderModel(self.LINK["models"]["generatorSimple"],x+(25*scale),y+(25*scale),0,scale/1.5,surf,GENERATOR_COL,ang,eAng,arcSiz)
-        else:
-            self.LINK["render"].renderModel(self.LINK["models"]["generator"],x+(25*scale),y+(25*scale),0,scale/1.5,surf,GENERATOR_COL,ang,eAng,arcSiz)
+        self.__gen.render(x+(25*scale),y+(25*scale),0,scale/1.5,surf,GENERATOR_COL,ang,eAng,arcSiz)
+        if self.HINT:
+            self.renderHint(surf,self.gameHint,[x+(25*scale),y+(50*scale)])

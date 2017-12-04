@@ -13,6 +13,13 @@ class Main(base.Main):
         self.speed = 2.5
         self.NPCDist = 30
         self.size = [25,25]
+        if LINK["multi"]!=2: #Is not a server
+            if self.LINK["simpleModels"]:
+                simp = "Simple"
+            else:
+                simp = ""
+            self.__fly = LINK["render"].Model(LINK,"fly"+simp) #Fly alive model
+            self.__flyDead = LINK["render"].Model(LINK,"flyDead") #Fly dead pile model
         self.__sShow = True #Show in games scematic view
         self.__first = True #First time this entity has spawned
         self.__lastScan = time.time() #Last time this NPC scanned for a drone
@@ -72,7 +79,10 @@ class Main(base.Main):
             self.NPCATTACK.takeDamage(2)
     def loop(self,lag):
         if self.LINK["multi"]==1: #Client
-            self.SyncData(self.LINK["cli"].SYNC["e"+str(self.ID)])
+            if "e"+str(self.ID) in self.LINK["cli"].SYNC:
+                self.SyncData(self.LINK["cli"].SYNC["e"+str(self.ID)])
+            else:
+                self.REQUEST_DELETE = True
         elif self.LINK["multi"]==2: #Server
             if self.__canSee or self.__first: #Only sync position if the player can see it.
                 self.LINK["serv"].SYNC["e"+str(self.ID)] = self.GiveSync()
@@ -89,6 +99,9 @@ class Main(base.Main):
                         send.append(["s",int(self.angle),"e"+str(self.ID),"a"]) #Angle
                         for a in self.LINK["serv"].users: #Send data to all users
                             self.LINK["serv"].users[a].sendTCP(send)
+                            self.LINK["serv"].users[a].tempIgnore.append(["e"+str(self.ID),"x"])
+                            self.LINK["serv"].users[a].tempIgnore.append(["e"+str(self.ID),"y"])
+                            self.LINK["serv"].users[a].tempIgnore.append(["e"+str(self.ID),"a"])
         if self.LINK["multi"]!=1: #Is not a client
             if self.alive:
                 self.NPCloop(True)
@@ -127,7 +140,7 @@ class Main(base.Main):
         if type(self.insideRoom(ents)) == bool: #Check if inside a room
             return "No room (NPC)"
         return False
-    def sRender(self,x,y,scale,surf=None,edit=False): #Render in scematic view
+    def sRender(self,x,y,scale,surf=None,edit=False,droneView=False): #Render in scematic view
         if surf is None:
             surf = self.LINK["main"]
         if self.__inRoom and edit:
@@ -154,54 +167,38 @@ class Main(base.Main):
             self.renderHint(surf,self.hintMessage,[x,y])
     def __drawAttackFly(self,x,y,Face,scale,surf,ang,ang2,arcSiz): #Draw a single fly but facing at a position (used for attacking)
         FaceAngle = math.atan2(x-Face[0],y-Face[1])*180/math.pi
-        self.LINK["render"].renderModel(self.LINK["models"]["fly"+self.__simpSave],x,y,FaceAngle+180,scale,surf,(255,0,0),ang,ang2,arcSiz)
+        self.__fly.render(x,y,FaceAngle+180,scale,surf,(255,0,0),ang,ang2,arcSiz)
     def render(self,x,y,scale,ang2,surf=None,arcSiz=-1,eAng=None): #Render the swarm in 3D
         if surf is None:
             surf = self.LINK["main"]
         ang = time.time()
-        if self.LINK["simpleModels"]:
-            simp = "Simple"
-        else:
-            simp = ""
-        self.__simpSave = simp
         if not self.alive: #Swarm is dead
-            self.LINK["render"].renderModel(self.LINK["models"]["flyDead"],x+((self.size[0]/2)*scale),y+((self.size[1]/2)*scale),0,scale/1.5,surf,(150,0,0),ang2,eAng,arcSiz)
+            self.__flyDead.render(x+((self.size[0]/2)*scale),y+((self.size[1]/2)*scale),0,scale/1.5,surf,(150,0,0),ang2,eAng,arcSiz)
         elif self.NPCATTACK is None: #NPC is roaming, cause fly's to spin
-            self.LINK["render"].renderModel(self.LINK["models"]["fly"+simp],x+(math.cos(ang)*10*scale),y+(math.sin(ang)*10*scale),(ang*180),scale/6,surf,(255,0,0),ang2,eAng,arcSiz)
-            self.LINK["render"].renderModel(self.LINK["models"]["fly"+simp],x+(math.cos(ang/2)*7*scale),y+(math.sin(ang/2)*11*scale),(ang*120),scale/5,surf,(255,0,0),ang2,eAng,arcSiz)
-            self.LINK["render"].renderModel(self.LINK["models"]["fly"+simp],x+(math.cos(ang*3)*18*scale),y+(math.sin(ang*1.4)*12*scale),(ang*190),scale/7,surf,(255,0,0),ang2,eAng,arcSiz)
-            self.LINK["render"].renderModel(self.LINK["models"]["fly"+simp],x+(math.cos(ang*1.5)*14*scale),y+(math.sin(ang*2)*30*scale),(ang*140),scale/5,surf,(255,0,0),ang2,eAng,arcSiz)
-            self.LINK["render"].renderModel(self.LINK["models"]["fly"+simp],x+(math.cos(ang*2)*12*scale),y+(math.sin(ang*3)*20*scale),(ang*200),scale/5,surf,(255,0,0),ang2,eAng,arcSiz)
-            self.LINK["render"].renderModel(self.LINK["models"]["fly"+simp],x+(math.cos(ang*2.5)*5*scale),y+(math.sin(ang*2.5)*5*scale),(ang*130),scale/6,surf,(255,0,0),ang2,eAng,arcSiz)
-        
-            self.LINK["render"].renderModel(self.LINK["models"]["fly"+simp],x+(math.cos(ang/1.2)*7*scale),y+(math.sin(ang/2)*11*scale),(ang*120),scale/5,surf,(255,0,0),ang2,eAng,arcSiz)
-            self.LINK["render"].renderModel(self.LINK["models"]["fly"+simp],x+(math.cos(ang*2.3)*15*scale),y+(math.sin(ang*1.3)*15*scale),(ang*170),scale/7,surf,(255,0,0),ang2,eAng,arcSiz)
-            self.LINK["render"].renderModel(self.LINK["models"]["fly"+simp],x+(math.cos(ang*1.8)*16*scale),y+(math.sin(ang*2.1)*21*scale),(ang*130),scale/5,surf,(255,0,0),ang2,eAng,arcSiz)
-            self.LINK["render"].renderModel(self.LINK["models"]["fly"+simp],x+(math.cos(ang*2.2)*13*scale),y+(math.sin(ang*4)*12*scale),(ang*220),scale/5,surf,(255,0,0),ang2,eAng,arcSiz)
-            self.LINK["render"].renderModel(self.LINK["models"]["fly"+simp],x+(math.cos(ang*2.7)*4*scale),y+(math.sin(ang*3.2)*34*scale),(ang*110),scale/6,surf,(255,0,0),ang2,eAng,arcSiz)
+            self.__fly.render(x+(math.cos(ang)*10*scale),y+(math.sin(ang)*10*scale),(ang*180),scale/6,surf,(255,0,0),ang2,eAng,arcSiz)
+            self.__fly.render(x+(math.cos(ang/2)*7*scale),y+(math.sin(ang/2)*11*scale),(ang*120),scale/5,surf,(255,0,0),ang2,eAng,arcSiz)
+            self.__fly.render(x+(math.cos(ang*3)*18*scale),y+(math.sin(ang*1.4)*12*scale),(ang*190),scale/7,surf,(255,0,0),ang2,eAng,arcSiz)
+            self.__fly.render(x+(math.cos(ang*1.5)*14*scale),y+(math.sin(ang*2)*30*scale),(ang*140),scale/5,surf,(255,0,0),ang2,eAng,arcSiz)
+            self.__fly.render(x+(math.cos(ang*2)*12*scale),y+(math.sin(ang*3)*20*scale),(ang*200),scale/5,surf,(255,0,0),ang2,eAng,arcSiz)
+            self.__fly.render(x+(math.cos(ang*2.5)*5*scale),y+(math.sin(ang*2.5)*5*scale),(ang*130),scale/6,surf,(255,0,0),ang2,eAng,arcSiz)
+            
+            self.__fly.render(x+(math.cos(ang/1.2)*7*scale),y+(math.sin(ang/2)*11*scale),(ang*120),scale/5,surf,(255,0,0),ang2,eAng,arcSiz)
+            self.__fly.render(x+(math.cos(ang*2.3)*15*scale),y+(math.sin(ang*1.3)*15*scale),(ang*170),scale/7,surf,(255,0,0),ang2,eAng,arcSiz)
+            self.__fly.render(x+(math.cos(ang*1.8)*16*scale),y+(math.sin(ang*2.1)*21*scale),(ang*130),scale/5,surf,(255,0,0),ang2,eAng,arcSiz)
+            self.__fly.render(x+(math.cos(ang*2.2)*13*scale),y+(math.sin(ang*4)*12*scale),(ang*220),scale/5,surf,(255,0,0),ang2,eAng,arcSiz)
+            self.__fly.render(x+(math.cos(ang*2.7)*4*scale),y+(math.sin(ang*3.2)*34*scale),(ang*110),scale/6,surf,(255,0,0),ang2,eAng,arcSiz)
         else: #NPC is attacking, cause fly's to aim at target
             scrpos = [(self.pos[0]*scale)-x,(self.pos[1]*scale)-y] #Scroll position
             Face = [((self.NPCATTACK.pos[0]+(self.NPCATTACK.size[0]/2))*scale)-scrpos[0],((self.NPCATTACK.pos[1]+(self.NPCATTACK.size[1]/2))*scale)-scrpos[1]]
             self.__drawAttackFly(x+(math.cos(ang)*10*scale),y+(math.sin(ang)*10*scale),Face,scale/6,surf,ang2,eAng,arcSiz)
-            #self.LINK["render"].renderModel(self.LINK["models"]["fly"],x+(math.cos(ang)*10*scale),y+(math.sin(ang)*10*scale),Face,scale/6,surf,(255,0,0),ang2,eAng,arcSiz)
             self.__drawAttackFly(x+(math.cos(ang/2)*7*scale),y+(math.sin(ang/2)*11*scale),Face,scale/5,surf,ang2,eAng,arcSiz)
-            #self.LINK["render"].renderModel(self.LINK["models"]["fly"],x+(math.cos(ang/2)*7*scale),y+(math.sin(ang/2)*11*scale),Face,scale/5,surf,(255,0,0),ang2,eAng,arcSiz)
             self.__drawAttackFly(x+(math.cos(ang*3)*18*scale),y+(math.sin(ang*1.4)*12*scale),Face,scale/6,surf,ang2,eAng,arcSiz)
-            #self.LINK["render"].renderModel(self.LINK["models"]["fly"],x+(math.cos(ang*3)*18*scale),y+(math.sin(ang*1.4)*12*scale),Face,scale/7,surf,(255,0,0),ang2,eAng,arcSiz)
             self.__drawAttackFly(x+(math.cos(ang*1.5)*14*scale),y+(math.sin(ang*2)*30*scale),Face,scale/5,surf,ang2,eAng,arcSiz)
-            #self.LINK["render"].renderModel(self.LINK["models"]["fly"],x+(math.cos(ang*1.5)*14*scale),y+(math.sin(ang*2)*30*scale),Face,scale/5,surf,(255,0,0),ang2,eAng,arcSiz)
             self.__drawAttackFly(x+(math.cos(ang*2)*12*scale),y+(math.sin(ang*3)*20*scale),Face,scale/5,surf,ang2,eAng,arcSiz)
-            #self.LINK["render"].renderModel(self.LINK["models"]["fly"],x+(math.cos(ang*2)*12*scale),y+(math.sin(ang*3)*20*scale),Face,scale/5,surf,(255,0,0),ang2,eAng,arcSiz)
             self.__drawAttackFly(x+(math.cos(ang*2.5)*5*scale),y+(math.sin(ang*2.5)*5*scale),Face,scale/6,surf,ang2,eAng,arcSiz)
-            #self.LINK["render"].renderModel(self.LINK["models"]["fly"],x+(math.cos(ang*2.5)*5*scale),y+(math.sin(ang*2.5)*5*scale),Face,scale/6,surf,(255,0,0),ang2,eAng,arcSiz)
 
             self.__drawAttackFly(x+(math.cos(ang/1.2)*7*scale),y+(math.sin(ang/2)*11*scale),Face,scale/5,surf,ang2,eAng,arcSiz)
-            #self.LINK["render"].renderModel(self.LINK["models"]["fly"],x+(math.cos(ang/1.2)*7*scale),y+(math.sin(ang/2)*11*scale),Face,scale/5,surf,(255,0,0),ang2,eAng,arcSiz)
             self.__drawAttackFly(x+(math.cos(ang*2.3)*15*scale),y+(math.sin(ang*1.3)*15*scale),Face,scale/7,surf,ang2,eAng,arcSiz)
-            #self.LINK["render"].renderModel(self.LINK["models"]["fly"],x+(math.cos(ang*2.3)*15*scale),y+(math.sin(ang*1.3)*15*scale),Face,scale/7,surf,(255,0,0),ang2,eAng,arcSiz)
             self.__drawAttackFly(x+(math.cos(ang*1.8)*16*scale),y+(math.sin(ang*2.1)*21*scale),Face,scale/5,surf,ang2,eAng,arcSiz)
-            #self.LINK["render"].renderModel(self.LINK["models"]["fly"],x+(math.cos(ang*1.8)*16*scale),y+(math.sin(ang*2.1)*21*scale),Face,scale/5,surf,(255,0,0),ang2,eAng,arcSiz)
             self.__drawAttackFly(x+(math.cos(ang*2.2)*13*scale),y+(math.sin(ang*4)*12*scale),Face,scale/5,surf,ang2,eAng,arcSiz)
-            #self.LINK["render"].renderModel(self.LINK["models"]["fly"],x+(math.cos(ang*2.2)*13*scale),y+(math.sin(ang*4)*12*scale),Face,scale/5,surf,(255,0,0),ang2,eAng,arcSiz)
             self.__drawAttackFly(x+(math.cos(ang*2.7)*4*scale),y+(math.sin(ang*3.2)*34*scale),Face,scale/6,surf,ang2,eAng,arcSiz)
-            #self.LINK["render"].renderModel(self.LINK["models"]["fly"],x+(math.cos(ang*2.7)*4*scale),y+(math.sin(ang*3.2)*34*scale),Face,scale/6,surf,(255,0,0),ang2,eAng,arcSiz)

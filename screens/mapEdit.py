@@ -35,7 +35,10 @@ class Main:
         self.__scroll = [0,0] #Scroll amount through the map
         self.__action = [-1,[]] #Action taking place, e.g. moving an object
         self.__AddedEnts = [] #Used to give hints when adding entities
-        self.__Hinting = 0 #Start of hinting
+        if LINK["hints"]:
+            self.__Hinting = 0 #Start of hinting
+        else:
+            self.__Hinting = 4 #End of hinting
         #Types of actions:
         #   1 - Creating a new object
         #   2 - Linking an object to anouther
@@ -46,9 +49,12 @@ class Main:
         self.__scrolling = False #If the user is currently scrolling accross the map
         self.__scrollClick = False #Detects changes in right click or middle button
         self.__FileMenu = False #Inside the file menu
+        self.__dialog = [] #File menu dialog
+        self.__changes = False #Changes where applied to the map
         self.__GlobalID = 0 #A global ID given to all entities, this helps with linking them together.
         self.__mouseSave = [0,0] #Used to save the mouse position for rendering
         self.__zoom = 1 #Zoom amount
+        self.FileMenuReset() #Set the scroll to the centre of the screen
     def setMapName(self,name): #Loads map <name> into the text feild
         self.__NameInput.text = name+""
     def noDefault(self): #Makes all airlocks 'defualt' False
@@ -61,16 +67,16 @@ class Main:
         boxWidth = screenRes[0]/2 #Width of the box will be half the screen width
         boxHeight = 0
         mes = message.split(" ") #Split the message up by spaces
-        charLength = 10 #Length of 1 charicter (constant)
         font = self.__LINK["font24"] #Font to use when rendering
         adding = "" #Text being added to that line
         drawWord = [] #Store all the text in a list to be rendered
         for word in mes: #Loop through all text samples and build a list of strings that are cut off when they get to the end and start on the next element
-            if (len(adding)+len(word))*charLength > boxWidth or "\n" in word: #Length would be above the length of the box or the message requested a new line using "\n"
+            if font.size(adding+word)[0] > boxWidth or "\n" in word: #Length would be above the length of the box or the message requested a new line using "\n"
                 drawWord.append(adding+"")
                 if "\n" in word: #Remove the "\n"
                     spl = word.split("\n")
-                    spl.remove("")
+                    if "" in spl:
+                        spl.remove("")
                     adding = spl[0]+" "
                 else:
                     adding = word+" "
@@ -103,7 +109,8 @@ class Main:
             self.__action[1] = [self.__ents[-1]]
             if not name in self.__AddedEnts:
                 self.__AddedEnts.append(name+"")
-                self.__ents[-1].HINT = True
+                self.__ents[-1].HINT = self.__LINK["hints"]==True
+            self.__changes = True
     def findEnt(self,posx,posy): #Returns the entitie at the position [posx,posy]
         #This will select rooms last!
         rEnt = -1 #Room entity
@@ -123,6 +130,9 @@ class Main:
             self.__LINK["errorDisplay"]("Tried to create entity but doesen't exist '"+name+"'")
         return self.__LINK["null"]
     def loop(self,mouse,kBuf,lag): #Event loop for screen
+        for a in kBuf:
+            if a.type == pygame.QUIT and self.__changes:
+                self.saveAs("MapEdit unsaved changes when closed backup.map")
         if self.__Hinting != 4: #In hint
             for a in kBuf:
                 if a.type == pygame.KEYDOWN:
@@ -133,16 +143,23 @@ class Main:
                 self.__LINK["log"]("Finished hints")
             return 0
         if self.__FileMenu: #In file menu
-            self.__SaveButton.loop(mouse,kBuf)
-            self.__MapSelect.loop(mouse,kBuf)
-            self.__NameInput.loop(mouse,kBuf)
-            self.__LoadButton.loop(mouse,kBuf)
             if self.__FileMenu:
                 self.__ResetButton.loop(mouse,kBuf)
             if self.__FileMenu:
                 self.__BackButton.loop(mouse,kBuf)
             if self.__FileMenu:
                 self.__MenuButton.loop(mouse,kBuf)
+            if len(self.__dialog)!=0: #A dialog is open
+                sx,sy = self.__dialog[0].get_size() #Get size of dialog box
+                sx2,sy2 = self.__LINK["main"].get_size() #Get size of screen
+                bmouse = [mouse[0],mouse[1]-((sx2/2)-(sx/2)),mouse[2]-((sy2/2)-(sy/2))]+mouse[3:] #Get mouse position local to dialog window
+                for a in self.__dialog[1:]: #Event loop for dialogs widgets
+                    a.loop(bmouse,kBuf)
+            elif self.__FileMenu: #Disable looping for map selecting
+                self.__MapSelect.loop(mouse,kBuf)
+                self.__SaveButton.loop(mouse,kBuf)
+                self.__NameInput.loop(mouse,kBuf)
+                self.__LoadButton.loop(mouse,kBuf)
             return 0
         self.__mouseSave = [mouse[1],mouse[2]] #Saves the mouse cursor position for use with rendering
         self.__entSelect.loop(mouse,kBuf) #Event loop for entity selecting window
@@ -194,6 +211,7 @@ class Main:
                         self.__LINK["log"]("Opening context/options menu on entitiy "+str(self.__ents[ent])+" ID: "+str(self.__ents[ent].ID))
                         try:
                             self.__ents[ent].rightInit(self.__LINK["main"])
+                            self.__changes = True
                         except:
                             self.__LINK["errorDisplay"]("Failed to run open menu",sys.exc_info())
                             self.__active = -1
@@ -210,8 +228,10 @@ class Main:
             self.__scroll[1]-=mouse[2]-self.__mouseStart[1]
             self.__mouseStart = [mouse[1]+0,mouse[2]+0]
         for event in kBuf: #Keyboard event loop
+            if event.type == pygame.KEYDOWN:
+                if event.key == self.__LINK["controll"]["resetScroll"] and self.__active == -1: #Shortcut key to reset scroll position
+                    self.FileMenuReset()
             if event.type == 6 and not insideSelect: #Scrollwheel
-                sx,sy = self.__LINK["main"].get_size() #Get the size of the screen
                 siz = [self.__scroll[0]*self.__zoom,self.__scroll[1]*self.__zoom,self.__zoom+0]
                 if event.button == 4: #Mouse wheel up
                     self.__zoom *= ZOOM_SPEED
@@ -259,6 +279,7 @@ class Main:
                         self.__active = -1
                     self.__roomScale = False
                     if type(itm) == int: #Found an entity
+                        self.__changes = True
                         self.__activeDrag = itm+0
                         self.__mouseStart = [mouse[1]-(self.__ents[itm].pos[0]*self.__zoom)+self.__scroll[0],mouse[2]-(self.__ents[itm].pos[1]*self.__zoom)+self.__scroll[1]]
                         if type(self.__ents[itm]) == self.getEnt("room"): #Is a room
@@ -295,7 +316,8 @@ class Main:
                                             round((mouse[2]+self.__scroll[1])/self.__zoom/BLOCK_SIZE)*BLOCK_SIZE]
                 self.__action[1][0].editMove(self.__ents)
     def FileMenuReset(self,*args): #Reset scroll position
-        self.__scroll = [0,0]
+        sx,sy = self.__LINK["main"].get_size() #Get the size of the screen
+        self.__scroll = [-sx/2,-sy/2]
         self.FileMenuEnd()
     def saveAs(self,name): #Saves a file as a name
         Build = [self.__GlobalID+0]
@@ -364,6 +386,7 @@ class Main:
             self.__WarnLabel.text = "Opened file sucsessfuly"
         for a in self.__ents: #Check all objects for colosions
             a.editMove(self.__ents)
+        self.__changes = False
     def FileMenuEnd(self,*args): #End the file menu
         self.__LoadButton = None
         self.__SaveButton = None
@@ -388,15 +411,44 @@ class Main:
                     self.__WarnLabel.text = "Invalid number of dots ('.')"
                     self.__WarnLabel.flickr()
                     text = ""
+            elif len(text)==0:
+                self.__WarnLabel.text = "No name was entered"
+                self.__WarnLabel.flickr()
+                text = ""
             else:
                 text = text+".map"
         if len(text)!=0:
-            try:
-                self.saveAs(text)
-            except:
-                self.__LINK["errorDisplay"]("Failed to run save function",sys.exc_info())
-            if not text in self.__LINK["maps"]:
-                self.__LINK["maps"].append(text+"")
+            if text in self.__LINK["maps"]:
+                self.__openDialog("The file allredey exists, overwrite?",self.__dialogSave)
+            else:
+                try:
+                    self.saveAs(text)
+                    self.__changes = False
+                except:
+                    self.__LINK["errorDisplay"]("Failed to run save function",sys.exc_info())
+                if not text in self.__LINK["maps"]:
+                    self.__LINK["maps"].append(text+"")
+    def __dialogSave(self,*ev): #Dialog is will call this function if the file will be overwritten
+        try:
+            self.saveAs(self.__NameInput.text)
+        except:
+            self.__LINK["errorDisplay"]("Failed to run save function",sys.exc_info())
+        self.__closeDialog()
+    def __dialogOpen(self,*ev): #Dialog will call this function if the map will be disregarded when opeing anouther
+        try:
+            self.openAs(self.__NameInput.text)
+        except:
+            self.__LINK["errorDisplay"]("Failed to run open function",sys.exc_info())
+        self.__closeDialog()
+        self.FileMenuEnd()
+    def __openDialog(self,quest,call,width=400): #Opens the overwrite dialog
+        self.__dialog = []
+        self.__dialog.append(pygame.Surface((width,80)))
+        self.__dialog.append(self.__LINK["screenLib"].Label(0,0,self.__LINK,quest))
+        self.__dialog.append(self.__LINK["screenLib"].Button(10,40,self.__LINK,"Yes",call))
+        self.__dialog.append(self.__LINK["screenLib"].Button(width-50,40,self.__LINK,"No",self.__closeDialog))
+    def __closeDialog(self,*ev): #Closes the dialog
+        self.__dialog = []
     def OpenFileButton(self,*args):
         text = self.__NameInput.text
         if "\\" in text or "/" in text:
@@ -417,11 +469,14 @@ class Main:
                 self.__WarnLabel.flickr()
                 text=""
         if len(text)!=0:
-            try:
-                self.openAs(text)
-            except:
-                self.__LINK["errorDisplay"]("Failed to run open function",sys.exc_info())
-            self.FileMenuEnd()
+            if self.__changes: #Changes detected
+                self.__openDialog("Disregard changes on current map?",self.__dialogOpen)
+            else:
+                try:
+                    self.openAs(text)
+                except:
+                    self.__LINK["errorDisplay"]("Failed to run open function",sys.exc_info())
+                self.FileMenuEnd()
     def FileMenuInit(self,*args): #Initialize file menu
         if self.__active != -1:
             self.__ents[self.__active].rightUnload()
@@ -449,6 +504,13 @@ class Main:
         self.__BackButton.render(self.__BackButton.pos[0],self.__BackButton.pos[1],1,1,surf)
         self.__MenuButton.render(self.__MenuButton.pos[0],self.__MenuButton.pos[1],1,1,surf)
         self.__WarnLabel.render(self.__WarnLabel.pos[0],self.__WarnLabel.pos[1],1,1,surf)
+        if len(self.__dialog)!=0:
+            self.__dialog[0].fill((50,50,50))
+            for a in self.__dialog[1:]:
+                a.render(a.pos[0],a.pos[1],1,1,self.__dialog[0])
+            sx,sy = self.__dialog[0].get_size()
+            sx2,sy2 = surf.get_size()
+            surf.blit(self.__dialog[0],(int((sx2/2)-(sx/2)),int((sy2/2)-(sy/2))))
     def render(self,surf=None): #Renders everything
         if surf is None:
             surf = self.__LINK["main"]
@@ -479,6 +541,6 @@ class Main:
         elif self.__Hinting == 1: #Render entity adding hint
             self.renderHint(surf,"You can add new entities using this menu here, click on an entity and click where you want it",[self.__entSelect.pos[0]+120,self.__entSelect.pos[1]+120])
         elif self.__Hinting == 2: #Render controlls hint
-            self.renderHint(surf,"You can move and resize objects using the left mouse button. \nRight click to open the context/options menu of an entity, to close simply click (mouse 1) on anouther entity. \nHold mouse 2 (right click) to scroll around.",[self.__reslution[0]/3,180])
+            self.renderHint(surf,"You can move and resize objects using the left mouse button. \nRight click to open the context/options menu of an entity, to close simply click (mouse 1) on anouther entity.\nHold mouse 2 (right click) to scroll around.\nPress backspace to reset scroll position.",[self.__reslution[0]/3,180])
         elif self.__Hinting == 3: #Hints hint
             self.renderHint(surf,"Most objects you spawn will want to be inside of rooms. Objects that don't are rooms, doors, and airlocks. Entities that encounter errors will be highlighted RED \nWhen spawning entities for the first time, you will get a hint box. To close this simply open the objects context/option menu by right clicking on it.",[self.__reslution[0]/3,240])

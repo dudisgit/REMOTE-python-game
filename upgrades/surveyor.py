@@ -8,3 +8,5 @@ class Main(base.Main):
         self.displayName = "Surveyor" #Name of the upgrade (displayed)
         self.droneUpgrade = False
         self.damage = 0 #Damage to the upgrade.
+        if ID!=-1:
+            LINK["showRooms"] = True

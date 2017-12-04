@@ -10,12 +10,15 @@ class Main(base.Main):
         self.init(x,y,LINK) #Init on the base class, __init__ is not called because its used for error detection.
         self.ID = ID
         self.size = [200,250]
+        self.discovered = True
         self.__inRoom = True #The ship is allways visible
         self.__sShow = True #Ship will allways be visible in scematic view
+        self.__forceEject = False #Used to detect wether the dock command was entered twise
         self.airlock = None #Airlock this ship is docked to
         self.dockTime = 0 #Time until the ship has finished docking
         self.room = self.getEnt("room")(x+50,y,LINK,-6,1) #The ships room
         self.room.size = [120,250]
+        self.room.discovered2 = True
         self.room.ship = self #Giving the ships room a link to the ship
         self.room.isShipRoom = True #Make the room attached a ship room
         self.LR = False #Left to right direction
@@ -57,6 +60,10 @@ class Main(base.Main):
     def loop(self,lag):
         if time.time()>self.dockTime and self.dockTime!=0: #Reset docking timer when docking has completed
             self.dockTime = 0
+            if self.LINK["multi"]!=1: #Is not a client, single player or server
+                if not self.airlock.alive: #Airlock is dead
+                    self.airlock.OPEN(True)
+                self.LINK["outputCommand"]("Sucsessfuly docked to A"+str(self.airlock.number),(0,255,0),False)
         if self.LINK["multi"]!=1: #Is not a client, single player or server
             for a in self.upgrades: #Do an event loop on all upgrades
                 a.loop(lag)
@@ -68,12 +75,16 @@ class Main(base.Main):
             return "Ship is still docking, please wait",(255,255,0)
         if not self.airlock is None: #Is docked to an airlock
             out = self.airlock.CLOSE()
-            if out=="Airlock is being blocked":
-                return out,(255,255,0)
+            if out=="Airlock is being blocked" and not self.__forceEject:
+                self.__forceEject = True
+                return "Airlock is being blocked, re-enter to force",(255,255,0)
+            if out!="Airlock is being blocked" and self.__forceEject:
+                self.__forceEject = False
             self.airlock.room2 = None
             self.room.doors = [airlock]
         else: #First time docking to an airlock
             self.airlock = airlock
+        airlock.CLOSE(True)
         self.dockTime = time.time()+DOCK_DELAY #Make sure nothing can open or dock until the ship has finished docking to the airlock
         self.room.dirDoors = [[],[],[],[]] #Used to store doors with direction
         bpos = [self.room.pos[0]+0,self.room.pos[1]+0]
@@ -116,13 +127,17 @@ class Main(base.Main):
                         a.changeMesh(bpos3)
             for a in allE: #Tell all entities they where teleported
                 a.teleported()
+        self.room.teleported(bpos)
         self.room.changeMesh(bpos)
         self.room.reloadSize()
         self.changeMesh(bpos2)
         airlock.room2 = self.room
+        if self.__forceEject:
+            self.airlock.OPEN(True)
+            self.__forceEject = False
         self.airlock = airlock
         self.room.doors = [airlock]
-        return "Docking to airlock...",(0,255,0)
+        return "Docking to A"+str(airlock.number),(0,255,0)
     def rightRender(self,x,y,surf): #Render the context menu
         windowPos = [x,y+50] #Window position
         #The 4 IF statments below will make sure the context menu is allways on the screen, even if this entity is not.
@@ -151,7 +166,7 @@ class Main(base.Main):
         self.__inRoom = type(self.insideRoom(ents)) != bool
     def giveError(self,ents): #Scans and gives an error out
         return "Ship should not be spawned"
-    def sRender(self,x,y,scale,surf=None,edit=False): #Render in scematic view
+    def sRender(self,x,y,scale,surf=None,edit=False,droneView=False): #Render in scematic view
         if surf is None:
             surf = self.LINK["main"]
         if ((time.time()-int(time.time()))*2)%1>0.5 or self.dockTime==0:

@@ -24,9 +24,9 @@ class Main(base.Main):
     def hitDoor(self,door): #Drone has reached door
         door.pry() #Pry open the door
         if door.alive:
-            self.LINK["outputCommand"]("Pried open D"+str(door.number),(255,255,0))
+            self.LINK["outputCommand"]("Pried open D"+str(door.number),(255,255,0),False)
         else:
-            self.LINK["outputCommand"]("Pried open D"+str(door.number)+" but was destroyed during pry",(255,0,0))
+            self.LINK["outputCommand"]("Pried open D"+str(door.number)+" but was destroyed during pry",(255,0,0),False)
     def doCommand(self,com,usrObj=None): #Execute pry command
         Droom = self.drone.findPosition() #Get drones position
         self.used = True

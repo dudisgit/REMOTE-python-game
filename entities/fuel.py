@@ -11,10 +11,20 @@ class Main(base.Main):
         self.settings["god"] = False
         self.used = False #Has the fuel outlet been used by a drone.
         self.renderSize = [-60,-60,110,110] #Used to have a bigger radius when rendering in 3D (does not effect scale)
+        if LINK["multi"]!=2: #Is not a server
+            if self.LINK["simpleModels"]:
+                simp = "Simple"
+            else:
+                simp = ""
+            self.__fuel = LINK["render"].Model(LINK,"fuel"+simp)
+            self.__fuelWall = LINK["render"].Model(LINK,"fuelWall"+simp)
         self.__wallAngle = -1 #Wall angle the interface is laying on, left, right, up, down
         self.__sShow = True #Show in games scematic view
         self.__inRoom = False #Is true if the fuel outlet is inside a room
         self.hintMessage = "Fuel outlets can be collected by drones to allow the player to move forward to different ships. \nUnless godmode is turned on, they can be destroyed by air locks."
+        self.gameHint = "Use 'gather' upgrade to interact. \nWill gather fuel to use for more ships"
+        if self.LINK["multi"]!=-1 and self.LINK["hints"]:
+            self.HINT = True #Show hints
     def SaveFile(self): #Give all infomation about this object ready to save to a file
         return ["fuel",self.ID,self.pos,self.settings["god"]==True]
     def LoadFile(self,data,idRef): #Load from a file
@@ -22,6 +32,7 @@ class Main(base.Main):
         self.settings["god"] = data[3]
     def SyncData(self,data): #Syncs the data with this lure
         self.used = data["U"]
+        self.discovered = data["D"]
     def afterLoad(self):
         self.__curRoom = self.findPosition()
         if self.pos[0]==self.__curRoom.pos[0]:
@@ -35,12 +46,19 @@ class Main(base.Main):
     def GiveSync(self): #Returns the synced data for this lure
         res = {}
         res["U"] = self.used
+        res["D"] = self.discovered
         return res
     def loop(self,lag):
         if self.LINK["multi"]==1: #Client
             self.SyncData(self.LINK["cli"].SYNC["e"+str(self.ID)])
         elif self.LINK["multi"]==2: #Server
             self.LINK["serv"].SYNC["e"+str(self.ID)] = self.GiveSync()
+        if self.LINK["multi"]!=2 and self.HINT: #Is not server
+            if self.used and not "fuel" in self.LINK["hintDone"]:
+                self.HINT = False
+                self.LINK["hintDone"].append("fuel")
+            if "fuel" in self.LINK["hintDone"]:
+                self.HINT = False
     def __ChangeGod(self,LINK,state):
         self.settings["god"] = state == True
     def rightInit(self,surf): #Initialize context menu for map designer
@@ -83,7 +101,7 @@ class Main(base.Main):
         if type(self.insideRoom(ents)) == bool: #Check if inside a room
             return "No room (fuel outlet)"
         return False
-    def sRender(self,x,y,scale,surf=None,edit=False): #Render in scematic view
+    def sRender(self,x,y,scale,surf=None,edit=False,droneView=False): #Render in scematic view
         if surf is None:
             surf = self.LINK["main"]
         if edit:
@@ -99,7 +117,7 @@ class Main(base.Main):
                     surf.blit(self.getImage("fuelAlive"),(x,y))
             else:
                 surf.blit(self.getImage("fuelDead"),(x,y))
-        if self.HINT:
+        if self.HINT and self.LINK["multi"]==-1:
             self.renderHint(surf,self.hintMessage,[x,y])
     def canShow(self,Dview=False,arcSiz=-1): #Should the generator render in scematic view
         return not Dview
@@ -107,17 +125,23 @@ class Main(base.Main):
         if surf is None:
             surf = self.LINK["main"]
         sx,sy = surf.get_size()
-        if self.LINK["simpleModels"]:
-            simp = "Simple"
-        else:
-            simp = ""
         if self.__wallAngle==-1:
-            self.LINK["render"].renderModel(self.LINK["models"]["fuel"+simp],x+(25*scale),y+(12*scale),0,scale/2.5,surf,FUEL_COL,ang,eAng,arcSiz)
+            self.__fuel.render(x+(25*scale),y+(12*scale),0,scale/2.5,surf,FUEL_COL,ang,eAng,arcSiz)
+            if self.HINT:
+                self.renderHint(surf,self.gameHint,[x+(25*scale),y+(25*scale)])
         elif self.__wallAngle==0: #Left
-            self.LINK["render"].renderModel(self.LINK["models"]["fuelWall"+simp],x+(23*scale),y+(12.5*scale),270,scale/2.5,surf,FUEL_COL,ang,eAng,arcSiz)
+            self.__fuelWall.render(x+(23*scale),y+(12.5*scale),270,scale/2.5,surf,FUEL_COL,ang,eAng,arcSiz)
+            if self.HINT:
+                self.renderHint(surf,self.gameHint,[x,y+(25*scale)])
         elif self.__wallAngle==1: #Right
-            self.LINK["render"].renderModel(self.LINK["models"]["fuelWall"+simp],x+(25*scale),y+(18*scale),90,scale/2.5,surf,FUEL_COL,ang,eAng,arcSiz)
+            self.__fuelWall.render(x+(25*scale),y+(18*scale),90,scale/2.5,surf,FUEL_COL,ang,eAng,arcSiz)
+            if self.HINT:
+                self.renderHint(surf,self.gameHint,[x+(50*scale),y+(25*scale)])
         elif self.__wallAngle==2: #Up
-            self.LINK["render"].renderModel(self.LINK["models"]["fuelWall"+simp],x+(18*scale),y+(23*scale),180,scale/2.5,surf,FUEL_COL,ang,eAng,arcSiz)
+            self.__fuelWall.render(x+(18*scale),y+(23*scale),180,scale/2.5,surf,FUEL_COL,ang,eAng,arcSiz)
+            if self.HINT:
+                self.renderHint(surf,self.gameHint,[x+(20*scale),y])
         elif self.__wallAngle==3: #Down
-            self.LINK["render"].renderModel(self.LINK["models"]["fuelWall"+simp],x+(18*scale),y+(27*scale),0,scale/2.5,surf,FUEL_COL,ang,eAng,arcSiz)
+            self.__fuelWall.render(x+(18*scale),y+(27*scale),0,scale/2.5,surf,FUEL_COL,ang,eAng,arcSiz)
+            if self.HINT:
+                self.renderHint(surf,self.gameHint,[x+(20*scale),y+(50*scale)])

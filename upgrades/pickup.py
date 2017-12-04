@@ -42,10 +42,12 @@ class Main(base.Main):
                         break
             else: #Nothing was picked up
                 noAdd = True
-                self.LINK["outputCommand"]("Couldn't carry any more lures!",(255,255,0))
+                self.LINK["outputCommand"]("Couldn't carry any more lures!",(255,255,0),False)
             if not noAdd: #Lure was added back into the upgrade
                 itm.REQUEST_DELETE = True
-                self.LINK["outputCommand"]("Picked up lure",(0,255,0))
+                self.LINK["outputCommand"]("Picked up lure",(0,255,0),False)
+                if not "lure" in self.LINK["hintDone"]:
+                    self.LINK["hintDone"].append("lure")
     def loop(self,lag): #Event loop on this upgrade
         super().loop(lag)
     def doCommand(self,com,usrObj=None): #Runs a command on this upgrade (only if sucsessful)

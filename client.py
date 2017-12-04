@@ -1,9 +1,72 @@
-import socket,select,pickle,time
+import socket,select,pickle,time,os,traceback
+import multiprocessing as mp
 
 selfIp = socket.gethostbyname(socket.gethostname()) #"169.254.178.71"
 TCP_BUF_SIZE = 4046
 MAX_KEEP = 60 # Maximum number of packets kept by the server when a packet was missed.
 UPDATE_RATE = 0.075 #Rate at which the client should sent updates to the server (UDP/TCP)
+
+def bufferThread(servIP,port,active,sendQueue,ReceiveQueue): #Is used for in threading to seperate the game and socket sending/receiving
+    sock = socket.socket(socket.AF_INET,socket.SOCK_STREAM)
+    sock.setsockopt(socket.SOL_SOCKET,socket.SO_REUSEADDR, 1)
+    sock.settimeout(5)
+    failed = False
+    print("Thread started and binded, process ID = ",os.getpid())
+    try: #Attempt to connect to the server
+        sock.connect((servIP,port))
+    except socket.timeout: #Timeout error
+        active.value = -3
+        traceback.print_exc()
+        failed = True
+    except socket.error: #Connection error
+        active.value = -1
+        traceback.print_exc()
+        failed = True
+    except: #Unknown error
+        active.value = -2
+        failed = True
+        traceback.print_exc()
+    print("Connected")
+    while active.value>time.time() and not failed: #Loop until the program is closed
+        read,write,err = select.select([sock],[],[],0)
+        for Sock in read: #Go through all packets being received
+            if Sock == sock:
+                try: #Attempt to receive packet
+                    data = sock.recv(TCP_BUF_SIZE)
+                except socket.error: #Socket was disconnected
+                    print("Connection failure, attempting to connect again")
+                    try: #Attempt to connect again
+                        sock.connect((servIP,port))
+                    except: #Failed
+                        print("Failed to connect")
+                        sock.close()
+                        active.value = -1
+                        traceback.print_exc()
+                        failed = True
+                    else:
+                        print("Connected")
+                except: #Unknown error
+                    active.value = -2
+                    traceback.print_exc()
+                    failed = True
+                try: #Attempt to read packet
+                    qr = pickle.loads(data)
+                except: #Error when reading
+                    pass
+                else: #Sucsessful
+                    if qr=="p": #Message is a ping
+                        sock.sendall(pickle.dumps("p"))
+                    else: #Normal message
+                        ReceiveQueue.put(data)
+        while not sendQueue.empty(): #Send all awaiting packets
+            try:
+                sock.sendall(sendQueue.get())
+            except BrokenPipeError:
+                active.value = -1
+                traceback.print_exc()
+                failed = True
+    print("Closesd thread")
+    sock.close()
 
 def copyIter(lis): #Copies a list so the items are not pointers
     res = {}
@@ -66,17 +129,29 @@ def detectChanges(before,after): #Detects all the changes between one variable a
     return None #No changes atall
 
 class Client:
-    def __init__(self,serverIp,tcpPort=3746):
+    def __init__(self,serverIp,tcpPort=3746,thread=False):
         self.SYNC = {} #A list of variables that gets synced with the server
         self.__SYNCBefore = {} #A list to detect changes in SYNC
         self.TRIGGER = {} #A list containing pointers to functions if the server calls them
         self.loading = True #Game is loading
+        self.__thread = thread
         self.finishLoading = None #Function to call when the main content from the server has finished downloading
+        self.__loadCur = 0 #Current packet loading
+        self.__loadingMax = 0 #Max loading packets (used to calculate percentage)
         self.__serverIp = serverIp #IP of the server
         self.__tcpPort = tcpPort
-        self.__tsock = socket.socket(socket.AF_INET,socket.SOCK_STREAM) #Setup TCP socket
-        self.__tsock.setsockopt(socket.SOL_SOCKET,socket.SO_REUSEADDR, 1) #Change settings to work with the "select" library
-        self.__tsock.settimeout(5) #Disconnect after 5 seconds
+        self.errorReason = "Unknown" #Reason for the error in connection
+        if thread: #Threading enabled
+            self.__queue = mp.Queue() #Sending queue
+            self.__recQueue = mp.Queue() #Receiving queue
+            self.__active = mp.Value("i",int(time.time()+5)) #Active queue
+            self.__proc = mp.Process(target=bufferThread,args=(serverIp,tcpPort,self.__active,self.__queue,self.__recQueue,))
+            self.__proc.start() #Start the thread
+            self.__tsock = None
+        else: #Normal mode
+            self.__tsock = socket.socket(socket.AF_INET,socket.SOCK_STREAM) #Setup TCP socket
+            self.__tsock.setsockopt(socket.SOL_SOCKET,socket.SO_REUSEADDR, 1) #Change settings to work with the "select" library
+            self.__tsock.settimeout(5) #Disconnect after 5 seconds
         self.__IDSend = 0 #Used to tell the position in the sending list
         self.__IDRec = 0 #Used to tell the position in the receiving list
         self.__ReceiveBuffer = [] #Used to track missing packets and ensure order of packets
@@ -87,11 +162,27 @@ class Client:
         for i in range(MAX_KEEP): #Fill with buffers with empty items
             self.__ReceiveBuffer.append(None)
             self.__SendingBuffer.append(None)
-        try: #Attempt to connect to the server
-            self.__tsock.connect((serverIp,tcpPort))
-        except: #An error occured while connecting...
-            self.failConnect = True
-            raise
+        if not thread:
+            try: #Attempt to connect to the server
+                self.__tsock.connect((serverIp,tcpPort))
+            except ConnectionRefusedError: #An error occured while connecting...
+                self.failConnect = True
+                traceback.print_exc()
+                self.errorReason = "Connection refused"
+            except ConnectionResetError:
+                self.failConnect = True
+                traceback.print_exc()
+                self.errorReason = "Connection reset"
+            except socket.timeout:
+                self.failConnect = True
+                traceback.print_exc()
+                self.errorReason = "Timed out"
+            except: #Unknown error
+                self.failConnect = True
+                traceback.print_exc()
+                self.errorReason = "Other error, check console"
+            else:
+                self.failConnect = False
         else:
             self.failConnect = False
     def getInfo(self): #Returns info about the receiving buffer
@@ -103,29 +194,80 @@ class Client:
                 res.append(len(a))
         return self.__IDRec,res
     def loop(self):
+        if self.failConnect:
+            return 0
+        if self.__thread:
+            if self.__active.value>0: #Working correctly
+                self.__active.value = int(time.time()+5) #Update thread
+            elif self.__active.value==-1: #Thread had a connection failure
+                self.errorReason = "Connection lost"
+                self.failConnect = True
+            elif self.__active.value==-2: #Thread had an unknown error
+                self.errorReason = "Other error, check console"
+                self.failConnect = True
+            elif self.__active.value==-3: #Thread timed out
+                self.errorReason = "Timed out"
+                self.failConnect = True
+            if not self.__proc.is_alive() and not self.failConnect: #Thread closed without communication of failure
+                self.failConnect = True
+                self.errorReason = "Connection thread closed, check console"
         self.tcpLoop() #Process all receiving packets
         if time.time()>self.__UpdateTime:
             self.__UpdateTime = time.time()+UPDATE_RATE
             self.detectAndApplySYNC() #Process all outgoing packets
     def __sendUDP(self,mes): #Sends a message over UDP
-        self.__tsock.sendall(pickle.dumps(mes))
+        if self.__thread:
+            self.__queue.put(pickle.dumps(mes))
+        else:
+            try:
+                self.__tsock.sendall(pickle.dumps(mes))
+            except BrokenPipeError:
+                self.serverShutdown()
     def __sendTCP(self,mes): #Sends a message over TCP
         if type(mes)==list: #Message is a list, allowed to send over UDP
-            self.__tsock.sendall(pickle.dumps([self.__IDSend]+mes))
+            if self.__thread:
+                self.__queue.put(pickle.dumps([self.__IDSend]+mes))
+            else:
+                try:
+                    self.__tsock.sendall(pickle.dumps([self.__IDSend]+mes))
+                except BrokenPipeError:
+                    self.serverShutdown()
             self.__SendingBuffer[self.__IDSend] = [self.__IDSend]+mes
             self.__IDSend = (self.__IDSend + 1) % MAX_KEEP
         else: #Send it as UDP
-            self.__tsock.sendall(pickle.dumps(mes))
+            if self.__thread:
+                self.__queue.put(pickle.dumps(mes))
+            else:
+                try:
+                    self.__tsock.sendall(pickle.dumps(mes))
+                except BrokenPipeError:
+                    self.serverShutdown()
     def serverShutdown(self): #The server has shutdown!
         print("Lost connection to server!")
         print("Attempting to connect...")
+        self.failConnect = True
         try:
-            self.__tsock.connect((serverIp,tcpPort))
-        except:
-            self.failConnect = True
-            raise #TEMPORY
+            self.__tsock.connect((self.__serverIp,self.__tcpPort))
+        except ConnectionAbortedError:
+            traceback.print_exc()
+            self.errorReason = "Connectino aborted"
+        except ConnectionRefusedError:
+            traceback.print_exc()
+            self.errorReason = "Connection reset"
+        except socket.timeout:
+            traceback.print_exc()
+            self.errorReason = "Timed out"
+        except: #Unknwon error
+            traceback.print_exc()
+            self.errorReason = "Other, check console"
         else:
+            self.failConnect = False
             print("Connected!")
+    def close(self): #Closes the client socket
+        self.failConnect = True
+        self.errorReason = "Client closed"
+        if not self.__thread:
+            self.__tsock.close()
     def setVariable(self,lis,path,value): #Set a varable using a path list
         if not path[0] in lis: #Create new variable
             if len(path)==1: #Create the new variable as a normal
@@ -262,9 +404,16 @@ class Client:
                 print("Loading END")
     def sendTrigger(self,funcName,*args):
         self.__sendTCP([["t"+funcName]+list(args)])
+    def getPercent(self): #Returns the loading percentage
+        if self.__loadingMax==0:
+            return 0
+        else:
+            return self.__loadCur/self.__loadingMax
     def receive(self,data,tcpSent=False): #Received a packet
         if len(data)==0: #No data, exiting
             return False
+        if self.loading:
+            self.__loadCur += 1
         if type(data[0])==list: #Is a bundle of commands
             for a in data:
                 if type(a) == list:
@@ -280,9 +429,10 @@ class Client:
         elif data[0]=="r": #Resend a message if the server missed it.
             if data[1]<len(self.__SendingBuffer) and data[1]>=0: #Check if the packet is out of range
                 self.__sendUDP(self.__SendingBuffer[data[1]]) #Resend missing packet to server
-        elif data[0]=="l": #Loading a map
+        elif data[0][0]=="l": #Loading a map
             self.loading = True
-            print("Loading START")
+            self.__loadingMax = int(data[0][1:])
+            print("Loading START",data[0])
         else: #Is a single command
             self.doCommand(data,tcpSent)
     def countTCPPackets(self): #Counts how many TCP packets there are
@@ -291,17 +441,28 @@ class Client:
             num += int(not a is None) #Add if the item in the list is not empty
         return num
     def tcpLoop(self): #Loop for tcp connection
-        read,write,err = select.select([self.__tsock],[],[],0)
+        if self.__thread:
+            read = []
+            while not self.__recQueue.empty():
+                read.append(self.__recQueue.get())
+        else:
+            read,write,err = select.select([self.__tsock],[],[],0)
         for sock in read:
-            if sock == self.__tsock:
-                try:
-                    dataRaw = sock.recv(TCP_BUF_SIZE)
-                except socket.error:
-                    self.serverShutdown()
-                try:
-                    data = pickle.loads(dataRaw)
-                except:
-                    break
+            if sock == self.__tsock or self.__thread:
+                if self.__thread:
+                    try:
+                        data = pickle.loads(sock)
+                    except:
+                        break
+                else:
+                    try:
+                        dataRaw = sock.recv(TCP_BUF_SIZE)
+                    except socket.error:
+                        self.serverShutdown()
+                    try:
+                        data = pickle.loads(dataRaw)
+                    except:
+                        break
                 if data!="p": #Is not a ping message
                     if type(data[0]) == int: #Message linked with an ID
                         if data[0]<len(self.__ReceiveBuffer) and data[0]>=0: #ID is in range with KEEP
@@ -328,6 +489,9 @@ class Client:
                         if self.countTCPPackets()!=0: #Packets are missing, request them.
                             if not self.__IDRec in self.__resent:
                                 self.__resent.append(self.__IDRec+0)
-                            self.__tsock.send(pickle.dumps(["r",self.__IDRec]))
+                            if self.__thread:
+                                self.__queue.put(pickle.dumps(["r",self.__IDRec]))
+                            else:
+                                self.__tsock.send(pickle.dumps(["r",self.__IDRec]))
                 else: #Was pinged
                     self.__sendTCP("p")

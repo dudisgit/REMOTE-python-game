@@ -6,6 +6,7 @@ RANDOM_DIE = 10 #Percentage change that the door will get destroyed when a room 
 PRY_DIE = 20 #Percentage change that the door will get gestroyed when its pried open
 DOOR_COL = (255,255,255) #Colour of the door when rendered in 3D
 SPARK_SIZE = 0.5 #Size length of a spark
+CACHE_SIZE = [128,128]
 
 class Main(base.Main):
     def __init__(self,x,y,LINK,ID,number=-1):
@@ -19,6 +20,15 @@ class Main(base.Main):
         self.powered = False #If the door is powered on not
         self.health = 160 #Health of the door
         self.trying = False #Is the door trying to close?
+        self.__cache = [pygame.Surface((CACHE_SIZE[0],CACHE_SIZE[1])),False,False,False,False,False] #Used for caching renders so program can render faster
+        self.__cache[0].set_colorkey((0,0,0))
+        if LINK["multi"]!=2 or LINK["DEV"]: #Is not a server
+            if self.LINK["simpleModels"]:
+                simp = "Simple"
+            else:
+                simp = ""
+            self.__doorClose = LINK["render"].Model(LINK,"doorClose"+simp) #Door closed model
+            self.__doorOpen = LINK["render"].Model(LINK,"doorOpen") #Door open model
         self.__isVac = False #Is outisde the door a vacuum
         self.__wait = 0 #Time to wait until this door can open
         self.__lastHit = -1 #Time the door was last attacked
@@ -53,14 +63,14 @@ class Main(base.Main):
         bh = self.health+0
         self.health -= dmg
         if self.health<0 and bh!=0:
-            self.LINK["outputCommand"]("D"+str(self.number)+" has been destroyed.",(255,0,0))
+            self.LINK["outputCommand"](self.reference()+" has been destroyed.",(255,0,0),False)
             self.health = 0
             if self.LINK["particles"]:
                 self.__parts = [self.LINK["render"].ParticleEffect(self.LINK,self.pos[0]+(self.size[0]/2),self.pos[1]+(self.size[1]/2),0,360,12,0.9,30,0.5,1.5,1)]
             self.settings["open"] = True
             self.alive = False
         elif self.__lastHit==-1 or time.time()>self.__lastHit:
-            self.LINK["outputCommand"]("D"+str(self.number)+" is being attacked",(255,255,0))
+            self.LINK["outputCommand"](self.reference()+" is being attacked",(255,255,0),True)
             if self.__parts[0] is None and self.LINK["particles"]: #Apply particle effects to signify door is being attacked
                 if self.settings["lr"]: #Door is left to right
                     self.__parts = [self.LINK["render"].ParticleEffect(self.LINK,self.pos[0]-15,self.pos[1]+(self.size[1]/2),0,15,12,0.8,20,0.2,0.3,1),
@@ -109,6 +119,7 @@ class Main(base.Main):
     def SyncData(self,data): #Syncs the data with this drone
         self.settings["open"] = data["O"]
         self.trying = data["T"]
+        self.discovered = data["D"]
         self.alive = data["A"]
         if not self.alive and len(self.__parts)!=1 and self.settings["open"] and self.LINK["particles"]:
             self.__parts = [self.LINK["render"].ParticleEffect(self.LINK,self.pos[0]+(self.size[0]/2),self.pos[1]+(self.size[1]/2),0,360,12,0.9,30,0.5,1.5,1)]
@@ -126,12 +137,17 @@ class Main(base.Main):
                         self.LINK["render"].ParticleEffect(self.LINK,self.pos[0]+(self.size[0]/2),self.pos[1]+self.size[1]+15,270,15,12,0.8,20,0.2,0.3,1)]
             elif self.alive: #Door is fine
                 self.__parts = [None,None]
+    def reference(self): #Door was referenced, return number
+        if self.discovered:
+            return "D"+str(self.number)
+        return "D?"
     def GiveSync(self): #Returns the synced data for this drone
         res = {}
         res["O"] = self.settings["open"]
         res["T"] = self.trying
         res["A"] = self.alive
         res["P"] = self.powered
+        res["D"] = self.discovered
         res["W"] = time.time()<self.__lastHit #Door being attacked
         return res
     def loop2(self,lag): #This is "loop" but will apply actions to the door (single player/server, not client)
@@ -150,7 +166,7 @@ class Main(base.Main):
                 self.__isVac = True
                 if random.randint(0,100)<RANDOM_DIE: #Random chance wether the door should be destroyed or not
                     self.alive = False
-                    self.LINK["outputCommand"]("D"+str(self.number)+" has been destroyed due to outside exposure.",(255,0,0))
+                    self.LINK["outputCommand"](self.reference()+" has been destroyed due to outside exposure.",(255,0,0),False)
                     if self.LINK["particles"]:
                         if self.settings["lr"]: #Door is left to right
                             self.__parts = [self.LINK["render"].ParticleEffect(self.LINK,self.pos[0]-15,self.pos[1]+(self.size[1]/2),0,15,12,0.8,20,0.2,0.3,1),
@@ -174,6 +190,7 @@ class Main(base.Main):
                 if a.active:
                     self.powered = True
                     break
+        self.discovered = self.discovered or self.powered or self.LINK["showRooms"]
         if not self.Attacker is None: #Door is being attacked by something
             if self.Attacker.NPCATTACK != self: #Object is attacking something else
                 if self.settings["open"]:
@@ -330,13 +347,58 @@ class Main(base.Main):
         if not romConnect:
             return "No room (door)"
         return False
-    def sRender(self,x,y,scale,surf=None,edit=False): #Render in scematic view
+    def __updateCache(self,x,y,scale,edit): #Update the render cache for fast rendering
+        self.__cache[0].fill((0,0,0))
+        #Apply changes
+        self.__cache[1] = self.alive == True
+        self.__cache[2] = self.settings["open"] == True
+        self.__cache[3] = self.powered == True
+        self.__cache[4] = self.trying and (time.time()-int(time.time()))>0.5
+        self.__cache[5] = time.time()<self.__lastHit and ((time.time()-int(time.time()))*3)%1>0.5
+        #Render cache
+        dead = ""
+        if not edit:
+            if not self.powered: #If the door is not powered
+                dead = "Power"
+            if not self.alive:
+                dead += "Dead"
+            elif time.time()<self.__lastHit and ((time.time()-int(time.time()))*3)%1>0.5:
+                dead += "Dead"
+        if self.settings["open"]: #Door is open
+            if self.trying and (time.time()-int(time.time()))>0.5:
+                d = 20
+            else:
+                d = 25
+            if self.settings["lr"]: #Left to right
+                self.__cache[0].blit(pygame.transform.rotate(self.getImage("doorOpen"+dead),270),(x,y-(d*scale)))
+                self.__cache[0].blit(pygame.transform.rotate(self.getImage("doorOpen"+dead),90),(x,y+(d*scale)))
+            else: #Up to down
+                self.__cache[0].blit(self.getImage("doorOpen"+dead),(x-(d*scale),y))
+                self.__cache[0].blit(pygame.transform.flip(self.getImage("doorOpen"+dead),True,False),(x+(d*scale),y))
+            pygame.draw.rect(self.__cache[0],(150,150,150),[x,y,self.size[0]*scale,self.size[1]*scale]) #Draw grey background when door is open
+        else: #Door is closed
+            if self.settings["lr"]: #Left to right
+                self.__cache[0].blit(pygame.transform.rotate(self.getImage("doorClosed"+dead),90),(x,y))
+            else: #Up to down
+                self.__cache[0].blit(self.getImage("doorClosed"+dead),(x,y))
+        if self.number != -1: #Draw the number the door is
+            textSurf = self.LINK["font16"].render("D"+str(self.number),16,(255,255,255)) #Create a surface that is the rendered text
+            textSize = list(textSurf.get_size()) #Get the size of the text rendered
+            textSurf = pygame.transform.scale(textSurf,(int(textSize[0]*scale*1.2),int(textSize[1]*scale*1.2)))
+            textSize2 = list(textSurf.get_size()) #Get the size of the text rendered
+            pygame.draw.rect(self.__cache[0],(0,0,0),[x+(((self.size[0]/2)-(textSize[0]/2))*scale),y+((self.size[1]/4)*scale)]+textSize2) #Draw a black background for the text to be displayed infront of
+            self.__cache[0].blit(textSurf,(x+(((self.size[0]/2)-(textSize[0]/2))*scale),y+((self.size[1]/4)*scale))) #Render text
+    def sRender(self,x,y,scale,surf=None,edit=False,droneView=False): #Render in scematic view
         if surf is None:
             surf = self.LINK["main"]
         if self.__inRoom and edit:
             dead = "Dead"
         else:
             dead = ""
+        if self.alive!=self.__cache[1] or self.settings["open"]!=self.__cache[2] or self.powered!=self.__cache[3] or (self.trying and (time.time()-int(time.time()))>0.5)!=self.__cache[4] or (time.time()<self.__lastHit and ((time.time()-int(time.time()))*3)%1>0.5)!=self.__cache[5] or edit:
+            #Update render cache
+            self.__updateCache(int(CACHE_SIZE[0]/4),int(CACHE_SIZE[1]/4),scale,edit)
+        surf.blit(self.__cache[0],(x-int(CACHE_SIZE[0]/4),y-int(CACHE_SIZE[1]/4))) #Render cache to screen
         if edit: #Draw all the power lines
             scrolPos = [(self.pos[0]*scale)-x,(self.pos[1]*scale)-y] #Calculate the scroll position
             rem = [] #Items to remove because they where deleted
@@ -359,37 +421,6 @@ class Main(base.Main):
                 pygame.draw.line(surf,(255,0,0),[x,y],[(self.room1.pos[0]*scale)-scrpos[0],(self.room1.pos[1]*scale)-scrpos[1]])
             if not self.room2 is None:
                 pygame.draw.line(surf,(255,0,0),[x,y],[(self.room2.pos[0]*scale)-scrpos[0],(self.room2.pos[1]*scale)-scrpos[1]])
-        if not edit:
-            if self.alive and not self.powered: #If the door is not powered
-                dead = "Power"
-            elif not self.alive:
-                dead = "Dead"
-            if time.time()<self.__lastHit and ((time.time()-int(time.time()))*3)%1>0.5:
-                dead = "Dead"
-        if self.settings["open"]: #Door is open
-            if self.trying and (time.time()-int(time.time()))>0.5:
-                d = 20
-            else:
-                d = 25
-            if self.settings["lr"]: #Left to right
-                surf.blit(pygame.transform.rotate(self.getImage("doorOpen"+dead),270),(x,y-(d*scale)))
-                surf.blit(pygame.transform.rotate(self.getImage("doorOpen"+dead),90),(x,y+(d*scale)))
-            else: #Up to down
-                surf.blit(self.getImage("doorOpen"+dead),(x-(d*scale),y))
-                surf.blit(pygame.transform.flip(self.getImage("doorOpen"+dead),True,False),(x+(d*scale),y))
-            pygame.draw.rect(surf,(150,150,150),[x,y,self.size[0]*scale,self.size[1]*scale]) #Draw grey background when door is open
-        else: #Door is closed
-            if self.settings["lr"]: #Left to right
-                surf.blit(pygame.transform.rotate(self.getImage("doorClosed"+dead),90),(x,y))
-            else: #Up to down
-                surf.blit(self.getImage("doorClosed"+dead),(x,y))
-        if self.number != -1: #Draw the number the door is
-            textSurf = self.LINK["font16"].render("D"+str(self.number),16,(255,255,255)) #Create a surface that is the rendered text
-            textSize = list(textSurf.get_size()) #Get the size of the text rendered
-            textSurf = pygame.transform.scale(textSurf,(int(textSize[0]*scale*1.2),int(textSize[1]*scale*1.2)))
-            textSize2 = list(textSurf.get_size()) #Get the size of the text rendered
-            pygame.draw.rect(surf,(0,0,0),[x+(((self.size[0]/2)-(textSize[0]/2))*scale),y+((self.size[1]/4)*scale)]+textSize2) #Draw a black background for the text to be displayed infront of
-            surf.blit(textSurf,(x+(((self.size[0]/2)-(textSize[0]/2))*scale),y+((self.size[1]/4)*scale))) #Render text
         if self.HINT:
             self.renderHint(surf,self.hintMessage,[x,y])
     def canShow(self,Dview=False): #Should the door render in scematic view
@@ -398,10 +429,6 @@ class Main(base.Main):
         if surf is None:
             surf = self.LINK["main"]
         sx,sy = surf.get_size()
-        if self.LINK["simpleModels"]:
-            simp = "Simple"
-        else:
-            simp = ""
         C = (255,255,255)
         AP = [0,0] #Door offset position
         if self.trying and (time.time()-int(time.time()))>0.5: #Door is trying to open
@@ -437,17 +464,17 @@ class Main(base.Main):
             surf.blit(textSurf,(x+(((self.size[0]/2)-(textSize[0]/2))*scale),y+((self.size[1]/4)*scale))) #Render text
         if self.settings["open"]: #Door is open
             if self.settings["lr"]: #Door is left to right
-                self.LINK["render"].renderModel(self.LINK["models"]["doorOpen"],x+(20*scale),y+(22*scale),0,scale/2.5,surf,DOOR_COL,ang,eAng,arcSiz,)
+                self.__doorOpen.render(x+(20*scale),y+(22*scale),0,scale/2.5,surf,DOOR_COL,ang,eAng,arcSiz)
             else: #Door is up to down
-                self.LINK["render"].renderModel(self.LINK["models"]["doorOpen"],x+(20*scale),y+(30*scale),90,scale/2.5,surf,DOOR_COL,ang,eAng,arcSiz)
+                self.__doorOpen.render(x+(20*scale),y+(30*scale),90,scale/2.5,surf,DOOR_COL,ang,eAng,arcSiz)
         else: #Door is closed
             if self.settings["lr"]: #Door is left to right
                 if x<sx/2: #Door is on the right side
-                    self.LINK["render"].renderModel(self.LINK["models"]["doorClose"+simp],x+(14.5*scale)+(AP[0]*scale),y+(22*scale)+(AP[1]*scale),0,scale/2.5,surf,DOOR_COL,ang,eAng,arcSiz)
+                    self.__doorClose.render(x+(14.5*scale)+(AP[0]*scale),y+(22*scale)+(AP[1]*scale),0,scale/2.5,surf,DOOR_COL,ang,eAng,arcSiz)
                 else: #Door is on the left side
-                    self.LINK["render"].renderModel(self.LINK["models"]["doorClose"+simp],x+(36*scale)+(AP[0]*scale),y+(26*scale)+(AP[1]*scale),180,scale/2.5,surf,DOOR_COL,ang,eAng,arcSiz)
+                    self.__doorClose.render(x+(36*scale)+(AP[0]*scale),y+(26*scale)+(AP[1]*scale),180,scale/2.5,surf,DOOR_COL,ang,eAng,arcSiz)
             else: #Door is up to down
                 if y>sy/2: #Door is on the top bottom side
-                    self.LINK["render"].renderModel(self.LINK["models"]["doorClose"+simp],x+(23*scale)+(AP[0]*scale),y+(36*scale)+(AP[1]*scale),90,scale/2.5,surf,DOOR_COL,ang,eAng,arcSiz)
+                    self.__doorClose.render(x+(23*scale)+(AP[0]*scale),y+(36*scale)+(AP[1]*scale),90,scale/2.5,surf,DOOR_COL,ang,eAng,arcSiz)
                 else: #Door is on the top side
-                    self.LINK["render"].renderModel(self.LINK["models"]["doorClose"+simp],x+(26*scale)+(AP[0]*scale),y+(16*scale)+(AP[1]*scale),270,scale/2.5,surf,DOOR_COL,ang,eAng,arcSiz)
+                    self.__doorClose.render(x+(26*scale)+(AP[0]*scale),y+(16*scale)+(AP[1]*scale),270,scale/2.5,surf,DOOR_COL,ang,eAng,arcSiz)

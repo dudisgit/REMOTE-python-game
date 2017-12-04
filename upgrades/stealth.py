@@ -16,6 +16,8 @@ class Main(base.Main):
         self.__active = False #Is the stealth upgrade active or not
         if LINK["multi"]==2 and ID!=-1: #Is server
             LINK["serv"].SYNC["u"+str(ID)] = {}
+            LINK["serv"].SYNC["u"+str(ID)]["p"] = 100
+            LINK["serv"].SYNC["u"+str(ID)]["A"] = False
     def commandAllowed(self,com): #Returns true if this command is allowed to run on the upgrade
         if self.__value<=0: #No stealth percentage left
             return "Stealth percentage is 0"
@@ -45,7 +47,7 @@ class Main(base.Main):
                 self.__value = 0
                 self.__active = False
                 self.drone.stealth = False
-                self.LINK["outputCommand"]("Stealth has ended on drone "+str(self.drone.number),(255,255,0))
+                self.LINK["outputCommand"]("Stealth has ended on drone "+str(self.drone.number),(255,255,0),False)
         elif self.__value < 100: #Charge stealth percentage back up
             if time.time()>self.__decrementTime: #Incrase stealth percentage
                 self.__decrementTime = time.time()+DECREMENT_RATE

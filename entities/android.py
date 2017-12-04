@@ -1,5 +1,5 @@
 #Do not run this file, it is a module!
-import pygame, time, math
+import pygame, time, math, cmath
 import entities.base as base
 
 SHOW_RATE = 10 #Amount of times a second to scan for drones when in multiplayer (used to save engine resources)
@@ -10,6 +10,7 @@ class Main(base.Main):
         self.init(x,y,LINK) #Init on the base class, __init__ is not called because its used for error detection.
         self.ID = ID
         self.isNPC = True
+        self.discovered = True
         self.health = 80
         self.speed = 1.5
         self.colisionType = 1 #Circle colision
@@ -17,6 +18,13 @@ class Main(base.Main):
         self.size = [25,25]
         self.beingSucked = False #Make this entity suckable in a vacum
         self.AllwaysRender = True #Make this android allways render in 3D view regardless of position in map (doesen't mean wallhacks)
+        if LINK["multi"]!=2: #Is not a server
+            if self.LINK["simpleModels"]:
+                simp = "Simple"
+            else:
+                simp = ""
+            self.__body = LINK["render"].Model(LINK,"android"+simp)
+            self.__head = LINK["render"].Model(LINK,"androidHead")
         self.__bullets = [] #Used to render bullets
         #Syntax
         #0: Percentage path
@@ -50,7 +58,7 @@ class Main(base.Main):
         return ["android",self.ID,self.pos]
     def LoadFile(self,data,idRef): #Load from a file
         self.pos = data[2]
-    def SyncData(self,data): #Syncs the data with this android
+    def SyncData(self,data,lag=1): #Syncs the data with this android
         self.pos[0] = ((self.pos[0]*3)+data["x"])/4
         self.pos[1] = ((self.pos[1]*3)+data["y"])/4
         self.alive = data["A"] == True
@@ -61,7 +69,26 @@ class Main(base.Main):
                 self.__particle.renderParticle = self.__renderParticle
             else:
                 self.__particle.pos = [self.pos[0]+(self.size[0]/2),self.pos[1]+(self.size[1]/2)]
-        self.angle = ((self.angle*3)+data["a"])/4
+        angle = data["a"]
+        dist2 = 0 #Angular distance from the entities angle and the targets angle
+        if angle > self.angle: #This is an algorithm for turning in a proper direction smothly
+            if angle - self.angle > 180:
+                dist2 = 180 - (angle - 180 - self.angle)
+                self.angle-=lag*(dist2**0.7)
+            else:
+                dist2 = angle - self.angle
+                self.angle+=lag*(dist2**0.7)
+        else:
+            if self.angle - angle > 180:
+                dist2 = 180 - (self.angle - 180 - angle)
+                self.angle+=lag*(dist2**0.7)
+            else:
+                dist2 = self.angle - angle
+                self.angle-=lag*(dist2**0.7)
+        try:
+            self.angle = int(self.angle) % 360 #Make sure this entitys angle is not out of range
+        except:
+            self.angle = int(cmath.phase(self.angle)) % 360 #Do the same before but unconvert it from a complex number
         if data["T"]==0: #No target
             self.NPCATTACK = None
         elif not data["T"] in self.LINK["IDs"]: #Target doesen't exist
@@ -116,7 +143,10 @@ class Main(base.Main):
             if not self.__particle is None: #Event loop for particle system if the android is dead
                 self.__particle.loop(lag)
         if self.LINK["multi"]==1: #Client
-            self.SyncData(self.LINK["cli"].SYNC["e"+str(self.ID)])
+            if "e"+str(self.ID) in self.LINK["cli"].SYNC:
+                self.SyncData(self.LINK["cli"].SYNC["e"+str(self.ID)],lag)
+            else:
+                self.REQUEST_DELETE = True
         elif self.LINK["multi"]==2: #Server
             if self.__canSee or self.__first: #Only sync position if the player can see it.
                 self.LINK["serv"].SYNC["e"+str(self.ID)] = self.GiveSync()
@@ -133,6 +163,9 @@ class Main(base.Main):
                         send.append(["s",int(self.angle),"e"+str(self.ID),"a"]) #Angle
                         for a in self.LINK["serv"].users: #Send data to all users
                             self.LINK["serv"].users[a].sendTCP(send)
+                            self.LINK["serv"].users[a].tempIgnore.append(["e"+str(self.ID),"x"])
+                            self.LINK["serv"].users[a].tempIgnore.append(["e"+str(self.ID),"y"])
+                            self.LINK["serv"].users[a].tempIgnore.append(["e"+str(self.ID),"a"])
                 GS = self.GiveSync()
                 if GS["T"]!=self.LINK["serv"].SYNC["e"+str(self.ID)]["T"] and not self.__canSee: #Make sure the android isn't firing at the player when its out of range
                     self.__first = True
@@ -182,7 +215,7 @@ class Main(base.Main):
         if type(self.insideRoom(ents)) == bool: #Check if inside a room
             return "No room (NPC)"
         return False
-    def sRender(self,x,y,scale,surf=None,edit=False): #Render in scematic view
+    def sRender(self,x,y,scale,surf=None,edit=False,droneView=False): #Render in scematic view
         if surf is None:
             surf = self.LINK["main"]
         if self.__inRoom and edit:
@@ -211,15 +244,11 @@ class Main(base.Main):
         if surf is None:
             surf = self.LINK["main"]
         sx,sy = surf.get_size()
-        if self.LINK["simpleModels"]:
-            simp = "Simple"
-        else:
-            simp = ""
         if self.alive:
             col = (255,0,0)
         else:
             col = (150,0,0)
-        self.LINK["render"].renderModel(self.LINK["models"]["android"+simp],x+(12*scale),y+(12*scale),self.angle,scale/3,surf,col,ang,eAng,arcSiz)
+        self.__body.render(x+(12*scale),y+(12*scale),self.angle,scale/3,surf,col,ang,eAng,arcSiz)
         if self.NPCATTACK is None:
             ang2 = time.time() #Angle of the turret head
         else:
@@ -228,7 +257,9 @@ class Main(base.Main):
         PS = [12+math.sin(self.angle/180*math.pi),12+math.cos(self.angle/180*math.pi)]
         self.__barrelDist = (self.__barrelDist+4)/2 #Make barrel smothly move back into position
         if self.alive: #Android is alive
-            self.LINK["render"].renderModel(self.LINK["models"]["androidHead"],x+(PS[0]*scale)-(math.sin(ang2+math.pi)*dist*scale),y+(PS[1]*scale)-(math.cos(ang2+math.pi)*dist*scale),ang2*180/math.pi,scale/3,surf,(255,0,0),ang,eAng,arcSiz)
+            ang3 = (self.angle/180*math.pi)+math.pi
+            br = [math.sin(ang2+math.pi)*(dist-4)*scale,math.cos(ang2+math.pi)*(dist-4)*scale]
+            self.__head.render(x+(PS[0]*scale)-(math.sin(ang3)*5*scale)-br[0],y+(PS[1]*scale)-(math.cos(ang3)*5*scale)-br[1],ang2*180/math.pi,scale/3,surf,(255,0,0),ang,eAng,arcSiz)
         scrpos = [(self.pos[0]*scale)-x,(self.pos[1]*scale)-y] #Scroll position
         for a in self.__bullets: #Render all bullets
             #Draw a line to reprisent a bullet

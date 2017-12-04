@@ -26,12 +26,14 @@ class Main(object):
         self.renderSize = [0,0,50,50] #Size of the entity when rendering in 3D
         self.speed = 2 #Speed of navigating the entity
         self.isNPC = False #Is this entity and NPC
+        self.discovered = LINK["multi"]==-1 #Has the entity been discovered
         self.angle = 0 #Angle of the entity
         self.stealth = False #Is the entity stealthing?
+        self.renderAnyway = False #Render in scematic view regardless of position
         self.AllwaysRender = False #Should this entity allways render in 3D regardless of position
         self.NPCATTACK = None #Is the NPC in attack mode (only if this entitiy is an NPC)
         self.__NPCUpdate = time.time() #Used to slow down update rates on NPCs
-        self.__NPCDoorUpdate = time.time()+0 #When to generate a random number again for breaking down doors
+        self.__NPCDoorUpdate = time.time()+ATTACK_DOOR_UPDATE #When to generate a random number again for breaking down doors
         self.__VentDirect = None #Was this NPC going towards a vent
         self.overide = False #If this entitiy should overwrite the SYNC settings (multipalyer)
         self.alive = True #Is the entitiy alive (Should only be used for destructable entities)
@@ -166,20 +168,28 @@ class Main(object):
             self.__NPCDoorUpdate = time.time()+ATTACK_DOOR_UPDATE
             if random.randint(0,100)<ATTACK_DOOR_PERCENT: #Decide to attack a door inside the room
                 ps = self.findPosition() #Gets the NPCs position
+                targets = []
+                if "lure" in self.LINK["IDref"]: #Lures exist
+                    if len(self.LINK["IDref"]["lure"])!=0: #There is atleast 1 lure on the map
+                        targets = self.LINK["IDref"]["lure"] #Target lures over drones
+                    else: #No lures on map
+                        targets = self.LINK["drones"]
+                else: #No lures exist
+                    targets = self.LINK["drones"]
                 alE = False
-                for a in self.LINK["drones"]: #Go through all drones and check if atleast 1 is alive and not in stealth
+                for a in targets: #Go through all targets and check if atleast 1 is alive and not in stealth
                     if a.alive and not a.stealth:
                         alE = True
                         break
-                if type(ps)==self.getEnt("room") and alE: #NPC is inside a room and there is a valid drone to track in the map
-                    dr = random.randint(0,len(self.LINK["drones"])-1) #Select random drone
-                    while not self.LINK["drones"][dr].alive: #Keep trying a random drone till theres a valid one found (checked if there are any valid ones above)
-                        dr = random.randint(0,len(self.LINK["drones"])-1)
+                if type(ps)==self.getEnt("room") and alE: #NPC is inside a room and there is a valid target to track in the map
+                    dr = random.randint(0,len(targets)-1) #Select random target
+                    while not targets[dr].alive: #Keep trying a random target till theres a valid one found (checked if there are any valid ones above)
+                        dr = random.randint(0,len(targets)-1)
                     #Modified version of the "pathTo" function
                     self.__DIJdist = []
                     self.__DIJvisit = []
-                    dPos = self.LINK["drones"][dr].findPosition() #Find the drones position
-                    if type(dPos)==self.getEnt("room"): #Make sure the drones inside a room
+                    dPos = targets[dr].findPosition() #Find the targets position
+                    if type(dPos)==self.getEnt("room"): #Make sure the targets inside a room
                         P = self.__dij(dPos,True) #Dijstra algorithm but ignore closed doors
                         fin = self.__turnDijToPath(P[2]) #Make sense of the dijstra results
                         if type(fin)!=int: #A path was found
@@ -537,8 +547,8 @@ class Main(object):
                 if not a[1][-1][2].settings["open"]:
                     rem.append(a)
             if a[0]==1:
-                if type(a[1][-1][2])==self.getEnt("room"):
-                    if not a[1][-1][2].settings["open"]:
+                if type(a[1][-1][2])==self.getEnt("airlock"):
+                    if not a[1][-1][2].settings["open"] or not a[1][-1][2].room2 is None:
                         rem.append(a)
             if a[0]==3:
                 DIS = self.NPCDist+0
@@ -755,12 +765,11 @@ class Main(object):
         boxWidth = screenRes[0]/2 #Width of the box will be half the screen width
         boxHeight = 0
         mes = message.split(" ") #Split the message up by spaces
-        charLength = 10 #Length of 1 charicter (constant)
         font = self.LINK["font24"] #Font to use when rendering
         adding = "" #Text being added to that line
         drawWord = [] #Store all the text in a list to be rendered
         for word in mes: #Loop through all text samples and build a list of strings that are cut off when they get to the end and start on the next element
-            if (len(adding)+len(word))*charLength > boxWidth or "\n" in word: #Length would be above the length of the box or the message requested a new line using "\n"
+            if font.size(adding+word)[0] > boxWidth or "\n" in word: #Length would be above the length of the box or the message requested a new line using "\n"
                 drawWord.append(adding+"")
                 if "\n" in word: #Remove the "\n"
                     spl = word.split("\n")

@@ -9,10 +9,17 @@ class Main(base.Main):
     def __init__(self,x,y,LINK,ID):
         self.init(x,y,LINK) #Init on the base class, __init__ is not called because its used for error detection.
         self.ID = ID
+        self.discovered = True
         self.__sShow = True #Show in games scematic view
         self.__inRoom = False #Is true if the lure is inside a room
+        self.renderAnyway = True
         self.size = [40,40] #Size of the sensor
         self.health = 200 #Health of the sensor
+        if LINK["multi"]!=2: #Is not a server
+            if self.LINK["simpleModels"]: #Simple models is enabled
+                self.__sensor = LINK["render"].Model(LINK,"sensorSimple")
+            else:
+                self.__sensor = LINK["render"].Model(LINK,"sensor")
         self.__healthChange = 200 #Used to detect changes in health for the sensor
         self.__lastDamage = 0 #Used to time when the sensor was last attacked (used so it doesen't spam console)
         self.__beingDamaged = 0 #Is upgrade being damaged
@@ -65,8 +72,8 @@ class Main(base.Main):
                 if ps==-1 or type(ps)!=self.getEnt("room"): #Is invalid or not in a room
                     R = "<no room>"
                 else: #In a room
-                    R = "R"+str(ps.number)
-                self.LINK["outputCommand"]("Sensor in "+R+" is being attacked",(255,0,0))
+                    R = ps.reference()
+                self.LINK["outputCommand"]("Sensor in "+R+" is being attacked",(255,0,0),True)
             self.__lastDamage = time.time()+6 #Don't notify any extra hits for 6 seconds (unless hit again then still don't post anything)
             if self.health<=0: #Sensor is dead
                 self.health = 0
@@ -74,8 +81,8 @@ class Main(base.Main):
                 if ps==-1 or type(ps)!=self.getEnt("room"): #Is invalid or not in a room
                     R = "<no room>"
                 else: #In a room
-                    R = "R"+str(ps.number)
-                self.LINK["outputCommand"]("Sensor in "+R+" was destroyed",(255,0,0)) #Notify the user the lure was destroyed
+                    R = ps.reference()
+                self.LINK["outputCommand"]("Sensor in "+R+" was destroyed",(255,0,0),False) #Notify the user the lure was destroyed
                 self.alive = False
     def loop(self,lag): #Constatnly called to handle events with this entity
         if self.LINK["multi"]==1: #Client
@@ -97,10 +104,10 @@ class Main(base.Main):
             if self.__scan!=self.__scanChange: #Scanning has changed, notify user('s)
                 self.__scanChange = self.__scan + 0
                 if self.__scan==2: #Bad
-                    self.LINK["outputCommand"]("Sensor triggered in R"+str(self.__room.number),(255,0,0))
+                    self.LINK["outputCommand"]("Sensor triggered in "+self.__room.reference(),(255,0,0),False)
                 else: #Safe
-                    self.LINK["outputCommand"]("Sensor un-triggered in R"+str(self.__room.number),(255,255,0))
-    def sRender(self,x,y,scale,surf=None,edit=False): #Render in scematic view
+                    self.LINK["outputCommand"]("Sensor un-triggered in "+self.__room.reference(),(255,255,0),False)
+    def sRender(self,x,y,scale,surf=None,edit=False,droneView=False): #Render in scematic view
         if surf is None:
             surf = self.LINK["main"]
         if self.alive: #Is the sensor alive
@@ -129,7 +136,4 @@ class Main(base.Main):
         if surf is None:
             surf = self.LINK["main"]
         sx,sy = surf.get_size()
-        if self.LINK["simpleModels"]: #Simple models is enabled
-            self.LINK["render"].renderModel(self.LINK["models"]["sensorSimple"],x,y,0,scale/2,surf,SENSOR_COL,ang,eAng,arcSiz)
-        else:
-            self.LINK["render"].renderModel(self.LINK["models"]["sensor"],x,y,0,scale/2,surf,SENSOR_COL,ang,eAng,arcSiz)
+        self.__sensor.render(x,y,0,scale/2,surf,SENSOR_COL,ang,eAng,arcSiz)

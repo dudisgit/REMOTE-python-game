@@ -1,5 +1,5 @@
 import upgrades.base as base
-import pygame, time, math
+import pygame, time, math, random
 
 WIDTH = 180
 HEIGHT = 110
@@ -13,8 +13,10 @@ class Main(base.Main):
         self.damage = 0 #Damage to the upgrade.
         self.caller = ["swap"] #Commands this upgrade accepts
         self.__activeDrone = None #Drone we are currently swapping with
+        self.__controllerChange = {"x":False,"y":False,"b":False,"a":False,"sel":False,"start":False,"lt":False,"rt":False,"up":False,"down":False,"left":False,"right":False} #Used to detect changed in controller button sates
         self.__select = [0,0,-1] #Selecting box
         self.__usrCall = None #Used who called this command (multiplayer only)
+        self.__intro = 0 #Introduction effect
         self.hitFunction = self.hitDrone #Function to call when this upgrade is moved
     def commandAllowed(self,com): #Returns true if this command is allowed in the upgrade
         Droom = self.drone.findPosition() #Find the drones position
@@ -29,7 +31,85 @@ class Main(base.Main):
                 if type(a)==DroneObject and a!=self.drone:
                     return True
             return "No drone in room to swap with"
+    def controller_key(self,typ): #Returns wether a button is pressed
+        if self.LINK["controller"] is None:
+            return False
+        if typ=="up": #Up button
+            return self.LINK["controller"].get_axis(1)<-0.5
+        elif typ=="down": #Down button
+            return self.LINK["controller"].get_axis(1)>0.5
+        elif typ=="left": #Left button
+            return self.LINK["controller"].get_axis(0)<-0.5
+        elif typ=="right": #Right button
+            return self.LINK["controller"].get_axis(0)>0.5
+        elif typ=="x": #X button
+            return self.LINK["controller"].get_button(0)
+        elif typ=="y": #Y button
+            return self.LINK["controller"].get_button(3)
+        elif typ=="b": #B button
+            return self.LINK["controller"].get_button(2)
+        elif typ=="a": #A button
+            return self.LINK["controller"].get_button(1)
+        elif typ=="lt": #Left trigger
+            return self.LINK["controller"].get_button(4)
+        elif typ=="rt": #Right trigger
+            return self.LINK["controller"].get_button(5)
+        elif typ=="sel": #Select button
+            return self.LINK["controller"].get_button(8)
+        elif typ=="start": #Start button
+            return self.LINK["controller"].get_button(9)
+        return False
     def force_loop(self,mouse,kBuf,lag): #Used to loop controll
+        if self.__intro>0:
+            self.__intro-=lag
+            if self.__intro<0:
+                self.__intro=0
+        if self.__controllerChange["up"]!=self.controller_key("up"):
+            self.__controllerChange["up"] = self.controller_key("up")
+            if self.controller_key("up"):
+                if self.__select[2]!=-2 and self.__select[0]==1: #Both upgrade boxes are full, swap mode
+                    self.__select[2]-=1
+                    if self.__select[2]<0:
+                        self.__select[2] = len(self.__activeDrone.upgrades)-1
+                else: #Use a normal cursor
+                    self.__select[1]-=1
+                    if self.__select[1]<0:
+                        if self.__select[0]==0:
+                            self.__select[1] = len(self.drone.upgrades)-1
+                        else:
+                            self.__select[1] = len(self.__activeDrone.upgrades)-1
+        if self.__controllerChange["down"]!=self.controller_key("down"):
+            self.__controllerChange["down"] = self.controller_key("down")
+            if self.controller_key("down"):
+                if self.__select[2]!=-2 and self.__select[0]==1: #Both upgrade boxes are full, swap mode
+                    self.__select[2]+=1
+                    if self.__select[2]>=len(self.__activeDrone.upgrades):
+                            self.__select[2] = 0
+                else: #Use a normal cursor
+                    self.__select[1]+=1
+                    if self.__select[0]==0:
+                        if self.__select[1]>=len(self.drone.upgrades):
+                            self.__select[1] = 0
+                    else:
+                        if self.__select[1]>=len(self.__activeDrone.upgrades):
+                            self.__select[1] = 0
+        if self.controller_key("left"):
+            self.__select[0] = 0
+            while self.__select[1]>=len(self.drone.upgrades):
+                self.__select[1] -= 1
+        if self.controller_key("right"):
+            self.__select[0] = 1
+            while self.__select[1]>=len(self.__activeDrone.upgrades):
+                self.__select[1] -= 1
+        if self.controller_key("b"):
+            self.LINK["force"].remove([self,self.force_loop,self.force_render])
+            self.__activeDrone = None
+        RET = False
+        if self.controller_key("x")!=self.__controllerChange["x"]:
+            self.__controllerChange["x"] = self.controller_key("x")
+            if self.controller_key("x"):
+                print("swap")
+                RET = True
         for event in kBuf: #Process keyboard events
             if event.type == pygame.KEYDOWN: #Key was pressed down
                 if event.key == self.LINK["controll"]["escape"]: #Exit out of swap menu
@@ -64,33 +144,35 @@ class Main(base.Main):
                     self.__select[0] = 0
                     while self.__select[1]>=len(self.drone.upgrades):
                         self.__select[1] -= 1
-                elif event.key == self.LINK["controll"]["right"]: #Switch to the right hand side
+                elif event.key == self.LINK["controll"]["right"] or self.controller_key("right"): #Switch to the right hand side
                     self.__select[0] = 1
                     while self.__select[1]>=len(self.__activeDrone.upgrades):
                         self.__select[1] -= 1
                 elif event.key == pygame.K_RETURN: #Swap an upgrade, (return key pressed)
-                    if self.__select[0]==0: #Cursor on the left hand side
-                        if self.__select[1]>=0 and self.__select[1]<len(self.drone.upgrades): #Selecting cursor is in range
-                            if len(self.__activeDrone.upgrades)!=len(self.__activeDrone.settings["upgrades"]): #Right hand side is not full
-                                if self.LINK["multi"]==1: #Is a client
-                                    self.LINK["cli"].sendTrigger("mvu",self.drone.ID,self.__activeDrone.ID,self.__select[1]) #Send a trigger to the server to move the upgrade
-                                else:
-                                    self.moveTo(self.drone.upgrades.pop(self.__select[1]),self.__activeDrone) #Move the upgrade
-                    else: #Cursor is on the right hand side
-                        if self.__select[1]>=0 and self.__select[1]<len(self.__activeDrone.upgrades): #Selecting cursor is in range
-                            if len(self.drone.upgrades)!=len(self.drone.settings["upgrades"]): #Left hand side is not full
-                                if self.LINK["multi"]==1: #Is a client
-                                    self.LINK["cli"].sendTrigger("mvu",self.__activeDrone.ID,self.drone.ID,self.__select[1]) #Send a trigger to the server to move the upgrade
-                                else:
-                                    self.moveTo(self.__activeDrone.upgrades.pop(self.__select[1]),self.drone) #Move the upgrade
-                    if self.__select[2]!=-2: #Swap the upgrades because both sides are full
-                        if self.__select[1]>=0 and self.__select[1]<len(self.drone.upgrades) and self.__select[2]>=0 and self.__select[2]<len(self.__activeDrone.upgrades): #Everything in range
-                            if self.LINK["multi"]==1: #Is a client
-                                self.LINK["cli"].sendTrigger("sup",self.drone.ID,self.__activeDrone.ID,self.__select[1],self.__select[2]) #Send a trigger to the server to swap the upgrades
-                            else:
-                                tmp = self.drone.upgrades.pop(self.__select[1])
-                                self.moveTo(self.__activeDrone.upgrades.pop(self.__select[2]),self.drone,self.__select[1])
-                                self.moveTo(tmp,self.__activeDrone,self.__select[2])
+                    RET = True
+        if RET:
+            if self.__select[0]==0: #Cursor on the left hand side
+                if self.__select[1]>=0 and self.__select[1]<len(self.drone.upgrades): #Selecting cursor is in range
+                    if len(self.__activeDrone.upgrades)!=len(self.__activeDrone.settings["upgrades"]): #Right hand side is not full
+                        if self.LINK["multi"]==1: #Is a client
+                            self.LINK["cli"].sendTrigger("mvu",self.drone.ID,self.__activeDrone.ID,self.__select[1]) #Send a trigger to the server to move the upgrade
+                        else:
+                            self.moveTo(self.drone.upgrades.pop(self.__select[1]),self.__activeDrone) #Move the upgrade
+            else: #Cursor is on the right hand side
+                if self.__select[1]>=0 and self.__select[1]<len(self.__activeDrone.upgrades): #Selecting cursor is in range
+                    if len(self.drone.upgrades)!=len(self.drone.settings["upgrades"]): #Left hand side is not full
+                        if self.LINK["multi"]==1: #Is a client
+                            self.LINK["cli"].sendTrigger("mvu",self.__activeDrone.ID,self.drone.ID,self.__select[1]) #Send a trigger to the server to move the upgrade
+                        else:
+                            self.moveTo(self.__activeDrone.upgrades.pop(self.__select[1]),self.drone) #Move the upgrade
+            if self.__select[2]!=-2: #Swap the upgrades because both sides are full
+                if self.__select[1]>=0 and self.__select[1]<len(self.drone.upgrades) and self.__select[2]>=0 and self.__select[2]<len(self.__activeDrone.upgrades): #Everything in range
+                    if self.LINK["multi"]==1: #Is a client
+                        self.LINK["cli"].sendTrigger("sup",self.drone.ID,self.__activeDrone.ID,self.__select[1],self.__select[2]) #Send a trigger to the server to swap the upgrades
+                    else:
+                        tmp = self.drone.upgrades.pop(self.__select[1])
+                        self.moveTo(self.__activeDrone.upgrades.pop(self.__select[2]),self.drone,self.__select[1])
+                        self.moveTo(tmp,self.__activeDrone,self.__select[2])
     def moveTo(self,Upg,Dr,sp=-1): #Moves an upgrade to a drone
         if sp==-1: #Add to the end
             Dr.upgrades.append(Upg)
@@ -109,10 +191,13 @@ class Main(base.Main):
         pygame.draw.rect(surf,(0,255,0),[int(size[0]/2)-WIDTH,size[1]-HEIGHT-20,WIDTH*2,HEIGHT],2)
         X = int(size[0]/2)-WIDTH #X position of the left side of the window
         Y = size[1]-HEIGHT-20 #Y position of the top side of the window
+        X += random.randint(-round(self.__intro),round(self.__intro))
         if self.__select[0]==0: #Selecting cursor is on the left hand side
-            pygame.draw.rect(surf,(0,255,0),[X+2,Y+2,WIDTH-3,HEIGHT-3],2)
+            pygame.draw.rect(surf,(0,255,0),[X+2,Y+2,WIDTH-3,HEIGHT-3],5)
         else: #Selecting cursor is on the right hand side
-            pygame.draw.rect(surf,(0,255,0),[X+WIDTH+2,Y+2,WIDTH-3,HEIGHT-3],2)
+            pygame.draw.rect(surf,(0,255,0),[X+WIDTH+2,Y+2,WIDTH-3,HEIGHT-3],5)
+        surf.blit(self.LINK["font24"].render(self.drone.settings["name"]+" (YOU)",16,(255,255,255)),[X+2,Y-20])
+        surf.blit(self.LINK["font24"].render(self.__activeDrone.settings["name"],16,(255,255,255)),[X+WIDTH+2,Y-20])
         perc = (time.time()-int(time.time()))*2 #Flash effect
         if perc>1:
             perc = 2-perc
@@ -171,6 +256,8 @@ class Main(base.Main):
                 self.moveTo(upg,DRONE_2,index2)
         else: #Run the upgrade client-side (opens window for interaction)
             self.__activeDrone = self.LINK["IDs"][droneID]
+            self.__intro = 10
+            self.__controllerChange["x"] = True
             self.__select = [0,0,-2]
             if len(self.__activeDrone.upgrades)==len(self.__activeDrone.settings["upgrades"]) and len(self.drone.upgrades)==len(self.drone.settings["upgrades"]):
                 self.__select[2] = 0 #Both upgrade slots on drones are full, entering swap mode.
@@ -181,6 +268,7 @@ class Main(base.Main):
             self.__usrCall.sendTrigger("cupg",self.drone.ID,"swap",drOb.ID) #Send a trigger to the client who called this to open their swapping menu
         else: #Is single player
             self.__select = [0,0,-2]
+            self.__controllerChange["x"] = True
             if len(self.__activeDrone.upgrades)==len(self.__activeDrone.settings["upgrades"]) and len(self.drone.upgrades)==len(self.drone.settings["upgrades"]):
                 self.__select[2] = 0 #Both upgrade slots on drones are full, entering swap mode.
             self.LINK["force"].append([self,self.force_loop,self.force_render]) #Make this upgrade take controll of the interface
@@ -208,4 +296,5 @@ class Main(base.Main):
                     Closest[0] = dist+0
                     Closest[1] = a
         self.__usrCall = usrObj
+        self.__intro = 10
         self.headTowards(Closest[1],35) #Head towards drone

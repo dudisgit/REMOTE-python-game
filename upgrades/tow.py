@@ -12,9 +12,12 @@ class Main(base.Main):
         self.__pullDrone = None #The drone this entity is pulling
         self.damage = 0 #Damage to the upgrade.
         self.hitFunction = self.hitDrone #Function to call once hit a drone
+    def beingUsed(self): #Return True if the upgrade is towing someting (used for tutorial progression)
+        return not self.__pullDrone is None
     def hitDrone(self,dr): #Hit target drone
         self.__pullDrone = dr
         self.__inUse = True
+        self.LINK["outputCommand"]("Started towing",(255,255,0),False)
     def loop(self,lag): #Called continuesly
         super().loop(lag)
         if self.__inUse: #Upgrade is currently towing a drone
@@ -39,6 +42,8 @@ class Main(base.Main):
             Err = "No disabled drones/non-perminant upgrades found in room"
             for a in Ents: #Loop through every entitiy in the room/door
                 if type(a) in Objects and a!=self.drone: #Drone that is dead
+                    if type(a)==Objects[1]:
+                        return True
                     if a.number==-1 or not a.alive: #Dead drone
                         if a.health==0 and a.number==-1:
                             Err = "Drone is destroyed beyond salvagable"
@@ -49,6 +54,7 @@ class Main(base.Main):
         if self.__inUse: #Upgrade allredey in use, stop towinng
             self.__inUse = False
             self.__pullDrone = None
+            return "Stopped towing"
         else: #Upgrade is not in use
             Droom = self.drone.findPosition() #Get the room the drone is inside of
             Ents = Droom.EntitiesInside() #Get all the entities in the room/door
@@ -56,7 +62,12 @@ class Main(base.Main):
             Closest = [-1,None] #The closest item
             for a in Ents: #Find the closest drone/upgrade to the current drone
                 if type(a) in Finding and a!=self.drone: #Entity is a drone and is not alive
-                    if a.number==-1 or not a.alive: #Entity is not alive/willing to tow
+                    ALO = False
+                    if type(a)==Finding[1]:
+                        ALO = True
+                    elif a.number==-1 or not a.alive:
+                        ALO = True
+                    if ALO: #Entity is not alive/willing to tow
                         dist = math.sqrt( ((self.drone.pos[0]+(self.drone.size[0]/2)-(a.pos[0]+(a.size[0]/2)))**2) + 
                             ((self.drone.pos[1]+(self.drone.size[1]/2)-(a.pos[1]+(a.size[1]/2)) )**2) ) #Find distance
                         if Closest[0]==-1 or dist<Closest[0]: #Has distance not been mesured before or distance is less and prevously known

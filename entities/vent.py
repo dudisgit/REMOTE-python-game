@@ -9,14 +9,28 @@ class Main(base.Main):
         self.init(x,y,LINK) #Init on the base class, __init__ is not called because its used for error detection.
         self.ID = ID
         self.__sShow = True #Show in games scematic view
+        if LINK["multi"]!=2: #Is not a server
+            if self.LINK["simpleModels"]:
+                self.__vent = LINK["render"].Model(LINK,"ventSimple")
+            else:
+                self.__vent = LINK["render"].Model(LINK,"vent")
         self.__inRoom = False #Is true if the vent is inside a room
         self.hintMessage = "A vent is used by the 'swarm' enemy to travel through the ship. \nThey are a risk to the player"
     def SaveFile(self): #Give all infomation about this object ready to save to a file
         return ["vent",self.ID,self.pos]
     def LoadFile(self,data,idRef): #Load from a file
         self.pos = data[2]
+    def SyncData(self,data): #Syncs the data with this interface
+        self.discovered = data["D"]
+    def GiveSync(self): #Returns the synced data for this interface
+        res = {}
+        res["D"] = self.discovered
+        return res
     def loop(self,lag):
-        pass
+        if self.LINK["multi"]==1: #Client
+            self.SyncData(self.LINK["cli"].SYNC["e"+str(self.ID)])
+        elif self.LINK["multi"]==2: #Server
+            self.LINK["serv"].SYNC["e"+str(self.ID)] = self.GiveSync()
     def rightInit(self,surf): #Initialize context menu for map designer
         self.__surface = pygame.Surface((210,40)) #Surface to render too
         self.__lastRenderPos = [0,0] #Last rendering position
@@ -53,7 +67,7 @@ class Main(base.Main):
         if type(self.insideRoom(ents)) == bool: #Check if inside a room
             return "No room (vent)"
         return False
-    def sRender(self,x,y,scale,surf=None,edit=False): #Render in scematic view
+    def sRender(self,x,y,scale,surf=None,edit=False,droneView=False): #Render in scematic view
         if surf is None:
             surf = self.LINK["main"]
         if edit:
@@ -71,7 +85,4 @@ class Main(base.Main):
         if surf is None:
             surf = self.LINK["main"]
         sx,sy = surf.get_size()
-        if self.LINK["simpleModels"]:
-            self.LINK["render"].renderModel(self.LINK["models"]["ventSimple"],x+(25*scale),y+(25*scale),0,scale/1.5,surf,VENT_COL,ang,eAng,arcSiz)
-        else:
-            self.LINK["render"].renderModel(self.LINK["models"]["vent"],x+(25*scale),y+(25*scale),0,scale/1.5,surf,VENT_COL,ang,eAng,arcSiz)
+        self.__vent.render(x+(25*scale),y+(25*scale),0,scale/1.5,surf,VENT_COL,ang,eAng,arcSiz)

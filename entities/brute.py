@@ -12,6 +12,7 @@ class Main(base.Main):
         self.isNPC = True
         self.speed = 0.8
         self.health = 120
+        self.discovered = True
         self.NPCDist = 120
         self.size = [25,25]
         self.settings["attack"] = False #If this NPC should attack doors
@@ -20,6 +21,16 @@ class Main(base.Main):
         self.renderSize = [-60,-60,110,110] #Used to have a bigger radius when rendering in 3D (does not effect scale)
         self.__first = True #First time this entity has spawned
         self.__lastScan = time.time() #Last time this NPC scanned for a drone
+        if LINK["multi"]!=2: #Is not a server
+            if self.LINK["simpleModels"]:
+                simp = "Simple"
+            else:
+                simp = ""
+            self.__body = LINK["render"].Model(LINK,"bruteBack"+simp) #Body of the brute
+            self.__head = LINK["render"].Model(LINK,"bruteHead"+simp) #Head of the brute
+            self.__headCharge = LINK["render"].Model(LINK,"bruteHeadCharge"+simp) #Head of the brute but charging
+            self.__legL = LINK["render"].Model(LINK,"bruteLegLeft") #Brutes left leg
+            self.__legR = LINK["render"].Model(LINK,"bruteLegRight") #Brutes right leg
         self.__canSee = False #Drone can see this entity
         self.__headAngle = 0 #Brute Head angle
         self.__lagBefore = 1 #Used to detect the lag before rendering
@@ -47,10 +58,29 @@ class Main(base.Main):
             self.LINK["serv"].SYNC.pop("e"+str(self.ID))
     def __ChangeAttack(self,LINK,state): #Changes the attack mode, if the NPC should attack doors or not
         self.settings["attack"] = state == True
-    def SyncData(self,data): #Syncs the data with this brute
+    def SyncData(self,data,lag=1): #Syncs the data with this brute
         self.pos[0] = ((self.pos[0]*3)+data["x"])/4
         self.pos[1] = ((self.pos[1]*3)+data["y"])/4
-        self.angle = ((self.angle*3)+data["a"])/4
+        angle = data["a"]
+        dist2 = 0 #Angular distance from the entities angle and the targets angle
+        if angle > self.angle: #This is an algorithm for turning in a proper direction smothly
+            if angle - self.angle > 180:
+                dist2 = 180 - (angle - 180 - self.angle)
+                self.angle-=lag*(dist2**0.7)
+            else:
+                dist2 = angle - self.angle
+                self.angle+=lag*(dist2**0.7)
+        else:
+            if self.angle - angle > 180:
+                dist2 = 180 - (self.angle - 180 - angle)
+                self.angle+=lag*(dist2**0.7)
+            else:
+                dist2 = self.angle - angle
+                self.angle-=lag*(dist2**0.7)
+        try:
+            self.angle = int(self.angle) % 360 #Make sure this entitys angle is not out of range
+        except:
+            self.angle = int(cmath.phase(self.angle)) % 360 #Do the same before but unconvert it from a complex number
         self.alive = data["A"]
         if not self.alive: #Brute is dead
             self.colisionType = 0
@@ -93,7 +123,10 @@ class Main(base.Main):
     def loop(self,lag):
         self.__lagBefore = lag/2
         if self.LINK["multi"]==1: #Client
-            self.SyncData(self.LINK["cli"].SYNC["e"+str(self.ID)])
+            if "e"+str(self.ID) in self.LINK["cli"].SYNC:
+                self.SyncData(self.LINK["cli"].SYNC["e"+str(self.ID)],lag)
+            else:
+                self.REQUEST_DELETE = True
         elif self.LINK["multi"]==2: #Server
             if self.__canSee or self.__first: #Only sync position if the player can see it.
                 self.LINK["serv"].SYNC["e"+str(self.ID)] = self.GiveSync()
@@ -110,6 +143,9 @@ class Main(base.Main):
                         send.append(["s",int(self.angle),"e"+str(self.ID),"a"]) #Angle
                         for a in self.LINK["serv"].users: #Send data to all users
                             self.LINK["serv"].users[a].sendTCP(send)
+                            self.LINK["serv"].users[a].tempIgnore.append(["e"+str(self.ID),"x"])
+                            self.LINK["serv"].users[a].tempIgnore.append(["e"+str(self.ID),"y"])
+                            self.LINK["serv"].users[a].tempIgnore.append(["e"+str(self.ID),"a"])
         if self.LINK["multi"]!=1: #Is not a client
             if self.alive:
                 self.NPCloop()
@@ -183,7 +219,7 @@ class Main(base.Main):
         if type(self.insideRoom(ents)) == bool: #Check if inside a room
             return "No room (NPC)"
         return False
-    def sRender(self,x,y,scale,surf=None,edit=False): #Render in scematic view
+    def sRender(self,x,y,scale,surf=None,edit=False,droneView=False): #Render in scematic view
         if surf is None:
             surf = self.LINK["main"]
         if self.__inRoom and edit:
@@ -211,20 +247,16 @@ class Main(base.Main):
     def render(self,x,y,scale,ang,surf=None,arcSiz=-1,eAng=None): #Render brute in 3D
         if surf is None:
             surf = self.LINK["main"]
-        if self.LINK["simpleModels"]:
-            simp = "Simple"
-        else:
-            simp = ""
         if self.alive: #Brute is alive
             col = (255,0,0)
         else:
             col = (150,0,0)
         if not self.alive:
-            self.LINK["render"].renderModel(self.LINK["models"]["bruteHead"+simp],x+(12*scale),y+(12*scale),self.angle,scale/1.75,surf,col,ang,eAng)
+            self.__head.render(x+(12*scale),y+(12*scale),self.angle,scale/1.75,surf,col,ang,eAng)
         elif self.Charge[0]: #Charging at a target, display charging model
-            self.LINK["render"].renderModel(self.LINK["models"]["bruteHeadCharge"+simp],x+(12*scale),y+(12*scale),self.angle,scale*1.25,surf,(255,255,0),ang,eAng)
+            self.__headCharge.render(x+(12*scale),y+(12*scale),self.angle,scale*1.25,surf,(255,255,0),ang,eAng)
         else:
-            self.LINK["render"].renderModel(self.LINK["models"]["bruteHead"+simp],x+(12*scale),y+(12*scale),self.angle+(math.cos(time.time()*4)*10),scale/1.75,surf,col,ang,eAng)
+            self.__head.render(x+(12*scale),y+(12*scale),self.angle+(math.cos(time.time()*4)*10),scale/1.75,surf,col,ang,eAng)
         legAng = self.__headAngle/180*math.pi
         if self.__moving and self.alive: #Brute is moving
             legMove1 = math.cos(time.time()*5)*30 #Leg movement 1
@@ -236,18 +268,18 @@ class Main(base.Main):
             legMove1 = 0
             legMove2 = 0
         #Left legs
-        self.LINK["render"].renderModel(self.LINK["models"]["bruteLegLeft"],x+(12*scale)+(math.sin(legAng+(math.pi/8))*30*scale),
+        self.__legL.render(x+(12*scale)+(math.sin(legAng+(math.pi/8))*30*scale),
             y+(12*scale)+(math.cos(legAng+(math.pi/8))*30*scale),self.__headAngle+legMove1,scale/1.75,surf,col,ang,eAng)
-        self.LINK["render"].renderModel(self.LINK["models"]["bruteLegLeft"],x+(12*scale)+(math.sin(legAng+(math.pi/5))*20*scale),
+        self.__legL.render(x+(12*scale)+(math.sin(legAng+(math.pi/5))*20*scale),
             y+(12*scale)+(math.cos(legAng+(math.pi/5))*20*scale),self.__headAngle+legMove2,scale/1.75,surf,col,ang,eAng)
-        self.LINK["render"].renderModel(self.LINK["models"]["bruteLegLeft"],x+(12*scale)+(math.sin(legAng+(math.pi/3))*15*scale),
+        self.__legL.render(x+(12*scale)+(math.sin(legAng+(math.pi/3))*15*scale),
             y+(12*scale)+(math.cos(legAng+(math.pi/3))*15*scale),self.__headAngle+legMove1,scale/1.75,surf,col,ang,eAng)
         #Right legs
-        self.LINK["render"].renderModel(self.LINK["models"]["bruteLegRight"],x+(12*scale)+(math.sin(legAng-(math.pi/8))*30*scale),
+        self.__legR.render(x+(12*scale)+(math.sin(legAng-(math.pi/8))*30*scale),
             y+(12*scale)+(math.cos(legAng-(math.pi/8))*30*scale),self.__headAngle+legMove2,scale/1.75,surf,col,ang,eAng)
-        self.LINK["render"].renderModel(self.LINK["models"]["bruteLegRight"],x+(12*scale)+(math.sin(legAng-(math.pi/5))*20*scale),
+        self.__legR.render(x+(12*scale)+(math.sin(legAng-(math.pi/5))*20*scale),
             y+(12*scale)+(math.cos(legAng-(math.pi/5))*20*scale),self.__headAngle+legMove1,scale/1.75,surf,col,ang,eAng)
-        self.LINK["render"].renderModel(self.LINK["models"]["bruteLegRight"],x+(12*scale)+(math.sin(legAng-(math.pi/3))*15*scale),
+        self.__legR.render(x+(12*scale)+(math.sin(legAng-(math.pi/3))*15*scale),
             y+(12*scale)+(math.cos(legAng-(math.pi/3))*15*scale),self.__headAngle+legMove2,scale/1.75,surf,col,ang,eAng)
         dist2 = 0 #Angular distance from the head angle to the back angle
         if self.angle > self.__headAngle: #This is an algorithm for turning in a proper direction smothly
@@ -271,4 +303,4 @@ class Main(base.Main):
         if not self.alive: #Brute is alive 
             self.__headAngle = self.angle+80
         PS = [x+(12*scale)+(math.sin(self.angle/180*math.pi)*8*scale),y+(12*scale)+(math.cos(self.angle/180*math.pi)*8*scale)]
-        self.LINK["render"].renderModel(self.LINK["models"]["bruteBack"+simp],PS[0],PS[1],self.__headAngle,scale/1.75,surf,col,ang,eAng)
+        self.__body.render(PS[0],PS[1],self.__headAngle,scale/1.75,surf,col,ang,eAng)

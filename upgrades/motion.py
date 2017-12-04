@@ -25,7 +25,7 @@ class Main(base.Main):
         if Droom==-1: #Outside map
             return False
         elif type(Droom)!=self.getEnt("room"): #Not inside a room
-            return "Cannot scan when not inside a room"
+            return "Drone isn't in a room"
         elif self.__inUse: #Allredey being used
             return "Allredey scanning rooms"
         elif self.scansLeft<=0: #Ran out of scans to scan a room
@@ -59,9 +59,9 @@ class Main(base.Main):
                     elif self.__scanChange[i] != a.SCAN: #Scan has changed state
                         self.__scanChange[i] = a.SCAN+0
                         if a.SCAN==3: #Bad
-                            self.LINK["outputCommand"]("Motion triggered in R"+str(a.number),(255,0,0))
+                            self.LINK["outputCommand"]("Motion triggered in "+a.reference(),(255,0,0),False)
                         elif a.SCAN==1: #Safe
-                            self.LINK["outputCommand"]("Motion un-triggered in R"+str(a.number),(255,255,0))
+                            self.LINK["outputCommand"]("Motion un-triggered in "+a.reference(),(255,255,0),False)
                 self.__scanAgain = time.time()+(1/UPDATE_RATE)
             if [int(self.drone.pos[0]),int(self.drone.pos[1])]!=self.__savePos or not self.drone.alive: #Has the drone moved from when the upgrade was first turned on?
                 self.__inUse = False

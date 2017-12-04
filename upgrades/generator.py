@@ -26,11 +26,11 @@ class Main(base.Main):
                 if type(a)==GeneratorObject:
                     if a.alive:
                         if a.active:
-                            return "Power outlet allredey powered"
+                            return "Power inlet allredey powered"
                         else:
                             return True #Upgrade is valid
-                    return "Power outlet is destroyed"
-            return "No power outlet inside room"
+                    return "Power inlet is destroyed"
+            return "No power inlet inside room"
     def moved(self,newDrone): #Upgrade was swapped
         if not self.__activeGenerator is None: #Is the upgade currently being used?
             self.__activeGenerator.active = False
@@ -39,6 +39,8 @@ class Main(base.Main):
         self.__activeGenerator = Gen
         Gen.active = True
         self.used = True
+        if not "gen" in self.LINK["hintDone"]:
+            self.LINK["hintDone"].append("gen")
     def loop(self,lag): #Event loop on this upgrade
         super().loop(lag)
         if not self.__activeGenerator is None: #Upgrade is currently in use and powering a generator

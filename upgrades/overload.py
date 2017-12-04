@@ -28,16 +28,16 @@ class Main(base.Main):
         Ents = E.EntitiesInside() #Get all entities inside the room
         KillObjs = [self.getEnt("android"),self.getEnt("interface"),self.getEnt("generator"),self.getEnt("sensor"),self.getEnt("turret"),self.getEnt("drone")]
         for a in Ents: #Loop through all entities in the room
-            if type(a) in KillObjs: #Entity is electrical and must be destroyed
+            if type(a) in KillObjs and a.alive: #Entity is electrical and must be destroyed
                 a.alive = False
                 if type(a)==self.getEnt("interface"):
-                    self.LINK["outputCommand"]("Interface in R"+str(a.findPosition().number)+" was destroyed",(255,0,0))
+                    self.LINK["outputCommand"]("Interface in "+a.findPosition().reference()+" was destroyed",(255,0,0),False)
                 elif type(a)==self.getEnt("generator"):
-                    self.LINK["outputCommand"]("Generator in R"+str(a.findPosition().number)+" was destroyed",(255,0,0))
+                    self.LINK["outputCommand"]("Generator in "+a.findPosition().reference()+" was destroyed",(255,0,0),False)
                 elif type(a)==self.getEnt("turret"):
-                    self.LINK["outputCommand"]("Defence in R"+str(a.findPosition().number)+" was destroyed",(255,0,0))
+                    self.LINK["outputCommand"]("Defence in "+a.findPosition().reference()+" was destroyed",(255,0,0),False)
                 elif type(a)==self.getEnt("sensor"):
-                    self.LINK["outputCommand"]("Sensor in R"+str(a.findPosition().number)+" was destroyed",(255,0,0))
+                    self.LINK["outputCommand"]("Sensor in "+a.findPosition().reference()+" was destroyed",(255,0,0),False)
                 elif type(a)==self.getEnt("drone"):
-                    self.LINK["outputCommand"]("Drone "+str(a.number)+" was destroyed",(255,0,0))
+                    self.LINK["outputCommand"]("Drone "+str(a.number)+" was destroyed",(255,0,0),False)
         return "Overloaded R"+str(E.number)

@@ -8,17 +8,30 @@ class Main(base.Main):
     def __init__(self,x,y,LINK,ID):
         self.init(x,y,LINK) #Init on the base class, __init__ is not called because its used for error detection.
         self.ID = ID
+        self.discovered = True
         self.__sShow = True #Show in games scematic view
         self.__inRoom = False #Is true if the lure is inside a room
         self.size = [40,40] #Size of the lure
         self.health = 500 #Health of the lure
+        if LINK["multi"]!=2: #Is not a server
+            if self.LINK["simpleModels"]: #Simple models is enabled
+                self.__lure = LINK["render"].Model(LINK,"lureSimple")
+                self.__lureDead = LINK["render"].Model(LINK,"lureDeadSimple")
+            else:
+                self.__lure = LINK["render"].Model(LINK,"lure")
+                self.__lureDead = LINK["render"].Model(LINK,"lureDead")
         self.__healthChange = 500 #Used to detect changes in health for the lure
         self.__lastDamage = 0 #Used to time when the lure was last attacked (used so it doesen't spam console)
         self.__beingDamaged = 0 #Is upgrade being damaged
         self.beingSucked = False #Make this entity suckable out of an airlock
         self.hintMessage = "This entity should not be spawned in map editor"
+        self.gameHint = "Use 'pickup' to pickup lure. \nAttracts threats towards lure"
+        if self.LINK["multi"]!=-1 and self.LINK["hints"]:
+            self.HINT = True #Show hints
     def SaveFile(self): #Give all infomation about this object ready to save to a file
         return ["lure",self.ID,self.pos,self.health]
+    def afterLoad(self):
+        print("Fully loaded",self.ID)
     def LoadFile(self,data,idRef): #Load from a file
         self.pos = data[2]
         self.health = data[3]
@@ -55,8 +68,8 @@ class Main(base.Main):
                 if ps==-1 or type(ps)!=self.getEnt("room"): #Is invalid or not in a room
                     R = "<no room>"
                 else: #In a room
-                    R = "R"+str(ps.number)
-                self.LINK["outputCommand"]("Lure in "+R+" was damaged",(255,255,0))
+                    R = ps.reference()
+                self.LINK["outputCommand"]("Lure in "+R+" was damaged",(255,255,0),True)
             self.__lastDamage = time.time()+6 #Don't notify any extra hits for 6 seconds (unless hit again then still don't post anything)
             if self.health<=0: #Lure is dead
                 self.health = 0
@@ -64,8 +77,8 @@ class Main(base.Main):
                 if ps==-1 or type(ps)!=self.getEnt("room"): #Is invalid or not in a room
                     R = "<no room>"
                 else: #In a room
-                    R = "R"+str(ps.number)
-                self.LINK["outputCommand"]("Lure in "+R+" was destroyed",(255,0,0)) #Notify the user the lure was destroyed
+                    R = ps.reference()
+                self.LINK["outputCommand"]("Lure in "+R+" was destroyed",(255,0,0),True) #Notify the user the lure was destroyed
                 self.alive = False
     def loop(self,lag): #Constatnly called to handle events with this entity
         if self.LINK["multi"]==1: #Client
@@ -76,7 +89,13 @@ class Main(base.Main):
         if self.LINK["multi"]!=1: #Is not a client
             self.loop2(lag)
             self.movePath(lag)
-    def sRender(self,x,y,scale,surf=None,edit=False): #Render in scematic view
+        if self.LINK["multi"]!=2 and self.HINT: #Is not server
+            if "lure" in self.LINK["hintDone"]:
+                self.HINT = False
+        if self.REQUEST_DELETE:
+            if not "lure" in self.LINK["hintDone"]:
+                self.LINK["hintDone"].append("lure")
+    def sRender(self,x,y,scale,surf=None,edit=False,droneView=False): #Render in scematic view
         if surf is None:
             surf = self.LINK["main"]
         if self.alive: #Is the lure alive
@@ -86,7 +105,7 @@ class Main(base.Main):
                 surf.blit(self.getImage("lure"),(x-(12*scale),y-(12*scale)))
         else: #Lure is dead
             surf.blit(self.getImage("lureDead"),(x-(12*scale),y-(12*scale)))
-        if self.HINT:
+        if self.HINT and self.LINK["multi"]==-1:
             self.renderHint(surf,self.hintMessage,[x,y])
     def canShow(self,Dview=False): #Should the lure render in scematic view
         return True
@@ -95,10 +114,8 @@ class Main(base.Main):
             surf = self.LINK["main"]
         sx,sy = surf.get_size()
         if self.alive: #Lure is alive
-            D = ""
+            self.__lure.render(x,y,0,scale/2,surf,LURE_COL,ang,eAng,arcSiz)
         else: #Lure is dead
-            D = "Dead"
-        if self.LINK["simpleModels"]: #Simple models is enabled
-            self.LINK["render"].renderModel(self.LINK["models"]["lure"+D+"Simple"],x,y,0,scale/2,surf,LURE_COL,ang,eAng,arcSiz)
-        else:
-            self.LINK["render"].renderModel(self.LINK["models"]["lure"+D],x,y,0,scale/2,surf,LURE_COL,ang,eAng,arcSiz)
+            self.__lureDead.render(x,y,0,scale/2,surf,LURE_COL,ang,eAng,arcSiz)
+        if self.HINT:
+            self.renderHint(surf,self.gameHint,[x,y])

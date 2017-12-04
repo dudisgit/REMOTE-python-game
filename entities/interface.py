@@ -14,6 +14,13 @@ class Main(base.Main):
         self.settings["power"] = [] #Contains a list of generators the interface is powered by
         self.turrets = [] #Turrets that are linked to this interface (appended by the turrets)
         self.defence = False #Activate/deactivate defences
+        if LINK["multi"]!=2: #Is not a server
+            if self.LINK["simpleModels"]:
+                simp = "Simple"
+            else:
+                simp = ""
+            self.__interfaceWall = LINK["render"].Model(LINK,"interfaceWall"+simp)
+            self.__interface = LINK["render"].Model(LINK,"interface"+simp)
         self.linkable = ["inter"] #Make the interface accept link upgrades
         self.__sShow = True #Show in games scematic view
         self.__wallAngle = -1 #Wall angle the interface is laying on, left, right, up, down
@@ -21,6 +28,9 @@ class Main(base.Main):
         self.__isVac = False #Used to detect change in air pressure inside the current room
         self.powered = False #Is this interface powered or not
         self.hintMessage = "An interface can be used to controll turrets or survey the ship. They must be powered and can be accessed using the interface upgrade on a drone."
+        self.gameHint = "Use 'interface' upgrade to interact. \nWill controll ship defences and survey rooms"
+        if self.LINK["multi"]!=-1 and self.LINK["hints"]:
+            self.HINT = True #Show hints
     def SaveFile(self): #Give all infomation about this object ready to save to a file
         pows = []
         for i,a in enumerate(self.settings["power"]):
@@ -32,7 +42,7 @@ class Main(base.Main):
     def toggleDefence(self): #Toggle defences on/off
         self.defence = not self.defence
     def scanShip(self): #Scans all the ships rooms, like a survayor
-        pass
+        self.LINK["showRooms"] = True
     def afterLoad(self):
         self.__curRoom = self.findPosition()
         if self.pos[0]==self.__curRoom.pos[0]:
@@ -52,16 +62,20 @@ class Main(base.Main):
                 if a.active:
                     self.powered = True
                     break
-        if self.__curRoom.air != self.__isVac:
+        if self.__curRoom.air != self.__isVac and self.alive:
             self.__isVac = self.__curRoom.air == True
             if not self.__isVac and random.randint(0,100)<RANDOM_DIE and not self.settings["god"]: #Destroy the generator
                 self.alive = False
-                self.LINK["outputCommand"]("Interface in R"+str(self.__curRoom.number)+" has been destroyed due to outside exposure.",(255,0,0))
+                self.LINK["outputCommand"]("Interface in "+self.__curRoom.reference()+" has been destroyed due to outside exposure.",(255,0,0),False)
     def SyncData(self,data): #Syncs the data with this interface
         self.alive = data["A"]
+        self.discovered = data["D"]
+        self.powered = data["P"]
     def GiveSync(self): #Returns the synced data for this interface
         res = {}
         res["A"] = self.alive
+        res["D"] = self.discovered
+        res["P"] = self.powered
         return res
     def loop(self,lag):
         if self.LINK["multi"]==1: #Client
@@ -70,6 +84,9 @@ class Main(base.Main):
             self.LINK["serv"].SYNC["e"+str(self.ID)] = self.GiveSync()
         if self.LINK["multi"]!=1: #Single player or server
             self.loop2(lag)
+        if self.LINK["multi"]!=2 and self.HINT: #Is not server
+            if "inter" in self.LINK["hintDone"] or (self.LINK["multi"]==1 and self.powered):
+                self.HINT = False
     def LoadFile(self,data,idRef): #Load from a file
         self.pos = data[2]
         self.settings["god"] = data[3]
@@ -141,7 +158,7 @@ class Main(base.Main):
         elif len(self.settings["power"])==0:
             return "No power (interface)"
         return False
-    def sRender(self,x,y,scale,surf=None,edit=False): #Render in scematic view
+    def sRender(self,x,y,scale,surf=None,edit=False,droneView=False): #Render in scematic view
         if surf is None:
             surf = self.LINK["main"]
         if edit: #Draw all the power lines
@@ -174,7 +191,7 @@ class Main(base.Main):
                 surf.blit(pygame.transform.rotate(self.getImage("interfaceWall"+D),90),(x,y-(25*scale)))
             elif self.__wallAngle==3: #Down
                 surf.blit(pygame.transform.rotate(self.getImage("interfaceWall"+D),270),(x,y+(25*scale)))
-        if self.HINT:
+        if self.HINT and self.LINK["multi"]==-1:
             self.renderHint(surf,self.hintMessage,[x,y])
     def canShow(self,Dview=False,arcSiz=-1): #Should the generator render in scematic view
         return not Dview
@@ -182,17 +199,23 @@ class Main(base.Main):
         if surf is None:
             surf = self.LINK["main"]
         sx,sy = surf.get_size()
-        if self.LINK["simpleModels"]:
-            simp = "Simple"
-        else:
-            simp = ""
         if self.__wallAngle==-1:
-            self.LINK["render"].renderModel(self.LINK["models"]["interface"+simp],x+(25*scale),y+(12*scale),0,scale/2,surf,INTERFACE_COL,ang,eAng,arcSiz)
+            self.__interface.render(x+(25*scale),y+(12*scale),0,scale/2,surf,INTERFACE_COL,ang,eAng,arcSiz)
+            if self.HINT:
+                self.renderHint(surf,self.gameHint,[x+(25*scale),y+(25*scale)])
         elif self.__wallAngle==0: #Left
-            self.LINK["render"].renderModel(self.LINK["models"]["interfaceWall"+simp],x+(12*scale),y+(12.5*scale),90,scale/1.6,surf,INTERFACE_COL,ang,eAng,arcSiz)
+            self.__interfaceWall.render(x+(12*scale),y+(12.5*scale),90,scale/1.6,surf,INTERFACE_COL,ang,eAng,arcSiz)
+            if self.HINT:
+                self.renderHint(surf,self.gameHint,[x,y+(25*scale)])
         elif self.__wallAngle==1: #Right
-            self.LINK["render"].renderModel(self.LINK["models"]["interfaceWall"+simp],x+(40*scale),y+(12.5*scale),270,scale/1.6,surf,INTERFACE_COL,ang,eAng,arcSiz)
+            self.__interfaceWall.render(x+(40*scale),y+(12.5*scale),270,scale/1.6,surf,INTERFACE_COL,ang,eAng,arcSiz)
+            if self.HINT:
+                self.renderHint(surf,self.gameHint,[x+(50*scale),y+(25*scale)])
         elif self.__wallAngle==2: #Up
-            self.LINK["render"].renderModel(self.LINK["models"]["interfaceWall"+simp],x+(18*scale),y+(12.5*scale),0,scale/1.6,surf,INTERFACE_COL,ang,eAng,arcSiz)
+            self.__interfaceWall.render(x+(18*scale),y+(12.5*scale),0,scale/1.6,surf,INTERFACE_COL,ang,eAng,arcSiz)
+            if self.HINT:
+                self.renderHint(surf,self.gameHint,[x+(20*scale),y])
         elif self.__wallAngle==3: #Down
-            self.LINK["render"].renderModel(self.LINK["models"]["interfaceWall"+simp],x+(18*scale),y+(40*scale),180,scale/1.6,surf,INTERFACE_COL,ang,eAng,arcSiz)
+            self.__interfaceWall.render(x+(18*scale),y+(40*scale),180,scale/1.6,surf,INTERFACE_COL,ang,eAng,arcSiz)
+            if self.HINT:
+                self.renderHint(surf,self.gameHint,[x+(20*scale),y+(50*scale)])

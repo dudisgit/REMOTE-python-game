@@ -17,11 +17,13 @@ class Main(base.Main):
             if spl[1] in self.LINK["IDref"]: #Is a valid entity
                 E = self.LINK["IDref"][spl[1]]
                 if type(E)==self.getEnt("room"): #Is the entity a room
+                    if not E.discovered2:
+                        return "No such room"
                     if not self.__connected is None: #Is this upgrade allredey powering a generator
                         if self.__connected == E: #Is the room specified the same as the one allredey connected
                             return True
                         else: #Different, report problem
-                            return "R"+str(self.__connected.number)+" is still connected"
+                            return self.__connected.reference()+" is still connected"
                     Ents = E.EntitiesInside() #Get all entities inside the room
                     GeneratorObject = self.getEnt("generator") #Used as a reference to a generator object
                     Err = "No generator inside room"
@@ -52,7 +54,7 @@ class Main(base.Main):
                 if type(a)==GeneratorObject and a.alive: #Entity is a generator and is alive
                     a.active = True
                     break
-            return "Powering generator in R"+str(E.number)
+            return "Powering generator in "+E.reference()
         else: #Allredey powering a generator
             Ents = self.__connected.EntitiesInside() #Get all the entities in the room
             GeneratorObject = self.getEnt("generator") #Reference object to a generator

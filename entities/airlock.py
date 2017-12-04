@@ -1,9 +1,13 @@
 #Do not run this file, it is a module!
-import pygame, time, random
+import pygame, time, random, math
 import entities.base as base
 
 RADIATION_DELAY = 6 #Delay until the airlock will fill the room with radiation
 AIRLOCK_COL = (255,255,255) #Colour of the airlock
+FAIL_CHANGE = 25 #Percent chance of failing
+FAIL_UPDATE = 25 #Seconds between checking if the airlock should fail
+SUCK_SIZE = 0.3 #Air sucking particle effect size
+CACHE_SIZE = [128,128]
 
 class Main(base.Main):
     def __init__(self,x,y,LINK,ID,number=-1):
@@ -16,6 +20,20 @@ class Main(base.Main):
         self.settings["fail"] = False #If the airlock should be allowed to fail
         self.settings["default"] = False #Is the default airlock for ships
         self.powered = False #Is the airlock powered
+        self.__failTime = time.time()+FAIL_UPDATE #Time between checking a percentage
+        self.__failing = False #Is the airlock failing
+        if LINK["multi"]!=2 or LINK["DEV"]: #Is not a server
+            self.__cache = [pygame.Surface((CACHE_SIZE[0],CACHE_SIZE[1])),False,False,False,False,False] #Used for caching renders so program can render faster
+            self.__cache[0].set_colorkey((0,0,0))
+            if self.LINK["simpleModels"]:
+                simp = "Simple"
+            else:
+                simp = ""
+            self.__doorClose = LINK["render"].Model(LINK,"doorClose"+simp) #Door closed model
+            self.__doorOpen = LINK["render"].Model(LINK,"doorOpen") #Door open model
+        self.__parts = None #Particle effect
+        self.__health = 30 #Health of the airlock (fixes exploit with docking/opening and closing airlocks) this is also a count down till opening the airlock
+        self.__permFail = False #Perminant fail, will allways fail when the airlock is un-docked
         self.room1 = None #The room the airlock is attached to.
         self.room2 = None #The room of the ship (will be none if not docked)
         self.trying = False #Is the airlock trying to close
@@ -81,18 +99,69 @@ class Main(base.Main):
     def SyncData(self,data): #Syncs the data with this drone
         self.settings["open"] = data["O"]
         self.powered = data["P"]
+        self.discovered = data["D"]
+        if data["F"]!=self.__failing:
+            self.__failing = data["F"] == True
+            if self.__failing and self.LINK["particles"]:
+                self.__createParticles()
+            else:
+                self.__parts = None
         self.trying = data["T"]
     def GiveSync(self): #Returns the synced data for this drone
         res = {}
         res["O"] = self.settings["open"]
         res["T"] = self.trying
+        res["F"] = self.__failing
+        res["D"] = self.discovered
         res["P"] = self.powered
         return res
+    def reference(self): #Airlock was referenced, return number
+        if self.discovered:
+            return "A"+str(self.number)
+        return "A?"
+    def __renderParticle(self,x,y,scale,alpha,surf,a): #Function to call when rendering an air strike
+        pygame.draw.line(surf,(255,255,255),[x-(math.cos(a[2]/180*math.pi)*SUCK_SIZE*scale*a[3]),y-(math.sin(a[2]/180*math.pi)*SUCK_SIZE*scale*a[3])],[x+(math.cos(a[2]/180*math.pi)*SUCK_SIZE*scale*a[3]),y+(math.sin(a[2]/180*math.pi)*SUCK_SIZE*scale*a[3])],int(1*scale))
+    def __createParticles(self): #Creates airlock failing particle effects
+        if self.settings["dir"]==0: #Up
+            self.__parts = self.LINK["render"].ParticleEffect(self.LINK,self.pos[0]+25,self.pos[1]-25,90,0,5,0,40,0,None,0.2,10,True)
+        elif self.settings["dir"]==1: #Down
+            self.__parts = self.LINK["render"].ParticleEffect(self.LINK,self.pos[0]+25,self.pos[1]+75,270,0,5,0,40,0,None,0.2,10,True)
+        elif self.settings["dir"]==2: #Left
+            self.__parts = self.LINK["render"].ParticleEffect(self.LINK,self.pos[0]-25,self.pos[1]+25,0,0,5,0,40,0,None,0.2,10,True)
+        else: #Right
+            self.__parts = self.LINK["render"].ParticleEffect(self.LINK,self.pos[0]+75,self.pos[1]+25,180,0,5,0,40,0,None,0.2,10,True)
+        self.__parts.renderParticle = self.__renderParticle #Particle render function
     def loop2(self,lag): #This is "loop" but will apply actions to the airlock (single player/server, not client)
         if self.trying and self.powered:
             if len(self.EntitiesInside())==0:
                 self.CLOSE()
                 self.trying = False
+        if (time.time()>self.__failTime or self.__permFail) and not self.__failing and (self.room2 is None and not self.settings["open"]) and self.alive and self.settings["fail"]: #Check percentage chance of failing
+            self.__failTime = time.time()+FAIL_UPDATE
+            if random.randint(0,100)<FAIL_CHANGE or self.__permFail: #Make airlock fail
+                self.__failing = True #Make airlock fail
+                if self.LINK["particles"]:
+                    self.__createParticles()
+                self.__permFail = True #Make airlock fail after a ship un-docks from it
+                self.LINK["outputCommand"](self.reference()+" seal integrety is failing, airlock will open in "+str(int(self.__health))+" seconds",(255,255,0),True)
+        elif self.__health<0 and self.__failing: #Airlock has failed, destroy and open it.
+            self.OPEN(True)
+            self.__parts = None
+            self.alive = False
+            self.__permFail = False
+            self.LINK["outputCommand"](self.reference()+" seal integrety failed!",(255,0,0),True)
+            self.__failing = False
+        elif self.__failing and (not self.room2 is None or self.settings["open"]): #A ship has docked to an airlock, stop failing
+            self.LINK["outputCommand"](self.reference()+" seal integrety stabilized",(0,255,0),False)
+            self.__parts = None
+            self.__failing = False
+        elif not self.alive and not self.room2 is None: #A ship has docked to this airlock when it failed
+            self.__permFail = True
+        elif self.__permFail and not self.alive and self.room2 is None: #A ship has undocked to the airlock when it failed
+            self.__permFail = False
+            self.OPEN(True)
+        elif self.__failing: #Airlock is failing, decrease health
+            self.__health -= lag/30
         if self.LINK["multi"]==2 and time.time()>self.__updateAgain and self.LINK["absoluteDoorSync"]: #Is a server, this will update all users telling them the door is still open
             #This is incase the very unlikely chance the door doesen't sync its open/closed state
             self.__updateAgain = time.time()+random.randint(5,12) #Update again in a random time
@@ -105,6 +174,7 @@ class Main(base.Main):
                 self.powered = True
                 break
         self.powered = self.powered or not self.room2 is None
+        self.discovered = self.discovered or self.powered or self.LINK["showRooms"]
         if self.LINK["allPower"]:
             self.powered = True
         if time.time()>self.__radFill and self.__radFill!=0: #Fill the room with radiation
@@ -120,6 +190,8 @@ class Main(base.Main):
             self.room1.radBurst(POS) #Start the radiation
             self.__radFill = 0
     def loop(self,lag):
+        if not self.__parts is None:
+            self.__parts.loop(lag)
         if self.LINK["multi"]==1: #Client
             self.SyncData(self.LINK["cli"].SYNC["e"+str(self.ID)])
         elif self.LINK["multi"]==2: #Server
@@ -136,9 +208,9 @@ class Main(base.Main):
         else:
             errs = "Airlock not powered"
         return errs
-    def OPEN(self): #Opens the door
+    def OPEN(self,force=False): #Opens the door
         errs = ""
-        if self.powered: #Airlock is powered
+        if self.powered or force: #Airlock is powered
             if not self.room2 is None: #Ship is docked to airlock
                 if self.room2.ship.dockTime!=0: #Ship is still docking to airlock
                     return "Ship is still docking to airlock"
@@ -152,21 +224,27 @@ class Main(base.Main):
                 else:
                     POS = [self.pos[0]+50,self.pos[1]+25]
                 self.room1.airBurst(POS,"/"+str(self.ID),self)
+                ents = self.EntitiesInside()
+                for a in ents: #Delete all entities inside the airlock because its just been opened to space
+                    if a.beingSucked == False:
+                        a.REQUEST_DELETE = True
                 self.__radFill = time.time()+RADIATION_DELAY #Delay radiation filling
             self.settings["open"] = True
             self.trying = False
         else:
             errs = "Airlock not powered"
         return errs
-    def CLOSE(self): #Closes the door
+    def CLOSE(self,force=False): #Closes the door
         errs = ""
-        if self.powered:
-            if len(self.EntitiesInside())!=0:
+        if (self.powered and self.alive) or force:
+            if len(self.EntitiesInside())!=0 and not force:
                 errs = "Airlock is being blocked"
                 self.trying = True
             else:
                 self.settings["open"] = False
                 self.__radFill = 0 #Stop any radiation filling
+        elif not self.alive:
+            errs = "Airlock is destroyed"
         else:
             errs = "Airlock not powered"
         return errs
@@ -174,6 +252,8 @@ class Main(base.Main):
         self.pos = data[2]
         self.settings["dir"] = data[3]
         self.settings["default"] = data[4]
+        if data[4]:
+            self.discovered = True
         self.settings["fail"] = data[5]
         for a in data[6]:
             if a in idRef:
@@ -254,13 +334,64 @@ class Main(base.Main):
         if self.settings["dir"]==-1:
             return "No room (airlock)"
         return False
-    def sRender(self,x,y,scale,surf=None,edit=False): #Render in scematic view
+    def __updateCache(self,x,y,scale,edit): #Update the render cache for fast rendering
+        self.__cache[0].fill((0,0,0))
+        #Apply changes
+        self.__cache[1] = self.alive == True
+        self.__cache[2] = self.settings["open"] == True
+        self.__cache[3] = self.powered == True
+        self.__cache[4] = self.trying and (time.time()-int(time.time()))>0.5
+        self.__cache[5] = self.__failing and ((time.time()-int(time.time()))*4)%1<0.5
+        #Render cache
+        if self.settings["open"]: #Airlock is open
+            OPE = "Open"
+        else: #Airlock is closed
+            OPE = "Closed"
+        if self.alive and not (self.__failing and ((time.time()-int(time.time()))*4)%1<0.5): #Airlock is alive
+            if self.powered: #Airlock is powered
+                modl = "doorAir"+OPE
+            else:
+                modl = "doorAir"+OPE+"Power"
+        else: #Airlock is dead or flashing dead
+            if self.powered: #Airlock is powered
+                modl = "door"+OPE+"Dead"
+            else:
+                modl = "door"+OPE+"PowerDead"
+        if self.settings["open"]: #Airlock is open
+            if self.trying and (time.time()-int(time.time()))>0.5:
+                d = 20
+            else:
+                d = 25
+            if self.settings["dir"]>=2: #Left to right
+                self.__cache[0].blit(pygame.transform.rotate(self.getImage(modl),270),(x,y-(d*scale)))
+                self.__cache[0].blit(pygame.transform.rotate(self.getImage(modl),90),(x,y+(d*scale)))
+            else: #Up to down
+                self.__cache[0].blit(self.getImage(modl),(x-(d*scale),y))
+                self.__cache[0].blit(pygame.transform.flip(self.getImage(modl),True,False),(x+(d*scale),y))
+            pygame.draw.rect(self.__cache[0],(150,150,150),[x,y,self.size[0]*scale,self.size[1]*scale]) #Draw grey background when door is open
+        else: #Airlock is closed
+            if self.settings["dir"]>=2: #Lef to right
+                self.__cache[0].blit(pygame.transform.rotate(self.getImage(modl),90),(x,y))
+            else: #Up to down
+                self.__cache[0].blit(self.getImage(modl),(x,y))
+        if self.number != -1: #Draw the number the airlock is
+            textSurf = self.LINK["font16"].render("A"+str(self.number),16,(255,255,255)) #Create a surface that is the rendered text
+            textSize = list(textSurf.get_size()) #Get the size of the text rendered
+            textSurf = pygame.transform.scale(textSurf,(int(textSize[0]*scale*1.2),int(textSize[1]*scale*1.2)))
+            textSize2 = list(textSurf.get_size()) #Get the size of the text rendered
+            pygame.draw.rect(self.__cache[0],(0,0,0),[x+(((self.size[0]/2)-(textSize[0]/2))*scale),y+((self.size[1]/4)*scale)]+textSize2) #Draw a black background for the text to be displayed infront of
+            self.__cache[0].blit(textSurf,(x+(((self.size[0]/2)-(textSize[0]/2))*scale),y+((self.size[1]/4)*scale))) #Render text
+    def sRender(self,x,y,scale,surf=None,edit=False,droneView=False): #Render in scematic view
         if surf is None:
             surf = self.LINK["main"]
         if self.__inRoom:
             dead = "Dead"
         else:
             dead = ""
+        if self.alive!=self.__cache[1] or self.settings["open"]!=self.__cache[2] or self.powered!=self.__cache[3] or (self.trying and (time.time()-int(time.time()))>0.5)!=self.__cache[4] or (self.__failing and ((time.time()-int(time.time()))*4)%1<0.5)!=self.__cache[5] or edit:
+            #Update render cache
+            self.__updateCache(int(CACHE_SIZE[0]/4),int(CACHE_SIZE[1]/4),scale,edit)
+        surf.blit(self.__cache[0],(x-int(CACHE_SIZE[0]/4),y-int(CACHE_SIZE[1]/4))) #Render cache to screen
         if edit: #Draw all the power lines
             scrolPos = [(self.pos[0]*scale)-x,(self.pos[1]*scale)-y] #Calculate the scroll position
             rem = [] #Items to remove because they where deleted
@@ -292,32 +423,6 @@ class Main(base.Main):
                 pygame.draw.line(surf,(255,0,0),[x,y],[(self.room1.pos[0]*scale)-scrpos[0],(self.room1.pos[1]*scale)-scrpos[1]])
             if not self.room2 is None:
                 pygame.draw.line(surf,(255,0,0),[x,y],[(self.room2.pos[0]*scale)-scrpos[0],(self.room2.pos[1]*scale)-scrpos[1]])
-        if self.alive and not self.powered: #If the door is not powered
-            dead = "Power"
-        if self.settings["open"]: #Airlock is open
-            if self.trying and (time.time()-int(time.time()))>0.5:
-                d = 20
-            else:
-                d = 25
-            if self.settings["dir"]>=2: #Left to right
-                surf.blit(pygame.transform.rotate(self.getImage("doorAirOpen"+dead),270),(x,y-(d*scale)))
-                surf.blit(pygame.transform.rotate(self.getImage("doorAirOpen"+dead),90),(x,y+(d*scale)))
-            else: #Up to down
-                surf.blit(self.getImage("doorAirOpen"+dead),(x-(d*scale),y))
-                surf.blit(pygame.transform.flip(self.getImage("doorAirOpen"+dead),True,False),(x+(d*scale),y))
-            pygame.draw.rect(surf,(150,150,150),[x,y,self.size[0]*scale,self.size[1]*scale]) #Draw grey background when door is open
-        else: #Airlock is closed
-            if self.settings["dir"]>=2: #Lef to right
-                surf.blit(pygame.transform.rotate(self.getImage("doorAirClosed"+dead),90),(x,y))
-            else: #Up to down
-                surf.blit(self.getImage("doorAirClosed"+dead),(x,y))
-        if self.number != -1: #Draw the number the airlock is
-            textSurf = self.LINK["font16"].render("A"+str(self.number),16,(255,255,255)) #Create a surface that is the rendered text
-            textSize = list(textSurf.get_size()) #Get the size of the text rendered
-            textSurf = pygame.transform.scale(textSurf,(int(textSize[0]*scale*1.2),int(textSize[1]*scale*1.2)))
-            textSize2 = list(textSurf.get_size()) #Get the size of the text rendered
-            pygame.draw.rect(surf,(0,0,0),[x+(((self.size[0]/2)-(textSize[0]/2))*scale),y+((self.size[1]/4)*scale)]+textSize2) #Draw a black background for the text to be displayed infront of
-            surf.blit(textSurf,(x+(((self.size[0]/2)-(textSize[0]/2))*scale),y+((self.size[1]/4)*scale))) #Render text
         if self.HINT:
             self.renderHint(surf,self.hintMessage,[x,y])
     def canShow(self,Dview=False): #Should the airlock render in scematic view
@@ -326,14 +431,12 @@ class Main(base.Main):
         if surf is None:
             surf = self.LINK["main"]
         sx,sy = surf.get_size()
-        if self.LINK["simpleModels"]:
-            simp = "Simple"
-        else:
-            simp = ""
         C = (255,255,255)
         if self.trying and (time.time()-int(time.time()))>0.5: #Airlock is trying to open/close
             C = (255,255,0)
         elif not self.alive:
+            C = (255,0,0)
+        if self.__failing and ((time.time()-int(time.time()))*4)%1<0.5:
             C = (255,0,0)
         if self.number != -1: #Draw the number the airlock is
             textSurf = self.LINK["font16"].render("A"+str(self.number),16,C) #Create a surface that is the rendered text
@@ -344,17 +447,19 @@ class Main(base.Main):
             surf.blit(textSurf,(x+(((self.size[0]/2)-(textSize[0]/2))*scale),y+((self.size[1]/4)*scale))) #Render text
         if self.settings["open"]: #Airlock is open
             if self.settings["dir"]>=2: #Airlock is left to right
-                self.LINK["render"].renderModel(self.LINK["models"]["doorOpen"],x+(20*scale),y+(22*scale),0,scale/2.5,surf,AIRLOCK_COL,ang,eAng,arcSiz)
+                self.__doorOpen.render(x+(20*scale),y+(22*scale),0,scale/2.5,surf,AIRLOCK_COL,ang,eAng,arcSiz)
             else: #Airlock is up to down
-                self.LINK["render"].renderModel(self.LINK["models"]["doorOpen"],x+(20*scale),y+(30*scale),90,scale/2.5,surf,AIRLOCK_COL,ang,eAng,arcSiz)
+                self.__doorOpen.render(x+(20*scale),y+(30*scale),90,scale/2.5,surf,AIRLOCK_COL,ang,eAng,arcSiz)
         else: #Airlock is closed
             if self.settings["dir"]>=2: #Airlock is left to right
                 if ((self.settings["dir"]==2 and not self.room2 is None) or self.settings["dir"]==3) and x<sx/2:
-                    self.LINK["render"].renderModel(self.LINK["models"]["doorClose"+simp],x+(14.5*scale),y+(22*scale),0,scale/2.5,surf,AIRLOCK_COL,ang,eAng,arcSiz)
+                    self.__doorClose.render(x+(14.5*scale),y+(22*scale),0,scale/2.5,surf,AIRLOCK_COL,ang,eAng,arcSiz)
                 if ((self.settings["dir"]==3 and not self.room2 is None) or self.settings["dir"]==2) and x>=sx/2:
-                    self.LINK["render"].renderModel(self.LINK["models"]["doorClose"+simp],x+(36*scale),y+(26*scale),180,scale/2.5,surf,AIRLOCK_COL,ang,eAng,arcSiz)
+                    self.__doorClose.render(x+(36*scale),y+(26*scale),180,scale/2.5,surf,AIRLOCK_COL,ang,eAng,arcSiz)
             else: #Airlock is up to down
                 if ((self.settings["dir"]==1 and not self.room2 is None) or self.settings["dir"]==0) and y>sy/2:
-                    self.LINK["render"].renderModel(self.LINK["models"]["doorClose"+simp],x+(23*scale),y+(36*scale),90,scale/2.5,surf,AIRLOCK_COL,ang,eAng,arcSiz)
+                    self.__doorClose.render(x+(23*scale),y+(36*scale),90,scale/2.5,surf,AIRLOCK_COL,ang,eAng,arcSiz)
                 if ((self.settings["dir"]==0 and not self.room2 is None) or self.settings["dir"]==1) and y<=sy/2:
-                    self.LINK["render"].renderModel(self.LINK["models"]["doorClose"+simp],x+(26*scale),y+(16*scale),270,scale/2.5,surf,AIRLOCK_COL,ang,eAng,arcSiz)
+                    self.__doorClose.render(x+(26*scale),y+(16*scale),270,scale/2.5,surf,AIRLOCK_COL,ang,eAng,arcSiz)
+        if not self.__parts is None:
+            self.__parts.render(x-((self.pos[0]-self.__parts.pos[0])*scale),y-((self.pos[1]-self.__parts.pos[1])*scale),scale,ang,eAng,surf)

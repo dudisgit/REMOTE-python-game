@@ -3,6 +3,8 @@ import pygame, time, screenLib, os, pickle, math, random
 import entities.base as base
 
 ARC_SIZE = 60
+FLASH_TIME = 4 #Seconds to keep text flashing for
+HB_LENG = 150 #Length of the health bar
 
 def insideArc(pos,cent,angle,arcWidth=ARC_SIZE): #Returns true if the point is inside the arc "cent" with the angle "ang"
     ang = angle%360 #Angle in range of 0-360
@@ -46,9 +48,9 @@ class Scematic:
             self.__scaleChange = scale+0
         sx,sy = surf.get_size()
         for a in self.ents:
-            if a.canShow(inView) or edit: #Allowed to show in scematic view
-                if (a.pos[0]*scale)-x<sx and (a.pos[1]*scale)-y<sy and ((a.pos[0]+a.size[0])*scale)-x>0 and ((a.pos[1]+a.size[1])*scale)-y>0: #Inside screen
-                    a.sRender((a.pos[0]*scale)-x,(a.pos[1]*scale)-y,scale,surf,edit)
+            if (a.canShow(inView) or edit) and a.discovered: #Allowed to show in scematic view
+                if ((a.pos[0]*scale)-x<sx and (a.pos[1]*scale)-y<sy and ((a.pos[0]+a.size[0])*scale)-x>0 and ((a.pos[1]+a.size[1])*scale)-y>0) or a.renderAnyway: #Inside screen
+                    a.sRender((a.pos[0]*scale)-x,(a.pos[1]*scale)-y,scale,surf,edit,inView)
 class DroneFeed: #Like the "Scematic" class but for 3D rendering
     def __init__(self,LINK):
         self.__LINK = LINK
@@ -126,6 +128,8 @@ class DroneFeed: #Like the "Scematic" class but for 3D rendering
                             a.render((a.pos[0]*scale)-x,(a.pos[1]*scale)-y,scale,None,surf,arcSiz) #3D render entity
                     else: #Render normal entity
                         a.render((a.pos[0]*scale)-x,(a.pos[1]*scale)-y,scale,ang,surf,arcSiz,ang3) #3D render entity
+                        if origAng is None:
+                            a.discovered = True
                         if (type(a)==DoorReferenceObject or type(a)==AirlockReferenceObject) and type(rendRoom)==RoomReferenceObject and not ignorEnt is None and not self.__LINK["popView"]: #Rendered entity is a door or airlock
                             if a.room1 in self.__doneRooms: #Check if the first room of the airlock has been visited before
                                 R = a.room2
@@ -142,6 +146,148 @@ class DroneFeed: #Like the "Scematic" class but for 3D rendering
                                 #Recurse this function on a door
                                 if arcS>0: #Arc size is not negative
                                     self.render(x,y,scale,ang2-90,R,a,surf,arcS,[((a.pos[0]+(a.size[0]/2))*scale)-x,((a.pos[1]+(a.size[1]/2))*scale)-y],AdA)
+
+class Model: #An object to reprisent a model
+    def __init__(self,LINK,polys):
+        self.__angle = 0 #Used to detect changes in angle
+        self.__LINK = LINK
+        self.__pos = [0,0] #Used to detect changes in position
+        self.__modelSize = [None,None,None,None] #Size of the actual model
+        self.__polys = [] #Vertices that are cached for rendering
+        if type(polys)==str:
+            self.__orig = LINK["models"][polys] #Pointer to the original model
+        else:
+            self.__orig = polys #Pointer to the original model
+        self.__Rang = 0 #Used to detect changes in view arc
+        self.__angle2 = 0 #Used to detect changes in the second view arc
+        self.__rotModl = [] #Vertices that are cached for further processing after rotation.
+        for a in self.__orig: #Build polygons
+            self.__polys.append(None)
+            self.__rotModl.append(None)
+            if self.__modelSize[0] is None:
+                self.__modelSize = [a[0]+0,a[1]+0,a[0]+0,a[1]+0]
+            if a[0]<self.__modelSize[0]:
+                self.__modelSize[0] = a[0]+0
+            if a[1]<self.__modelSize[1]:
+                self.__modelSize[1] = a[1]+0
+            if a[0]>self.__modelSize[2]:
+                self.__modelSize[2] = a[0]+0
+            if a[1]>self.__modelSize[3]:
+                self.__modelSize[3] = a[1]+0
+        if abs(self.__modelSize[0])>self.__modelSize[2]:
+            self.__modelSize[2] = abs(self.__modelSize[0])
+        elif self.__modelSize[2]>abs(self.__modelSize[0]):
+            self.__modelSize[0] = -self.__modelSize[2]
+        if abs(self.__modelSize[1])>self.__modelSize[3]:
+            self.__modelSize[3] = abs(self.__modelSize[1])
+        elif self.__modelSize[3]>abs(self.__modelSize[1]):
+            self.__modelSize[1] = -self.__modelSize[3]
+        if self.__modelSize[2]>self.__modelSize[3]:
+            self.__modelSize[3] = self.__modelSize[2]+0
+            self.__modelSize[1] = -self.__modelSize[3]
+        elif self.__modelSize[3]>self.__modelSize[2]:
+            self.__modelSize[2] = self.__modelSize[3]+0
+            self.__modelSize[0] = -self.__modelSize[2]
+        self.__modelSize[0]-=1
+        self.__modelSize[1]-=1
+        self.__modelSize[2]+=1
+        self.__modelSize[3]+=1
+        self.__size = list(self.__LINK["main"].get_size()) #Get the size of the screen
+        self.__DIV = math.sqrt((self.__size[0]**2)+(self.__size[1]**2))/2.5 #Divide amount
+        self.__updateRotate(0) #Fill polygon rotation list
+        self.__updateModel(0,0,0,None,1,ARC_SIZE) #Fill render polygon list
+    def __updateRotate(self,angle): #Rotates all the vertices by an angle
+        for i,a in enumerate(self.__orig): #Go through all vertices of the original model
+            ang = math.atan2(a[0],a[1]) #Find angle towards center
+            dist = math.sqrt((a[0]**2)+(a[1]**2)) #Find distance towards center
+            ang += angle/180*math.pi #Rotate vertex around center
+            self.__rotModl[i] = [math.sin(ang)*dist,math.cos(ang)*dist,a[2],a[3]] #Save the vertex
+    def __updateModel(self,x,y,Rang,angle2,scale,arcSiz): #Hide verticies that are not in a view arc
+        for i,a in enumerate(self.__rotModl): #Go through all the vertices of the rotated vertices list
+            MULT = 1+((a[2]*scale)/self.__DIV)
+            PS = [((a[0]*scale)-((self.__size[0]/2)-x))*MULT,((a[1]*scale)-((self.__size[1]/2)-y))*MULT]
+            if Rang is None:
+                InA = True
+            else:
+                InA = insideArc([PS[0]+(self.__size[0]/2),PS[1]+(self.__size[1]/2)],[self.__size[0]/2,self.__size[1]/2],Rang,arcSiz)
+            if not angle2 is None: #Second angle detected
+                InA = InA and insideArc([PS[0]+(self.__size[0]/2),PS[1]+(self.__size[1]/2)],[self.__size[0]/2,self.__size[1]/2],angle2,arcSiz)
+            self.__polys[i] = [a[0]+0,a[1]+0,a[2]+0,a[3],InA]
+    def __render(self,x,y,angle,scale,surf,col=(255,255,255),Rang=None,angle2=None,arcSiz=ARC_SIZE): #Render the model to a surface
+        if arcSiz==-1:
+            arcSiz = ARC_SIZE
+        #Update all new data with the data inside this class
+        if Rang is None:
+            self.__Rang = None
+        else:
+            self.__Rang = Rang+0
+        if angle2 is None:
+            self.__angle2 = None
+        else:
+            self.__angle2 = angle2+0
+        self.__pos = [x+0,y+0]
+
+        for a in self.__polys: #Go through every vertex of the model
+            if a[4] or Rang is None:
+                MULT = 1+((a[2]*scale)/self.__DIV) #Z multiplier of current vertex
+                PS = [((a[0]*scale)-((self.__size[0]/2)-x))*MULT,((a[1]*scale)-((self.__size[1]/2)-y))*MULT] #Vertex position before rendering to screen and without scaling
+                lSIZ = round(1*(a[2]/20)*scale)
+                if lSIZ<=0:
+                    lSIZ = 1
+                for b in a[3]: #Go through every vertex attached to this vertex
+                    if self.__polys[b][4] or Rang is None: #Inside arc (or just true when there is no arc)
+                        MULT2 = 1+((self.__polys[b][2]*scale)/self.__DIV) #Z multiplier for attached vertex
+                        PSRaw = [((self.__polys[b][0]*scale)-((self.__size[0]/2)-x))*MULT2,((self.__polys[b][1]*scale)-((self.__size[1]/2)-y))*MULT2] #Vertex position of attached vertex without scaling
+                        pygame.draw.line(surf,col,[PS[0]+(self.__size[0]/2),PS[1]+(self.__size[1]/2)],[PSRaw[0]+(self.__size[0]/2),PSRaw[1]+(self.__size[1]/2)],lSIZ) #Draw a line from vertex to attached vertex
+    def __CheckIn(self,point,x,y,angle,scale,Rang,angle2,arcSiz): #Returns true if a point is inside the render box of this entity
+        PS = [(point[0]*scale)-((self.__size[0]/2)-x),(point[1]*scale)-((self.__size[1]/2)-y)] #Vertex position before rendering to screen and without scaling
+        if Rang is None:
+            InA = True
+        else:
+            InA = insideArc([PS[0]+(self.__size[0]/2),PS[1]+(self.__size[1]/2)],[self.__size[0]/2,self.__size[1]/2],Rang,arcSiz)
+        if not angle2 is None: #Second angle detected
+            InA = InA and insideArc([PS[0]+(self.__size[0]/2),PS[1]+(self.__size[1]/2)],[self.__size[0]/2,self.__size[1]/2],angle2,arcSiz)
+        return InA
+    def render(self,x,y,angle,scale,surf,col=(255,255,255),Rang=None,angle2=None,arcSiz=ARC_SIZE):
+        UL = self.__CheckIn([self.__modelSize[0],self.__modelSize[1]],x,y,angle,scale,Rang,angle2,arcSiz)
+        UR = self.__CheckIn([self.__modelSize[2],self.__modelSize[1]],x,y,angle,scale,Rang,angle2,arcSiz)
+        DR = self.__CheckIn([self.__modelSize[0],self.__modelSize[3]],x,y,angle,scale,Rang,angle2,arcSiz)
+        DL = self.__CheckIn([self.__modelSize[2],self.__modelSize[3]],x,y,angle,scale,Rang,angle2,arcSiz)
+        if self.__LINK["DEVDIS"]: #Draw model bounding box
+            PS = [(self.__modelSize[0]*scale)-((self.__size[0]/2)-x),(self.__modelSize[1]*scale)-((self.__size[1]/2)-y)] #Vertex position before rendering to screen and without scaling
+            PS2 = [(self.__modelSize[2]*scale)-((self.__size[0]/2)-x),(self.__modelSize[3]*scale)-((self.__size[1]/2)-y)] #Vertex position before rendering to screen and without scaling
+            pygame.draw.rect(surf,(255,0,255),[PS[0]+(self.__size[0]/2),PS[1]+(self.__size[1]/2),PS2[0]-PS[0],PS2[1]-PS[1]],1)
+        if angle!=self.__angle: #Has the model changed angle
+            self.__angle = angle + 0
+            self.__updateRotate(angle)
+            self.__updateModel(x,y,Rang,angle2,scale,arcSiz)
+        if Rang!=self.__Rang or angle2!=self.__angle2 or [x,y]!=self.__pos: #Has the model changed view arc or position.
+            if not (UL and UR and DR and DL) and (UL or UR or DR or DL):
+                self.__updateModel(x,y,Rang,angle2,scale,arcSiz)
+        #Check if the model is inside the box
+        if UL and UR and DR and DL:
+            self.__render(x,y,None,scale,surf,col,None,None,arcSiz)
+        elif UL or UR or DR or DL: #Model can render
+            self.__render(x,y,angle,scale,surf,col,Rang,angle2,arcSiz) #Render the model
+
+def distort(surf,amo,dead=False): #Distorts a surface
+    s = pygame.PixelArray(surf)
+    sx,sy = surf.get_size()
+    for i in range(amo): #Transport random segments on the Y axis to anouther
+        siz = random.randint(1,20)
+        rp = random.randint(0,sy-siz)
+        rp2 = random.randint(0,sy-siz)
+        s[0:sx,rp:rp+siz] = s[0:sx,rp2:rp2+siz]
+    if dead: #Dead glitching effect
+        for i in range(0,5): #Transport random segments on the Y axis to a random X axis
+            ry = random.randint(40,280)%sy
+            rp = random.randint(0,sy-ry)
+            rlen = random.randint(80,sx-160)
+            rx = random.randint(80,sx-rlen-80)
+            rm = random.randint(-80,80)
+            s[rx:rx+rlen,rp:rp+ry] = s[rx+rm:rx+rlen+rm,rp:rp+ry]
+
+    return surf
 
 def openModel(filePath): #Opens a 3D model
     file = open(filePath,"r")
@@ -164,6 +310,7 @@ def openModel(filePath): #Opens a 3D model
     return verts
 def renderModel(model,x,y,angle,scale,surf,col=(255,255,255),Rang=None,angle2=None,arcSiz=ARC_SIZE): #Renders a 3D model on the surface
     #Algorithm will change in future, very inefficient atm.
+    #Depricated
     if arcSiz==-1:
         arcSiz = ARC_SIZE
     sx,sy = surf.get_size()
@@ -409,7 +556,7 @@ class CommandLine: #A command line interface with tabs
         #3: Upgrades
         #4: Is being attacked
         #5: (option) Drone object
-        self.tabs.append(["SCHEMATIC",[[">",[255,255,255]]],0,[],False]) #For the ship
+        self.tabs.append(["SCHEMATIC",[[">",[255,255,255],False]],0,[],False]) #For the ship
         self.activeTab = 0
     def settings(self,Tab,dmg=0,attacked=False,upgrades=None): #Change settings of a tab
         if Tab<0 or Tab>=len(self.tabs): #Check if tab is valid
@@ -419,21 +566,21 @@ class CommandLine: #A command line interface with tabs
             self.tabs[Tab][4] = attacked == True #Being attacked
             if upgrades!=None: #Check if any upgrades need changing
                 self.tabs[Tab][3] = upgrades
-    def addLine(self,line,colour,Tab=-1): #Adds a line with its colour to the command line
+    def addLine(self,line,colour,flash=False,Tab=-1): #Adds a line with its colour to the command line
         if Tab==-1: #Add command to current tab
             if self.activeTab>=0 and self.activeTab<len(self.tabs): #Check if current tab is valid
-                self.tabs[self.activeTab][1].append([line,colour])
+                self.tabs[self.activeTab][1].append([line,colour,flash,time.time()+FLASH_TIME])
                 if len(self.tabs[self.activeTab][1])>60:
                     self.tabs[self.activeTab][1].pop(0)
             else: #Display error
                 self.__LINK["errorDisplay"]("Active tab in command line is invalid!")
         elif Tab>=0 and Tab<len(self.tabs): #Check if given tab is valid
-            self.tabs[Tab][1].append([line,colour])
+            self.tabs[Tab][1].append([line,colour,flash,time.time()+FLASH_TIME])
             if len(self.tabs[Tab][1])>60:
                 self.tabs[Tab][1].pop(0)
         else: #Display an error
             self.__LINK["errorDisplay"]("Given tab does not exist "+str(Tab))
-    def replaceLast(self,line,col=None,tab=None): #Changes the text at the end of the current tab command line
+    def replaceLast(self,line,col=None,tab=None,flash=None): #Changes the text at the end of the current tab command line
         if tab is None:
             TAB = self.activeTab
         else:
@@ -442,6 +589,13 @@ class CommandLine: #A command line interface with tabs
             self.tabs[TAB][1][-1][0] = line
             if not col is None:
                 self.tabs[TAB][1][-1][1] = col
+            if not flash is None:
+                self.tabs[TAB][1][-1][2] = flash
+                if flash:
+                    if len(self.tabs[TAB][1][-1])==4:
+                        self.tabs[TAB][1][-1][3] = time.time()+FLASH_TIME
+                    else:
+                        self.tabs[TAB][1][-1].append(time.time()+FLASH_TIME)
         else: #Display an error
             self.__LINK["errorDisplay"]("Editing tab that doesen't exist "+str(TAB))
     def render(self,x,y,sizex,sizey,surf=None): #Render the command line
@@ -468,13 +622,18 @@ class CommandLine: #A command line interface with tabs
                 col = (0,0,0)
             pygame.draw.rect(surf,(0,0,0),[x+(i*80),y-19,70,20]) #Draw black rectangle to the box isn't see-through
             pygame.draw.rect(surf,col,[x+(i*80),y-19,70,20],2+(round(time.time()-int(time.time()))*int(a[4])*5)) #Draw border of tab
-            surf.blit(self.__LINK["font16"].render(a[0],16,(255,255,255)),(x+(i*80)+3,y-15)) #Draw name of tab
+            TX = a[0]+""
+            if len(a)!=5:
+                if a[5].settings["name"]!="Name":
+                    TX = a[5].settings["name"]
+            surf.blit(self.__LINK["font16"].render(TX,16,(255,255,255)),(x+(i*80)+3,y-15)) #Draw name of tab
             if len(a)!=5:
                 H = a[5].health/a[5].settings["maxHealth"]
                 if a[2]==2:
                     H = 0
-                pygame.draw.polygon(surf,(0,50,0),[ [x+(i*80),y-49], [x+(i*80)+70,y-49], [x+(i*80)+(70*H)+70,y-((71*H)+49)], [x+(i*80)+(70*H),y-((71*H)+49)] ])
-                pygame.draw.polygon(surf,(0,255,0),[ [x+(i*80),y-49], [x+(i*80)+70,y-49], [x+(i*80)+140,y-120], [x+(i*80)+70,y-120] ],2)
+                pygame.draw.polygon(surf,(0,50,0),[ [x+(i*80),y-49], [x+(i*80)+70,y-49], 
+                    [x+(i*80)+(100*H)+(HB_LENG-80),y-(((HB_LENG-50)*H)+49)], [x+(i*80)+((HB_LENG-50)*H),y-(((HB_LENG-50)*H)+49)] ])
+                pygame.draw.polygon(surf,(0,255,0),[ [x+(i*80),y-49], [x+(i*80)+70,y-49], [x+(i*80)+HB_LENG+20,y-HB_LENG], [x+(i*80)+HB_LENG-50,y-HB_LENG] ],2)
             for c,b in enumerate(a[3]):
                 if b.damage==0:
                     if b.used:
@@ -501,6 +660,12 @@ class CommandLine: #A command line interface with tabs
                 if i>len(self.tabs[self.activeTab][1]):
                     break
                 a = self.tabs[self.activeTab][1][-i]
+                col = (a[1][0]+0,a[1][1]+0,a[1][2]+0)
+                if a[2] and ((time.time()-int(time.time()))*2)%1>0.5: #Make text flash
+                    col = (col[0]*0.5,col[1]*0.5,col[2]*0.5)
+                if len(a)==4: #Stop text flashing after X amount of seconds
+                    if time.time()>a[3]:
+                        a[2] = False
                 #Text wrapping into a list
                 Split = a[0].split(" ")
                 Build = ""
@@ -515,7 +680,7 @@ class CommandLine: #A command line interface with tabs
                 words.reverse()
                 #Draw the text wrap list
                 for i2,b in enumerate(words):
-                    surf.blit(self.__LINK["font24"].render(b,16,a[1]),(X,Y))
+                    surf.blit(self.__LINK["font24"].render(b,16,col),(X,Y))
                     Y -= 18
                     if Y<y: #Going off the top of the command line window
                         break
@@ -529,11 +694,13 @@ class DebugServer: #This is a tkinter window that is used to debug the server an
         LINK["DEVDIS"] = True
         self.__main = pygame.display.set_mode([500,400]) #Make a pygame window
         files = os.listdir("content")
-        LINK["content"] = {}
+        LINK["content"] = {} #Images
+        LINK["models"] = {} #3D models
         for a in files:
             if a[-4:]==".png":
                 LINK["content"][a[:-4]] = pygame.image.load("content/"+a)
-                LINK["content"][a[:-4]].set_colorkey((0,0,0))
+            elif a[-4:]==".obj":
+                LINK["models"][a[:-4]] = openModel("content/"+a)
         LINK["cont"] = {} #This is used for storing "content" in LINK but is resized every frame.
         LINK["font24"] = pygame.font.Font("comandFont.ttf",24)
         LINK["font16"] = pygame.font.Font("comandFont.ttf",16)

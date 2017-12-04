@@ -12,6 +12,8 @@ class Main(base.Main):
         self.__inUse = False #Is the upgrade in use?
         self.__connectedInterface = None #The interface this upgrade is attached to
         self.hitFunction = self.InterfaceHit
+    def beingUsed(self): #Return True if the upgrade is in use (used for tutorial progression)
+        return not self.__connectedInterface is None
     def commandAllowed(self,com):
         spl = com.split(" ")
         if (spl[0]=="scan" or spl[0]=="defence") and self.__connectedInterface is None: #Requested to do an interface command but it this upgrade is not connected
@@ -46,19 +48,21 @@ class Main(base.Main):
         if Inter.powered: #Interface is powered still
             self.__connectedInterface = Inter
             self.used = True
-            self.LINK["outputCommand"]("Interface has the following commands:",(0,255,0))
+            self.LINK["outputCommand"]("Interface has the following commands:",(0,255,0),False)
             if Inter.settings["scan"]:
-                self.LINK["outputCommand"]("  scan - Scan a room",(0,255,0))
+                self.LINK["outputCommand"]("  scan - Scan a room",(0,255,0),False)
             if len(self.__connectedInterface.turrets)!=0:
-                self.LINK["outputCommand"]("  defence - turn ship turrets on/off",(0,255,0))
+                self.LINK["outputCommand"]("  defence - turn ship turrets on/off",(0,255,0),False)
             if not Inter.settings["scan"] and len(self.__connectedInterface.turrets)==0:
-                self.LINK["outputCommand"]("  <None found>",(0,255,0))
+                self.LINK["outputCommand"]("  <None found>",(0,255,0),False)
+            if not "inter" in self.LINK["hintDone"]:
+                self.LINK["hintDone"].append("inter")
     def loop(self,lag): #Event loop on this upgrade
         super().loop(lag)
         if not self.__connectedInterface is None: #Upgrade is currently in use and connected to an interface
             dist = math.sqrt( ((self.drone.pos[0]+(self.drone.size[0]/2)-(self.__connectedInterface.pos[0]+(self.__connectedInterface.size[0]/2)))**2) +
                             ((self.drone.pos[1]+(self.drone.size[1]/2)-(self.__connectedInterface.pos[1]+(self.__connectedInterface.size[1]/2)) )**2) )
-            if dist>45 or not self.__connectedInterface.powered: #Check distance to interface and disconnect if too far away
+            if dist>45 or not self.__connectedInterface.powered or not self.__connectedInterface.alive: #Check distance to interface and disconnect if too far away
                 self.__connectedInterface = None
     def doCommand(self,com,usrObj=None): #Runs a command on this upgrade (only if sucsessful)
         spl = com.split(" ")

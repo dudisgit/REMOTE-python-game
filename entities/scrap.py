@@ -13,7 +13,8 @@ class Main(base.Main):
         self.__inRoom = False #Is true if the scrap is inside a room
         self.size = [25,25]
         self.beingSucked = False #Make this entity suckable out of an airlock
-        self.__Rmodel = random.randint(1,11) #Render model
+        if LINK["multi"]!=2: #Is not a server
+            self.__rmodel = LINK["render"].Model(LINK,"floorScrap"+str(random.randint(1,11))) #Model to render
         self.hintMessage = "Scrap is used to reward players, use it like coins."
     def SaveFile(self): #Give all infomation about this object ready to save to a file
         return ["scrap",self.ID,self.pos]
@@ -31,14 +32,19 @@ class Main(base.Main):
     def SyncData(self,data): #Syncs the data with this scrap
         self.pos[0] = data["x"]
         self.pos[1] = data["y"]
+        self.discovered = data["D"]
     def GiveSync(self): #Returns the synced data for this scrap
         res = {}
         res["x"] = int(self.pos[0])+0
         res["y"] = int(self.pos[1])+0
+        res["D"] = self.discovered
         return res
     def loop(self,lag):
         if self.LINK["multi"]==1: #Client
-            self.SyncData(self.LINK["cli"].SYNC["e"+str(self.ID)])
+            if "e"+str(self.ID) in self.LINK["cli"].SYNC:
+                self.SyncData(self.LINK["cli"].SYNC["e"+str(self.ID)])
+            else:
+                self.REQUEST_DELETE = True
         elif self.LINK["multi"]==2: #Server
             self.LINK["serv"].SYNC["e"+str(self.ID)] = self.GiveSync()
         if self.LINK["multi"]!=1: #Is not a client
@@ -73,7 +79,7 @@ class Main(base.Main):
         if type(self.insideRoom(ents)) == bool: #Check if inside a room
             return "No room (scrap)"
         return False
-    def sRender(self,x,y,scale,surf=None,edit=False): #Render in scematic view
+    def sRender(self,x,y,scale,surf=None,edit=False,droneView=False): #Render in scematic view
         if surf is None:
             surf = self.LINK["main"]
         if edit:
@@ -91,4 +97,4 @@ class Main(base.Main):
         if surf is None:
             surf = self.LINK["main"]
         sx,sy = surf.get_size()
-        self.LINK["render"].renderModel(self.LINK["models"]["floorScrap"+str(self.__Rmodel)],x+(25*scale),y+(25*scale),0,scale/3,surf,SCRAP_COL,ang,eAng,arcSiz)
+        self.__rmodel.render(x+(25*scale),y+(25*scale),0,scale/3,surf,SCRAP_COL,ang,eAng,arcSiz)
