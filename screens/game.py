@@ -1,15 +1,15 @@
 #Main screen for drones
-import pygame, time, pickle, sys, socket, random
+import pygame, time, pickle, sys, socket, random, traceback
 import math #tempory
 
-VERSION = 0.1
+VERSION = 0.2
 
 SCROLL_SPEED = 4 #Scematic scroll speed
 CONSOLE_SIZE = [440,205] #Size of the console
 DRONE_VIEW_SCALE = 3 #Drone view zoom in
 DEF_RES = [1000,700] #Default reslution, this will be used to scale up the screen if required
 MESH_BLOCK_SIZE = 125 #Size of a single mesh block
-DEFAULT_COMMANDS = ["open","close","help","navigate","say","name","dock","swap","pickup","flag","info"] #Default commands other than upgrade ones
+DEFAULT_COMMANDS = ["open","close","help","navigate","say","name","dock","swap","pickup","flag","info","exit"] #Default commands other than upgrade ones
 HELP_COMS = {"navigate":"Navigate a drone to a room, \nUsage: navigate <DRONE NUMBER> <ROOM>",
             "open":"Open a door or airlock \nUsage: open <DOOR/AIRLOCK>",
             "close":"Close a door or airlock \nUsage: close <DOOR/AIRLOCK>",
@@ -77,12 +77,16 @@ class GameEventHandle: #Used to simulate and handle the events of the game world
         self.__lastTime = time.time() #Used to tackle lag
         self.mapSize = [0,0,0,0] #Size of the map
         self.drones = LINK["drones"] #All the drones used
+        self.__startDrones = len(self.drones)
+        self.__quiting = False #Is the user attempting to quit
+        self.exit = False #Should the game exit or not
         self.ship = LINK["shipEnt"] #The main ship of the map
         self.Mesh = {} #Used to speed up entitiy discovery, this is a 2D dictionary
         self.__IDMAX = -1
         LINK["mesh"] = self.Mesh #Set the global MESH to this classes one.
         LINK["create"] = self.createEnt #Create a new entity
         LINK["IDref"] = self.Ref
+        self.__LINK["scrapCollected"] = 0
     def createEnt(self,name,pos,*args): #Creates a new entity
         if name in self.__LINK["ents"]:
             if self.__LINK["multi"]==1: #Is a client
@@ -120,7 +124,11 @@ class GameEventHandle: #Used to simulate and handle the events of the game world
         self.__lastTime = time.time()
         rem = []
         for a in self.Map: # Loop through all objects and call their event loop
-            a.loop(lag)
+            try:
+                a.loop(lag)
+            except:
+                print("Failed to run loop on entity ID ",a.ID,a)
+                traceback.print_exc()
             if a.REQUEST_DELETE: #Entity is requesting to be deleted
                 rem.append(a)
         for a in rem: #Remove entities requesting to be deleted
@@ -250,8 +258,10 @@ class GameEventHandle: #Used to simulate and handle the events of the game world
                     self.drones.append(self.IDLINK[0-i])
                 else:
                     break
+            self.__LINK["drones"] = self.drones
             self.ship = self.IDLINK[-1] #Servers ship
             self.ship.room = self.IDLINK[-6] #Set the ships room to the servers one
+            self.ship.LR = self.ship.room.size[0]>self.ship.room.size[1]
         file.close()
         self.__LINK["shipEnt"] = self.ship
         self.__LINK["mesh"] = self.Mesh #Link the new MESH to the global one
@@ -326,6 +336,9 @@ class GameEventHandle: #Used to simulate and handle the events of the game world
             else: #Must be the server, broadcast to all users
                 for a in self.__LINK["serv"].users:
                     self.__LINK["serv"].users[a].sendTrigger("com",usrObj.name+": "+text[4:],-2,False,(255,153,0))
+                file = open("LOG.txt","a")
+                file.write("New user message "+str(usrObj.ip2)+"("+str(usrObj.name)+") said "+text[4:]+"\n")
+                file.close()
                 out = "NOMES" #Do not print the command out
         elif spl[0]=="name": #Change name for the current client
             if self.__LINK["multi"]==0:
@@ -336,9 +349,17 @@ class GameEventHandle: #Used to simulate and handle the events of the game world
                 out = "Invalid charicter entered '\\'"
             else: #Must be the server, broadcast to all users
                 if len(spl)>1:
-                    self.__LINK["serv"].SYNC[usrObj.ip2]["N"] = spl[1]
-                    usrObj.sendTrigger("setn",spl[1])
-                    out = "NOMES"
+                    for a in self.__LINK["serv"].users:
+                        if self.__LINK["serv"].SYNC[self.__LINK["serv"].users[a].ip2]["N"]==spl[1]:
+                            out = "User name has been taken"
+                            break
+                    else:
+                        self.__LINK["serv"].SYNC[usrObj.ip2]["N"] = spl[1]
+                        usrObj.sendTrigger("setn",spl[1])
+                        out = "NOMES"
+                        file = open("LOG.txt","a")
+                        file.write("New user namechange "+str(usrObj.ip2)+" to "+str(spl[1])+"\n")
+                        file.close()
                 else:
                     out = "No name supplied"
         elif spl[0]=="navigate": #Auto pilot a drone to a specific room
@@ -431,6 +452,19 @@ class GameEventHandle: #Used to simulate and handle the events of the game world
                 out = HELP_COMS[spl[1]]
             else:
                 out = "No such command"
+        elif spl[0]=="exit":
+            if not self.__quiting:
+                for a in self.drones:
+                    if a.findPosition()!=self.Ref["r1"]:
+                        out = "All drones are not in R1, are you sure you want to exit?"
+                        self.__quiting = True
+                        break
+                else:
+                    pass
+            else:
+                self.__quiting = False
+            if not self.__quiting:
+                self.exit = True
         elif len(spl)!=0: #Process the command as an upgrade
             if drone<0 or drone>=len(self.drones): #In scematic view
                 for drone in self.drones+[self.ship]:
@@ -467,6 +501,28 @@ class GameEventHandle: #Used to simulate and handle the events of the game world
                 else:
                     out = "Drone is disabled"
         return out,col
+    def getScore(self): #Returns the score for the player (usualy called when exiting)
+        Ents = self.Ref["r1"].EntitiesInside()
+        DroneReferenceObject = self.getEnt("drone")
+        UpgradeReferenceObject = self.getEnt("ShipUpgrade")
+        score = 0
+        #20 = A new drone
+        #15 = A ship upgrade
+        #50 = Fuel collected
+        for a in Ents:
+            if type(a)==DroneReferenceObject:
+                if a.ID>=0:
+                    score+=20
+            elif type(a)==UpgradeReferenceObject:
+                score+=15
+        score-=self.__startDrones-len(self.drones)
+        for a in self.drones:
+            if a.findPosition()!=self.Ref["r1"]:
+                score-=20
+        score+=self.__LINK["scrapCollected"]
+        score+=self.__LINK["fuelCollected"]*50
+        return score
+
 
 class Main: #Used as the screen object for rendering and interaction
     def __init__(self,LINK,tutorial=False):
@@ -498,9 +554,9 @@ class Main: #Used as the screen object for rendering and interaction
                 for b in range(0,len(a.settings["upgrades"])):
                     a.settings["upgrades"][b] = ["",0,-1]
             LINK["drones"][0].settings["upgrades"][0] = ["gather",0,-1]
-            LINK["drones"][0].settings["upgrades"][1] = ["motion",1,-1]
+            LINK["drones"][0].settings["upgrades"][1] = ["motion",0,-1]
             LINK["drones"][1].settings["upgrades"][0] = ["generator",0,-1]
-            LINK["drones"][2].settings["upgrades"][0] = ["interface",2,-1]
+            LINK["drones"][2].settings["upgrades"][0] = ["interface",0,-1]
             LINK["drones"][2].settings["upgrades"][1] = ["tow",0,-1]
             LINK["drones"][0].loadUpgrades()
             LINK["drones"][1].loadUpgrades()
@@ -540,6 +596,7 @@ class Main: #Used as the screen object for rendering and interaction
             self.__LINK["cli"].TRIGGER["cupg"] = self.__callUpgrade #Call an upgrade on a drone to work client-side (not recomended but used for menu's)
             self.__LINK["cli"].TRIGGER["mke"] = self.__Event.createEnt #Create a new entity in the map
             self.__LINK["cli"].TRIGGER["duc"] = self.__airTarget #Make a drone being sucked by an airlock
+            self.__LINK["cli"].TRIGGER["disc"] = self.__disconnect #Server disconencted user
             self.name = socket.gethostbyname(socket.gethostname())
             self.IP = nameIP(self.name)
             mapLoading = True
@@ -560,6 +617,10 @@ class Main: #Used as the screen object for rendering and interaction
                 if self.__LINK["multi"]==1:
                     self.__LINK["cli"].loop()
         print("Done")
+    def __disconnect(self,reason):
+        self.__fail[0] = True
+        self.__fail[4] = "Disconnected: "+reason
+        self.__LINK["cli"].close()
     def controller_key(self,typ): #Returns wether a button is pressed
         if self.__LINK["controller"] is None:
             return False
@@ -1252,7 +1313,7 @@ class Main: #Used as the screen object for rendering and interaction
             for event in kBuf: #Loop for return button pressed
                 if event.type == pygame.KEYDOWN:
                     if event.key == pygame.K_RETURN:
-                        print("EXIT")
+                        self.__LINK["loadScreen"]("mainMenu")
             return 0
         self.__changeEffect[1]+=lag*4 #Used to alpha overlay
         if self.__changeEffect[1]>=OVERLAY_OPASITY: #Next overlay
@@ -1331,7 +1392,7 @@ class Main: #Used as the screen object for rendering and interaction
                             self.currentDrone.selectControll(False,self.name) #Let drone free
                         self.currentDrone = None
                         self.__command.activeTab = len(self.__command.tabs)-1 #Goto the ships command line
-                    elif event.key >= 32 and event.key <= 126: #A key was pressed down for typing
+                    elif event.key >= 32 and event.key <= 126 and not event.key in [self.__LINK["controll"]["up"],self.__LINK["controll"]["down"],self.__LINK["controll"]["left"],self.__LINK["controll"]["right"]]: #A key was pressed down for typing
                         self.__typing += chr(event.key)
                         self.__hintTyping()
                     elif event.key == pygame.K_BACKSPACE: #Backspace
@@ -1343,9 +1404,15 @@ class Main: #Used as the screen object for rendering and interaction
                             self.__typing = self.__typingOut.lower()+" "
                             self.__typingOut = self.__typingOut.lower()+" "
                     elif event.key == pygame.K_RETURN: #Enter button was pressed
-                        self.doCommand(self.__typing)
-                        self.__typing = ""
-                        self.__typingOut = ""
+                        if self.__LINK["commandSelect"] and len(self.__typing)==0:
+                            if self.__controllerMenu[0]!=1:
+                                self.__controllerMenu[0] = 1
+                                self.__controllerMenu[1] = [self.getAllCommands(),0,[],0]
+                                self.__controllerChange["x"] = True
+                        else:
+                            self.doCommand(self.__typing)
+                            self.__typing = ""
+                            self.__typingOut = ""
                     elif event.key == pygame.K_UP and self.__isKeyDown(pygame.K_LCTRL):
                         self.__commandSelect += 1
                         if self.__commandSelect>=len(self.__commands):
@@ -1371,12 +1438,12 @@ class Main: #Used as the screen object for rendering and interaction
             self.__typing = self.__typing[:-1]
             self.__hintTyping()
         if self.__controllerMenu[0]!=0: #A menu is open
-            if self.controller_key("b"): #Back button/exit button
+            if self.controller_key("b") or self.__isKeyDown(pygame.K_BACKSPACE): #Back button/exit button
                 self.__controllerMenu[0] = 0
             if self.__controllerMenu[0]==1: #Command selecting
-                if self.controller_key("up")!=self.__controllerChange["up"] or (time.time()>self.__controllHold and self.__controllHold!=-1):
-                    self.__controllerChange["up"] = self.controller_key("up")==True
-                    if self.controller_key("up"): #Up button
+                if (self.controller_key("up") or self.__isKeyDown(self.__LINK["controll"]["up"]))!=self.__controllerChange["up"] or (time.time()>self.__controllHold and self.__controllHold!=-1):
+                    self.__controllerChange["up"] = self.controller_key("up") or self.__isKeyDown(self.__LINK["controll"]["up"])
+                    if self.controller_key("up") or self.__isKeyDown(self.__LINK["controll"]["up"]): #Up button
                         if len(self.__controllerMenu[1][2])==0: #Select previous command
                             self.__controllerMenu[1][1]-=1
                             if self.__controllerMenu[1][1]<0:
@@ -1389,11 +1456,11 @@ class Main: #Used as the screen object for rendering and interaction
                             self.__controllHold = time.time()+0.3
                         else:
                             self.__controllHold = time.time()+0.1
-                    elif not self.controller_key("down"):
+                    elif not self.controller_key("down") and not self.__isKeyDown(self.__LINK["controll"]["down"]):
                         self.__controllHold = -1
-                if self.controller_key("down")!=self.__controllerChange["down"] or (time.time()>self.__controllHold and self.__controllHold!=-1):
-                    self.__controllerChange["down"] = self.controller_key("down")==True
-                    if self.controller_key("down"): #Down button
+                if (self.controller_key("down") or self.__isKeyDown(self.__LINK["controll"]["down"]))!=self.__controllerChange["down"] or (time.time()>self.__controllHold and self.__controllHold!=-1):
+                    self.__controllerChange["down"] = self.controller_key("down") or self.__isKeyDown(self.__LINK["controll"]["down"])
+                    if self.controller_key("down") or self.__isKeyDown(self.__LINK["controll"]["down"]): #Down button
                         if len(self.__controllerMenu[1][2])==0: #Select next command
                             self.__controllerMenu[1][1]+=1
                             if self.__controllerMenu[1][1]>=len(self.__controllerMenu[1][0]):
@@ -1406,11 +1473,11 @@ class Main: #Used as the screen object for rendering and interaction
                             self.__controllHold = time.time()+0.3
                         else:
                             self.__controllHold = time.time()+0.1
-                    elif not self.controller_key("up"):
+                    elif not self.controller_key("up") and not self.__isKeyDown(self.__LINK["controll"]["up"]):
                         self.__controllHold = -1
-                if self.controller_key("x")!=self.__controllerChange["x"]: #Execute/select button
-                    self.__controllerChange["x"]=self.controller_key("x")==True
-                    if self.controller_key("x"):
+                if (self.controller_key("x") or self.__isKeyDown(pygame.K_RETURN))!=self.__controllerChange["x"]: #Execute/select button
+                    self.__controllerChange["x"]=self.controller_key("x") or self.__isKeyDown(pygame.K_RETURN)
+                    if self.controller_key("x") or self.__isKeyDown(pygame.K_RETURN):
                         PS = COMPARAMS[self.__controllerMenu[1][0][self.__controllerMenu[1][1]]]
                         if PS=="": #No paramiters given
                             self.doCommand(self.__controllerMenu[1][0][self.__controllerMenu[1][1]])
@@ -1421,7 +1488,7 @@ class Main: #Used as the screen object for rendering and interaction
                         else: #Initilize paramiter selection
                             self.__controllerMenu[1][2] = self.getObjs(PS)
                             self.__controllerMenu[1][3] = 0
-        elif self.scematic and not self.__isKeyDown(pygame.K_LCTRL) and len(self.force)==0: #Is currently in the scematic view
+        elif self.scematic and not self.__isKeyDown(pygame.K_LCTRL) and len(self.force)==0 and self.__controllerMenu[0]==0: #Is currently in the scematic view
             #Move the scematic view if the arrow keys are being held or pressed.
             sx,sy = self.__LINK["main"].get_size()
             if self.__isKeyDown(self.__LINK["controll"]["up"]) or self.controller_key("up"):
@@ -1449,7 +1516,7 @@ class Main: #Used as the screen object for rendering and interaction
                 self.scematic = True
                 self.__command.activeTab = len(self.__command.tabs)-1
                 self.reloadCommandline()
-            elif not self.__isKeyDown(pygame.K_LCTRL) and not self.__LINK["simpleMovement"] and len(self.force)==0:
+            elif not self.__isKeyDown(pygame.K_LCTRL) and not self.__LINK["simpleMovement"] and len(self.force)==0 and self.__controllerMenu[0]==0:
                 if not self.currentDrone.allowed: #Attempt to take controll as soon as the person using this drone stops controlling it.
                     self.currentDrone.selectControll(True,self.name)
                 if self.__isKeyDown(self.__LINK["controll"]["up"]) or self.controller_key("up"):
@@ -1476,8 +1543,16 @@ class Main: #Used as the screen object for rendering and interaction
                     mv = True
                 if mv:
                     self.currentDrone.go(lag)
-        if not self.__Event is None:
-            self.__Event.loop()
+        if self.__Event.exit:
+            self.__fail[0] = True
+            self.__fail[4] = "Your score is "+str(self.__Event.getScore())
+            self.__Event.exit = False
+        if not self.__Event is None and self.__LINK["currentScreen"]==self:
+            try:
+                self.__Event.loop()
+            except:
+                self.__LINK["errorDisplay"]("Failed to simulate world tick")
+                traceback.print_exc()
     def reloadCommandline(self): #Reloads all the drone/ship upgrades and infomation to the command line
         droneNums = []
         for a in self.__Event.drones:
@@ -1570,6 +1645,7 @@ class Main: #Used as the screen object for rendering and interaction
                     for x in range(0,int(sx/50)+1):
                         surf.blit(self.__LINK["content"]["gradient"],(x*50,Y))
         elif not self.currentDrone is None:
+            sx,sy = surf.get_size()
             drpos = [self.currentDrone.pos[0]*DRONE_VIEW_SCALE*scale,self.currentDrone.pos[1]*DRONE_VIEW_SCALE*scale] #Find the drones position in screen coordinates
             if self.__LINK["DEVDIS"]:
                 self.__LINK["render"].drawDevMesh(drpos[0]-(self.__LINK["reslution"][0]/2)+(25*scale),drpos[1]-(self.__LINK["reslution"][1]/2)+(25*scale),DRONE_VIEW_SCALE*scale,surf,self.__LINK) #DEVELOPMENT
@@ -1583,11 +1659,24 @@ class Main: #Used as the screen object for rendering and interaction
                 pygame.draw.rect(surf,(0,255,0),[(self.__controllSelect.pos[0]*DRONE_VIEW_SCALE*scale)-(drpos[0]-(self.__LINK["reslution"][0]/2)+(25*scale)),
                                                 (self.__controllSelect.pos[1]*DRONE_VIEW_SCALE*scale)-(drpos[1]-(self.__LINK["reslution"][1]/2)+(25*scale)),
                                                 self.__controllSelect.size[0]*DRONE_VIEW_SCALE*scale,self.__controllSelect.size[1]*DRONE_VIEW_SCALE*scale],12)
+            if not self.currentDrone.allowed: #Drone is being controlled by anouther player
+                fren = self.__LINK["font42"].render("Drone is being controlled by anouther player",16,(255,255,0))
+                sx2,sy2 = fren.get_size()
+                pygame.draw.rect(surf,(0,0,0),[int(sx/2)-int(sx2/2)-5,int(sy/4)-5,sx2+10,sy2+10])
+                pygame.draw.rect(surf,(0,255,0),[int(sx/2)-int(sx2/2)-5,int(sy/4)-5,sx2+10,sy2+10],2)
+                surf.blit(fren,(int(sx/2)-int(sx2/2),int(sy/4)))
+            if not self.currentDrone.alive: #Display text saying the drone is disabled when the drone is disabled
+                fren = self.__LINK["font42"].render("Drone is disabled",16,(255,0,0))
+                sx2,sy2 = fren.get_size()
+                pygame.draw.rect(surf,(0,0,0),[int(sx/2)-int(sx2/2)-5,int(sy/4)-5,sx2+10,sy2+10])
+                pygame.draw.rect(surf,(0,255,0),[int(sx/2)-int(sx2/2)-5,int(sy/4)-5,sx2+10,sy2+10],2)
+                surf.blit(fren,(int(sx/2)-int(sx2/2),int(sy/4)))
         if self.__LINK["DEVDIS"]:
             self.__LINK["render"].drawConnection(10,10,surf,self.__LINK)
         if not self.__loading[0] and not self.__fail[0]:
+            sx,sy = surf.get_size()
             self.__command.render(self.__reslution[0]-CONSOLE_SIZE[0]-20,self.__reslution[1]-CONSOLE_SIZE[1]-20,CONSOLE_SIZE[0],CONSOLE_SIZE[1],surf) #Render command line
-            if self.__typing!=self.__typingOut and self.__LINK["hints"]: #Hinting
+            if self.__typing!=self.__typingOut: #Hinting
                 surf.blit(self.__LINK["font24"].render("Press TAB to auto complete",16,(0,0,255)),[sx-CONSOLE_SIZE[0],sy-20])
         for a in self.force: #Upgrade force menues
             a[2](surf,list(surf.get_size()))

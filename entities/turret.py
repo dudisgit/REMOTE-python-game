@@ -144,7 +144,7 @@ class Main(base.Main):
                 self.__particle = self.LINK["render"].ParticleEffect(self.LINK,self.pos[0]+(self.size[0]/2),self.pos[1]+(self.size[1]/2),0,360,12,0.9,10,0.5,1.5,1)
                 self.__particle.renderParticle = self.__renderParticle
     def afterLoad(self): #Called when the map is first loaded
-        self.__room = self.findPosition()
+        self.__room = self.findPositionAbsolute()
         if not type(self.__room)==self.getEnt("room") or self.__room==-1:
             self.__room = None
     def GiveSync(self): #Returns the synced data for this drone

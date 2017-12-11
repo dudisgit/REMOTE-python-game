@@ -1,7 +1,7 @@
-import socket,select,pickle,time,render, os, importlib, sys, traceback
+import socket,select,pickle,time,render, os, importlib, sys, traceback,mapGenerator
 import entities.base as base
 
-VERSION = 0.1 #Version number, used so clients with incorrect versions cannot connect
+VERSION = 0.2 #Version number, used so clients with incorrect versions cannot connect
 
 TCP_port = 3746 #Port for serious data transfer, e.g. chat messages
 TCP_BUF_SIZE = 4046 #Receiving buffer size
@@ -89,6 +89,7 @@ class Player: #Class used to store a player
     def sendTCP(self,mes): #Add a TCP message to the buffer
         self.__buffer.append(mes)
     def loop(self): #Called continuesly
+        Fail = False
         if time.time()>self.__tickSend and len(self.updateSlow)==0: #Send the buffer to the user because its the users tick
             self.__tickSend = time.time()+(1/self.tick) #Reset the tick to next time
             if len(self.__buffer)!=0: #TCP messages
@@ -104,7 +105,10 @@ class Player: #Class used to store a player
                         break
                 for a in rem: #Removed the ones sending from the buffer, ready to be sent
                     self.__buffer.remove(a)
-                self.tsock.send(pickle.dumps(sending)) #Send the packet
+                try:
+                    self.tsock.send(pickle.dumps(sending)) #Send the packet
+                except:
+                    Fail = True
                 self.SendingBuffer[self.__IDSend] = sending[1:] #Add the a buffer so the user can request this packet if it doesen't arrive
                 self.__IDSend = (self.__IDSend + 1) % MAX_KEEP #Increase the ID for the next packet
             if len(self.__buffer2)!=0: #UDP messages
@@ -118,15 +122,24 @@ class Player: #Class used to store a player
                         break
                 for a in rem: #Removed the ones sending from the buffer, ready to be sent
                     self.__buffer2.remove(a)
-                self.tsock.send(pickle.dumps(sending)) #Send the packet
+                try:
+                    self.tsock.send(pickle.dumps(sending)) #Send the packet
+                except:
+                    Fail = True
         elif len(self.updateSlow)!=0 and time.time()>self.updateSlowTimer: #This will be ran initialy to send the SYNC dictionary to the user
             self.updateSlowTimer = time.time()+SLOW_UPDATE_SPEED
             if type(self.updateSlow[0])==list: #Send the message as a list
-                self.tsock.send(pickle.dumps([self.__IDSend]+self.updateSlow[0])) #Send the packet to the client
+                try:
+                    self.tsock.send(pickle.dumps([self.__IDSend]+self.updateSlow[0])) #Send the packet to the client
+                except:
+                    Fail = True
                 self.SendingBuffer[self.__IDSend] = self.updateSlow.pop(0) #Add the a buffer so the user can request this packet if it doesen't arrive
                 self.__IDSend = (self.__IDSend + 1) % MAX_KEEP #Increment the ID for the next message
             else:
-                self.tsock.send(pickle.dumps([self.__IDSend, self.updateSlow[0]])) #Send the packet as a list
+                try:
+                    self.tsock.send(pickle.dumps([self.__IDSend, self.updateSlow[0]])) #Send the packet as a list
+                except:
+                    Fail = True
                 self.SendingBuffer[self.__IDSend] = self.updateSlow.pop(0) #Add the a buffer so the user can request this packet if it doesen't arrive
                 self.__IDSend = (self.__IDSend + 1) % MAX_KEEP #Increment the ID for the next message
             if len(self.updateSlow)==0: #End of updating SYNC
@@ -135,7 +148,11 @@ class Player: #Class used to store a player
         if time.time()>self.__pingTime: #Ping the client
             self.__pingTime = time.time()+PING_INTERVAL
             self.__pingBefore = time.time()
-            self.tsock.send(pickle.dumps("p"))
+            try:
+                self.tsock.send(pickle.dumps("p"))
+            except:
+                Fail = True
+        return Fail
 
 def copyIter(lis): #Copies a list so the items are not pointers
     res = {}
@@ -230,6 +247,9 @@ class Server: #Class for a server
             self.users[sIP].tsock.close()
             self.users.pop(sIP)
             self.__tlist.remove(sock)
+    def reset(self): #Reset sync variables
+        self.__SYNCBefore = {}
+        self.SYNC = {}
     def getValue(self,path,currentList): #Returns the value at the specified path (path is a list)
         if type(currentList[path[0]])==dict and len(path)!=1:
             return self.getValue(path[1:],currentList[path[0]])
@@ -393,7 +413,9 @@ class Server: #Class for a server
         rem = []
         for a in self.users: #Loop to process all user packet interaction (sending)
             try: #Try to do an event loop on the user
-                self.users[a].loop()
+                if self.users[a].loop():
+                    self.users[a].tsock.close()
+                    rem.append(a)
             except BrokenPipeError: #Socket must be broken, disconect user
                 self.users[a].tsock.close()
                 rem.append(a)
@@ -547,20 +569,19 @@ def loadLINK(serv): #Loads all content
                 LINK["shipUp"][a[:-3]] = itm
     LINK["null"] = NULLENT
     LINK["drones"] = [] #Drone list of the players drones
-    for i in range(0,3):
+    for i in range(0,4):
         LINK["drones"].append(LINK["ents"]["drone"].Main(i*60,0,LINK,-2-i,i+1))
     LINK["drones"][0].settings["upgrades"][0] = ["gather",0,-1]
-    LINK["drones"][0].settings["upgrades"][1] = ["motion",1,-1]
-    LINK["drones"][0].settings["upgrades"][2] = ["pry",0,-1]
+    LINK["drones"][0].settings["upgrades"][1] = ["motion",0,-1]
     LINK["drones"][1].settings["upgrades"][0] = ["generator",0,-1]
-    LINK["drones"][2].settings["upgrades"][1] = ["interface",1,-1]
-    LINK["drones"][2].settings["upgrades"][2] = ["tow",0,-1]
+    LINK["drones"][2].settings["upgrades"][0] = ["interface",0,-1]
+    LINK["drones"][2].settings["upgrades"][1] = ["tow",0,-1]
     LINK["drones"][0].loadUpgrades() #Tempory
     LINK["drones"][1].loadUpgrades() #Tempory
     LINK["drones"][2].loadUpgrades() #Tempory
     
     LINK["shipEnt"] = LINK["ents"]["ship"].Main(0,0,LINK,-1)
-    #LINK["shipEnt"].settings["upgrades"][0] = ["remote power",0,-1]
+    LINK["shipEnt"].settings["upgrades"][0] = ["remote power",0,-1]
     #LINK["shipEnt"].settings["upgrades"][1] = ["surveyor",1,-1]
     LINK["shipEnt"].loadUpgrades()
     return LINK
@@ -576,7 +597,8 @@ class GameServer:
         self.LINK["serv"].TRIGGER["com"] = self.doCommand #Execute a command
         self.LINK["serv"].TRIGGER["mvu"] = self.__moveUpgrade #Move an upgade from one drone to anouther
         self.LINK["serv"].TRIGGER["sup"] = self.__swapUpgrade #Swap two upgrades in a drone, (used instead of two "self.__moveUpgrade" calls)
-        DEFMAP = "Full map.map" #Map to load (tempory)
+        DEFMAP = "ServGen.map" #Map to load (tempory)
+        mapGenerator.MapGenerator(self.LINK,7,"ServGen.map")
         self.mapName = DEFMAP
         if self.LINK["DEV"]:
             self.__rend = render.DebugServer(self.LINK)
@@ -617,6 +639,25 @@ class GameServer:
         else:
             TB = Tab
         self.broadCast("com","",TB,flash,[tex,col])
+    def startNewGame(self): #Tempory
+        mapGenerator.MapGenerator(self.LINK,7,"ServGen.map")
+        self.LINK = None
+        self.serv.reset()
+        self.LINK = loadLINK(self.serv)
+        self.LINK["serv"] = self.serv
+        self.LINK["serv"].newUser = self.userJoin
+        self.LINK["serv"].closeUser = self.userLeave
+        self.LINK["serv"].TRIGGER["com"] = self.doCommand #Execute a command
+        self.LINK["serv"].TRIGGER["mvu"] = self.__moveUpgrade #Move an upgade from one drone to anouther
+        self.LINK["serv"].TRIGGER["sup"] = self.__swapUpgrade #Swap two upgrades in a drone, (used instead of two "self.__moveUpgrade" calls)
+        self.serv.SYNC["V"] = VERSION #Server version
+        self.serv.SYNC["P"] = {} #Players
+        self.serv.SYNC["M"] = {} #Map
+        self.serv.SYNC["M"]["h"] = self.LINK["screens"]["game"].getMapMash("ServGen.map") #Map hash
+        self.serv.SYNC["M"]["n"] = "ServGen.map" #Map name
+        self.world = self.LINK["screens"]["game"].GameEventHandle(self.LINK) #The game world to simulate
+        self.world.open("ServGen.map") #Open the map in the world
+        self.LINK["world"] = self.world
     def doCommand(self,sock,command,drone): #Called when a user enteres a command into their command line
         pName = sock.getpeername()[0]
         usr = self.LINK["serv"].users[pName]
@@ -628,13 +669,20 @@ class GameServer:
     def userLeave(self,addr): #A user has left
         print("Connection closed ",addr)
         self.broadCast("com","User "+addr+" left",-2,False,(255,153,0)) #Broadcast that the user left
+        file = open("LOG.txt","a")
+        file.write("User left "+addr+"\n")
+        file.close()
     def userJoin(self,addr): #A new user has joined
         mapEnts = self.getAllMapEnts()
         for a in mapEnts:
             self.LINK["serv"].users[addr].updateSlow.append(["tdsnd",a])
         self.LINK["serv"].users[addr].updateSlow[0] = "l"+str(len(self.LINK["serv"].users[addr].updateSlow)) #For loading bar on users
+        self.LINK["serv"].users[addr].updateSlow.insert(0,["tpls",len(self.LINK["serv"].users)-1]) #Send player count
         self.broadCast("com","User "+addr+" joined",-2,False,(255,153,0)) #Broadcast that the user joined
         print("New connection "+addr)
+        file = open("LOG.txt","a")
+        file.write("New user connected "+addr+"\n")
+        file.close()
     def getAllMapEnts(self): #Retruns all map entities (used for late downloading)
         res = [0]
         for a in self.world.Map:
@@ -646,12 +694,30 @@ class GameServer:
     def loop(self): #Game loop
         if time.time()>self.__updateTime: #Only update the world a certain amounts of times in a second
             self.__updateTime = time.time()+WORLD_UPDATE_TICK
-            self.world.loop() #Simulate world events
-            for a in self.world.drones:
-                a.discoverAround()
+            try:
+                self.world.loop() #Simulate world events
+            except:
+                print("Failed to run world loop within server")
+                traceback.print_exc()
+            try:
+                for a in self.world.drones:
+                    a.discoverAround()
+            except:
+                print("Discovering failed on drones")
+                traceback.print_exc()
+        if self.world.exit:
+            SCR = self.world.getScore()
+            for a in self.LINK["serv"].users:
+                self.LINK["serv"].users[a].sendTrigger("disc","Score: "+str(SCR))
+            self.world.exit = False
+            self.startNewGame()
         self.serv.loop() #Deal with server events and variable changes in SYNC
         if self.LINK["DEV"]:
-            self.__rend.render(self.world.Map)
+            try:
+                self.__rend.render(self.world.Map)
+            except:
+                print("Failed to render dev window")
+                traceback.print_exc()
     def downloadMap(self,UserSock): #Sends the current map to the specific user
         if not UserSock.getpeername()[0] in self.__MAP_DOWNLOAD: #Checking if the user isn't trying to request the map more than once
             self.__MAP_DOWNLOAD[UserSock.getpeername()[0]] = 0 #Begin sending the map
@@ -659,7 +725,7 @@ class GameServer:
 if __name__=="__main__": #If not imported the run as a server without a game running in the background.
     ERROR = enError
     IP = socket.gethostbyname(socket.gethostname())
-    IP = "127.0.0.1"
+    IP = "127.0.1.1"
     #IP = "10.42.0.1"
     Game = GameServer(IP)
     while True:

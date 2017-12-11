@@ -121,6 +121,8 @@ class Main(base.Main):
                 self.radBurst([random.randint(self.pos[0]+20,self.pos[0]+self.size[0]-20),random.randint(self.pos[1]+20,self.pos[1]+self.size[1]-20)],True)
                 self.LINK["outputCommand"]("Radiation is flooding "+self.reference()+" due to pipe rupture",(255,0,0),True)
                 self.__leakTime = -1
+        if self.LINK["allPower"]:
+            self.powered = True
     def loop(self,lag):
         if self.LINK["multi"]==1: #Client
             self.SyncData(self.LINK["cli"].SYNC["e"+str(self.ID)])
@@ -410,6 +412,8 @@ class Main(base.Main):
                 break
         else:
             self.__inRoom = False
+            return True
+        return False
     def giveError(self,ents): #Scans and gives an error out
         ins = self.findInsideOrNextTo(ents,[self])
         for ent in ins:

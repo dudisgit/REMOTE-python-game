@@ -626,7 +626,7 @@ class Main(object):
         if size is None:
             size = self.size
         for a in ents:
-            if type(a) == self.getEnt("room"):
+            if type(a) == self.getEnt("room") and a!=self:
                 #Checks all 4 corners of the entity to check if it is inside this one
                 ins = pos[0] >= a.pos[0] and pos[1] >= a.pos[1] and pos[0] < a.pos[0]+a.size[0] and pos[1] < a.pos[1]+a.size[1] #Top left
                 ins2 = pos[0]+size[0] > a.pos[0] and pos[1] > a.pos[1] and pos[0]+size[0] < a.pos[0]+a.size[0] and pos[1] < a.pos[1]+a.size[1] #Bottom right
@@ -756,7 +756,10 @@ class Main(object):
             ins2 = a.pos[0]+a.size[0] >= self.pos[0] and a.pos[1]+a.size[1] >= self.pos[1] and a.pos[0]+a.size[0] <= self.pos[0]+self.size[0] and a.pos[1]+a.size[1] <= self.pos[1]+self.size[1] #Bottom right
             ins3 = a.pos[0]+a.size[0] >= self.pos[0] and a.pos[1] >= self.pos[1] and a.pos[0]+a.size[0] <= self.pos[0]+self.size[0] and a.pos[1] <= self.pos[1]+self.size[1] #Top right
             ins4 = a.pos[0] >= self.pos[0] and a.pos[1]+a.size[1] >= self.pos[1] and a.pos[0] <= self.pos[0]+self.size[0] and a.pos[1]+a.size[1] <= self.pos[1]+self.size[1] #Bottom left
-            if (ins or ins2 or ins3 or ins4) and not a in exceptions:
+            #Check if overlapping
+            ins5 = a.pos[1]>self.pos[1] and a.pos[1]<self.pos[1]+self.size[1] and a.pos[0]<self.pos[0] and a.pos[0]+a.size[0]>self.pos[0]
+            ins6 = a.pos[0]>self.pos[0] and a.pos[0]<self.pos[0]+self.size[0] and a.pos[1]<self.pos[1] and a.pos[1]+a.size[1]>self.pos[1]
+            if (ins or ins2 or ins3 or ins4 or ins5 or ins6) and not a in exceptions:
                 res.append(a)
         return res
     def renderHint(self,surf,message,pos): #Render a hint box

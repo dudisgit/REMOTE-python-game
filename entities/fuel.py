@@ -34,7 +34,7 @@ class Main(base.Main):
         self.used = data["U"]
         self.discovered = data["D"]
     def afterLoad(self):
-        self.__curRoom = self.findPosition()
+        self.__curRoom = self.findPositionAbsolute()
         if self.pos[0]==self.__curRoom.pos[0]:
             self.__wallAngle = 0
         elif self.pos[0]+self.size[0]==self.__curRoom.pos[0]+self.__curRoom.size[0]:

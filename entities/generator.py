@@ -33,7 +33,7 @@ class Main(base.Main):
         self.pos = data[2]
         self.settings["god"] = data[3]
     def afterLoad(self):
-        self.__curRoom = self.findPosition()
+        self.__curRoom = self.findPositionAbsolute()
     def SyncData(self,data): #Syncs the data with this drone
         self.active = data["O"]
         self.alive = data["A"]
@@ -51,7 +51,7 @@ class Main(base.Main):
             self.LINK["serv"].SYNC["e"+str(self.ID)] = self.GiveSync()
         if not self.alive:
             self.active = False
-        if self.LINK["multi"]!=1: #Is not a client, single player or server
+        if self.LINK["multi"]!=1 and type(self.__curRoom)==self.getEnt("room"): #Is not a client, single player or server
             if self.__curRoom.air != self.__isVac and self.alive:
                 self.__isVac = self.__curRoom.air == True
                 if not self.__isVac and random.randint(0,100)<RANDOM_DIE and not self.settings["god"]: #Destroy the generator

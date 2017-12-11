@@ -33,7 +33,7 @@ class Main(base.Main):
             self.settings["upgrades"].append(["",0,-1])
         self.colisionType = 1 #Circle colision
         self.beingAttacked = False #Is the drone currently being attacked?
-        self.__controller = "" #The player controlling the drone
+        self.controller = "" #The player controlling the drone
         self.__hullRotate = 0 #Rotation of the drones hull when in model 3
         self.allowed = True #Allowed to controll drone (client side)
         self.upgrades = [] #Upgrade objects inside the drone.
@@ -72,6 +72,7 @@ class Main(base.Main):
         if type(RM)!=-1 and self.ID<0: #Drone is in room and is valid
             ENTS = RM.EntitiesInside()
             RM.discovered2 = True
+            RM.discovered = True
             for a in ENTS: #Go through every entity inside the room
                 if not a.discovered:
                     dist = math.sqrt( ((self.pos[0]-a.pos[0])**2) + ((self.pos[1]-a.pos[1])**2) )
@@ -192,7 +193,7 @@ class Main(base.Main):
             self.angle = data["a"]+0
         else: #Is a client/player
             self.discovered = data["D"]
-            if self.allowed and self.__controller==self.LINK["currentScreen"].name:
+            if self.allowed and self.controller==self.LINK["currentScreen"].name:
                 self.pos = [data["x"]+0,data["y"]+0]
                 self.angle = data["a"]+0
             else:
@@ -220,7 +221,7 @@ class Main(base.Main):
                     self.angle = int(cmath.phase(self.angle)) % 360 #Do the same before but unconvert it from a complex number
         self.settings["health"] = data["H"]+0
         self.aliveShow = data["L"] == True
-        self.__controller = data["C"]
+        self.controller = data["C"]
         if self.LINK["multi"]==1: #Is a client
             self.alive = self.aliveShow == True
             self.health = int(self.settings["health"])+0
@@ -231,7 +232,7 @@ class Main(base.Main):
         res["y"] = int(self.pos[1])+0
         res["a"] = int(self.angle)+0
         res["D"] = self.discovered
-        res["C"] = self.__controller
+        res["C"] = self.controller
         if not posOnly: #Sync all settings
             res["H"] = int(self.settings["health"])+0
             res["L"] = self.aliveShow == True
@@ -269,24 +270,24 @@ class Main(base.Main):
             self.forcePos = None
             self.changeMesh(bpos)
             self.applyPhysics()
-        if self.LINK["multi"]==2 and self.__controller!="": #Is server and drone is being controlled
+        if self.LINK["multi"]==2 and self.controller!="": #Is server and drone is being controlled
             for a in self.LINK["serv"].users:
-                if self.__controller==self.LINK["serv"].users[a].name:
+                if self.controller==self.LINK["serv"].users[a].name:
                     break
             else:
-                self.__controller = ""
+                self.controller = ""
         self.aliveShow = self.alive == True
         self.__forceRoom(lag)
     def selectControll(self,cont,name): #Called when this drone is taken controll of or not
         if cont and self.LINK["multi"] == 1: #Drone is active and game is running as a client
-            if self.__controller!="":
+            if self.controller!="":
                 self.allowed=False
             else:
-                self.__controller = name+""
+                self.controller = name+""
                 self.allowed = True
                 self.overide = True
         elif self.allowed:
-            self.__controller = ""
+            self.controller = ""
             self.overide = True
             self.allowed = True
     def loop(self,lag):
@@ -331,6 +332,15 @@ class Main(base.Main):
             self.changeMesh(bpos) #Move the drone to anouther MESH
             for a in self.upgrades+self.PERM_UPG:
                 a.clientLoop(lag)
+            if not self.controller == "": #Fixes bug with player controlling multiple drones
+                for a in self.LINK["drones"]:
+                    if a!=self and a.controller == self.controller:
+                        self.controller = ""
+                        self.allowed = False
+                        a.allowed = False
+                        a.controller = ""
+                        self.overide = True
+                        a.overide = True
         elif self.LINK["multi"]==0: #Singple player
             self.loop2(lag)
             if self.LINK["currentScreen"].currentDrone!=self:
@@ -414,7 +424,7 @@ class Main(base.Main):
         #Get all the upgrades availible
         adding = ["Empty"]
         for a in self.LINK["upgrade"]:
-            if a!="base":
+            if not a in ["base","swap","pickup","info"]:
                 adding.append(a)
         if len(self.__upgrades)>=3: #Decide if it should put the Combo box left or right
             self.__upgrades.append(self.LINK["screenLib"].ComboBox(105,((len(self.__upgrades)-3)*35)+75,self.LINK,100,adding))
@@ -446,7 +456,7 @@ class Main(base.Main):
         #Get all the possible entities
         adding = ["Empty"]
         for a in self.LINK["upgrade"]:
-            if not a in ["base","swap","pickup"]:
+            if not a in ["base","swap","pickup","info"]:
                 adding.append(a)
         for i,a in enumerate(self.settings["upgrades"]):
             self.__upgrades.append(self.LINK["screenLib"].ComboBox(5+(int(i/3)*100),(i*35)+75-(int(i/3)*105),self.LINK,100,adding))
@@ -593,11 +603,11 @@ class Main(base.Main):
         if surf is None:
             surf = self.LINK["main"]
         sx,sy = surf.get_size()
-        if self.__controller!="":
-            if self.__controller==self.LINK["currentScreen"].name: #Drone is this player and not others
-                tex = self.LINK["font24"].render(self.__controller,16,(0,255,0))
+        if self.controller!="":
+            if self.controller==self.LINK["currentScreen"].name: #Drone is this player and not others
+                tex = self.LINK["font24"].render(self.controller,16,(0,255,0))
             else: #Drone is other player
-                tex = self.LINK["font24"].render(self.__controller,16,(0,255,255))
+                tex = self.LINK["font24"].render(self.controller,16,(0,255,255))
             sx2,sy2 = tex.get_size()
             surf.blit(tex,(x+(self.size[0]*scale*0.5)-(sx2/2),y-(20*scale)))
         ang = (self.angle+90)/180*math.pi #Used for centering model since its center is not exact

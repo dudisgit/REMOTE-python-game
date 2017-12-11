@@ -44,7 +44,7 @@ class Main(base.Main):
     def scanShip(self): #Scans all the ships rooms, like a survayor
         self.LINK["showRooms"] = True
     def afterLoad(self):
-        self.__curRoom = self.findPosition()
+        self.__curRoom = self.findPositionAbsolute()
         if self.pos[0]==self.__curRoom.pos[0]:
             self.__wallAngle = 0
         elif self.pos[0]+self.size[0]==self.__curRoom.pos[0]+self.__curRoom.size[0]:
@@ -55,18 +55,19 @@ class Main(base.Main):
             self.__wallAngle = 3
     def loop2(self,lag): #Ran if single player or server
         self.powered = False #Make the interface unpowered
-        if len(self.settings["power"])==0: #Check if either room is powered
+        if len(self.settings["power"])==0 and type(self.__curRoom)==self.getEnt("room"): #Check if either room is powered
             self.powered = self.__curRoom.powered == True #Base interface's power on the room its in
         else: #Check all power connections if this interface is powered
             for a in self.settings["power"]: #Go through all generators this upgrade is linked to to find one that is active
                 if a.active:
                     self.powered = True
                     break
-        if self.__curRoom.air != self.__isVac and self.alive:
-            self.__isVac = self.__curRoom.air == True
-            if not self.__isVac and random.randint(0,100)<RANDOM_DIE and not self.settings["god"]: #Destroy the generator
-                self.alive = False
-                self.LINK["outputCommand"]("Interface in "+self.__curRoom.reference()+" has been destroyed due to outside exposure.",(255,0,0),False)
+        if type(self.__curRoom)==self.getEnt("room"):
+            if self.__curRoom.air != self.__isVac and self.alive:
+                self.__isVac = self.__curRoom.air == True
+                if not self.__isVac and random.randint(0,100)<RANDOM_DIE and not self.settings["god"]: #Destroy the generator
+                    self.alive = False
+                    self.LINK["outputCommand"]("Interface in "+self.__curRoom.reference()+" has been destroyed due to outside exposure.",(255,0,0),False)
     def SyncData(self,data): #Syncs the data with this interface
         self.alive = data["A"]
         self.discovered = data["D"]

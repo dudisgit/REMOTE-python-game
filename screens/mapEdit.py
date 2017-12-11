@@ -477,6 +477,8 @@ class Main:
                 except:
                     self.__LINK["errorDisplay"]("Failed to run open function",sys.exc_info())
                 self.FileMenuEnd()
+    def __BackToMenu(self,*ev):
+        self.__LINK["loadScreen"]("mainMenu")
     def FileMenuInit(self,*args): #Initialize file menu
         if self.__active != -1:
             self.__ents[self.__active].rightUnload()
@@ -486,7 +488,7 @@ class Main:
         self.__SaveButton = self.__LINK["screenLib"].Button(80,10,self.__LINK,"Save",self.SaveFileButton)
         self.__ResetButton = self.__LINK["screenLib"].Button(150,10,self.__LINK,"Reset scroll position",self.FileMenuReset)
         self.__BackButton = self.__LINK["screenLib"].Button(400,10,self.__LINK,"Back to editor",self.FileMenuEnd)
-        self.__MenuButton = self.__LINK["screenLib"].Button(570,10,self.__LINK,"Back to main menu")
+        self.__MenuButton = self.__LINK["screenLib"].Button(570,10,self.__LINK,"Back to main menu",self.__BackToMenu)
         self.__NameInput = self.__LINK["screenLib"].TextEntry(10,50,self.__LINK,self.__reslution[0]-25,False,"File name")
         self.__MapSelect = self.__LINK["screenLib"].Listbox(10,130,self.__LINK,[self.__reslution[0]-25,self.__reslution[1]-145])
         self.__WarnLabel = self.__LINK["screenLib"].Label(10,90,self.__LINK,"File menu")

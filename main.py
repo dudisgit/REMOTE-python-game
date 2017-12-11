@@ -1,13 +1,13 @@
 name = __name__ == "__main__"
 if name:
     print("Importing modules")
-import pygame,client,time,screenLib,math,os,sys,render,importlib,traceback
+import pygame,client,time,screenLib,math,os,sys,render,importlib,traceback,mapGenerator
 if name: #Is the main thread
     print("Loading pygame")
     pygame.init()
     print("Building varaibles")
     FPS = 60 #Default FPS
-    RESLUTION = [1000,700]
+    RESLUTION = [1200,700]
 
     def ERROR(*info): #This function is called whenever an unexspected error occures. It is mainly so it can be displayed on the screen without the game crashing
         print("Err: ",info) #Tempory
@@ -17,11 +17,11 @@ if name: #Is the main thread
             sys.exit(1)
     def ADDLOG(mes): #Used to show logs (used for console)
         print(mes)
-    def loadScreen(name): #Loads a screen
+    def loadScreen(name,*args): #Loads a screen
         global currentScreen
         if name in LINK["screens"]: #Screen exists
             ADDLOG("Loading screen - "+name)
-            currentScreen = LINK["screens"][name].Main(LINK)
+            currentScreen = LINK["screens"][name].Main(LINK,*args)
             ADDLOG("Loaded!")
             LINK["currentScreen"] = currentScreen
         else:
@@ -41,6 +41,7 @@ if name: #Is the main thread
     LINK["particles"] = True #Enable/disable particle effects
     LINK["showRooms"] = False #Used by survayor upgade to show rooms and doors
     LINK["popView"] = False #Cause rooms to pop into view (reduced CPU load but ajasent rooms arn't rendered)
+    LINK["client"] = client
     LINK["hintDone"] = [] #List of hints that are shown
 
     pygame.joystick.init()
@@ -60,6 +61,7 @@ if name: #Is the main thread
     LINK["font24"] = pygame.font.Font("comandFont.ttf",24)
     LINK["font16"] = pygame.font.Font("comandFont.ttf",16)
     LINK["font42"] = pygame.font.Font("comandFont.ttf",42)
+    LINK["font128"] = pygame.font.Font("comandFont.ttf",128)
     #Controlls (can be changed)
     LINK["controll"] = {} #Used to let controlls for the game be changable
     LINK["controll"]["up"] = pygame.K_UP #Up arrow key
@@ -80,7 +82,8 @@ if name: #Is the main thread
     LINK["backgroundStatic"] = True #Enable/disable background static
     LINK["viewDistort"] = True #Drone view distortion
     LINK["names"] = ["Jeff","Tom","Nathon","Harry","Ben","Fred","Timmy","Potter","Stranger"] #Drone names
-    LINK["simpleMovement"] = True #Simplified movement
+    LINK["simpleMovement"] = False #Simplified movement
+    LINK["commandSelect"] = False #Command selecting window
     LINK["multi"] = 0 #Is the game currently multiplayer, -1 = Map editor, 0 = Single player, 1 = Client, 2 = Server
 
     print("Loading content")
@@ -154,31 +157,25 @@ if name: #Is the main thread
     LINK["null"] = NULLENT
     print("Initilazing drones")
     LINK["drones"] = [] #Drone list of the players drones
-    for i in range(0,3):
+    for i in range(0,4):
         LINK["drones"].append(LINK["ents"]["drone"].Main(i*60,0,LINK,-2-i,i+1))
     LINK["drones"][0].settings["upgrades"][0] = ["motion",0,-1]
-    LINK["drones"][0].settings["upgrades"][1] = ["pry",1,-1]
-    LINK["drones"][0].settings["upgrades"][2] = ["gather",1,-1]
-    LINK["drones"][1].settings["upgrades"][0] = ["lure",0,-1]
-    LINK["drones"][1].settings["upgrades"][1] = ["generator",1,-1]
-    LINK["drones"][1].settings["upgrades"][2] = ["speed",1,-1]
+    LINK["drones"][0].settings["upgrades"][1] = ["gather",0,-1]
+    LINK["drones"][1].settings["upgrades"][0] = ["generator",0,-1]
     LINK["drones"][2].settings["upgrades"][0] = ["interface",0,-1]
     LINK["drones"][2].settings["upgrades"][1] = ["tow",0,-1]
-    LINK["drones"][2].settings["upgrades"][2] = ["stealth",0,-1]
     LINK["drones"][0].loadUpgrades()
     LINK["drones"][1].loadUpgrades()
     LINK["drones"][2].loadUpgrades()
     LINK["shipEnt"] = LINK["ents"]["ship"].Main(0,0,LINK,-1)
-    LINK["shipEnt"].settings["upgrades"][0] = ["remote power",1,-1]
-    LINK["shipEnt"].settings["upgrades"][1] = ["overload",1,-1]
+    LINK["shipEnt"].settings["upgrades"][0] = ["remote power",0,-1]
     LINK["shipEnt"].loadUpgrades()
 
-    if LINK["multi"]==1: #Client
+    if LINK["multi"]==1: #Client (tempory)
         CLI = client.Client("127.0.0.1",3746,LINK["threading"])
         LINK["cli"] = CLI
-    loadScreen("game") #Load the main game screen (TEMPORY)
-    if LINK["multi"]!=1:
-        currentScreen.open("Testing map.map") #Open the map for the game (TEMPORY)
+    loadScreen("mainMenu") #Load the main game screen
+    #currentScreen.open("ServGen.map")
     print("Going into event loop")
     run = True
     lastTime = time.time()-0.1
@@ -198,7 +195,7 @@ if name: #Is the main thread
         mouseRaw = pygame.mouse.get_pressed()
         mouse = [mouseRaw[0]]+list(pygame.mouse.get_pos())+[mouseRaw[1],mouseRaw[2]]
         if LINK["multi"]==1:
-            CLI.loop()
+            LINK["cli"].loop()
         if not currentScreen is None:
             try:
                 currentScreen.loop(mouse,KeyEvent,lag)
