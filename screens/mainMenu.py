@@ -23,12 +23,15 @@ class Main:
         self.__maps = [0,0,random.randint(0,360),0] #Map position, angle and time storage
         self.__mapSim = None
         self.__backSurf = pygame.Surface(LINK["main"].get_size()) #Pygame surface to be used for effects when rendering the map
+        self.__IPType = ""
         self.__screen = 0
         #0: Main screen
         #1: Server select
         #2: Options
+        #3: Reslution changing
+        #4: IP address entering screen
         self.__sel = 0
-        self.__opts = ["Take tutorial","Play game","Play multiplayer","Options (not programmed)","Map designer","Quit"]
+        self.__opts = ["Take tutorial","Play game","Play multiplayer","Options","Map designer","Quit"]
         sx,sy = LINK["main"].get_size()
         self.__LINK["multi"] = 0
         #sx = 1000
@@ -134,8 +137,15 @@ class Main:
                         elif self.__sel==2: #Play multiplayer
                             self.__screen = 1
                             self.__sel = 0
-                            self.__opts = SERVERS.copy()+["Back"]
+                            self.__opts = SERVERS.copy()+["Direct connect","Back"]
                             self.__servInit()
+                        elif self.__sel==3: #Options menu
+                            self.__screen = 2
+                            self.__sel = 0
+                            self.__opts = [[self.__LINK["showFPS"],"FPS counter"],[self.__LINK["particles"],"Particles"],[self.__LINK["floorScrap"],"Floor scrap"],
+                                           [self.__LINK["popView"],"pop view (make rooms pop into view, reduced CPU)"],[self.__LINK["simpleModels"],"Simplified 3D models"],
+                                           [self.__LINK["backgroundStatic"],"Background static"],[self.__LINK["viewDistort"],"View distortion effects"],
+                                           [self.__LINK["hints"],"Hints"],[self.__LINK["threading"],"Multiplayer threading"],"Reslution","Back"]
                         elif self.__sel==4: #Map editor
                             self.__restoreDefaults()
                             self.__LINK["loadScreen"]("mapEdit")
@@ -147,14 +157,76 @@ class Main:
                         if spl[0]=="Back": #Go back to main menu
                             self.__sel = 0
                             self.__screen = 0
-                            self.__opts = ["Take tutorial","Play game","Play multiplayer","Options (not programmed)","Map designer","Quit"]
+                            self.__opts = ["Take tutorial","Play game","Play multiplayer","Options","Map designer","Quit"]
+                        elif self.__opts[self.__sel]=="Direct connect": #Go into direct connection window
+                            self.__sel = 0
+                            self.__screen = 4
+                            self.__opts = ["Connect","Back"]
                         elif int(spl[1])<4: #Server is not full
                             self.__restoreDefaults()
                             self.displayLoadingScreen()
-                            self.__LINK["cli"] = self.__LINK["client"].Client(SERVERS[self.__sel],3746,False)
+                            self.__LINK["cli"] = self.__LINK["client"].Client(SERVERS[self.__sel],3746,self.__LINK["threading"])
                             self.__LINK["multi"] = 1 #Set to client mode
                             self.__LINK["loadScreen"]("game")
                             return None
+                    elif self.__screen==2: #In the options menu
+                        if type(self.__opts[self.__sel])==list:
+                            self.__opts[self.__sel][0] = not self.__opts[self.__sel][0]
+                        if self.__sel==0: #FPS counter
+                            self.__LINK["showFPS"] = self.__opts[0][0]==True
+                        elif self.__sel==1: #Particle effects
+                            self.__LINK["particles"] = self.__opts[1][0]==True
+                        elif self.__sel==2: #Floor scrap
+                            self.__LINK["floorScrap"] = self.__opts[2][0]==True
+                        elif self.__sel==3: #Pop view
+                            self.__LINK["popView"] = self.__opts[3][0]==True
+                        elif self.__sel==4: #Simple models
+                            self.__LINK["simpleModels"] = self.__opts[4][0]==True
+                        elif self.__sel==5: #Background staitc
+                            self.__LINK["backgroundStatic"] = self.__opts[5][0]==True
+                        elif self.__sel==6: #View distortion
+                            self.__LINK["viewDistort"] = self.__opts[6][0]==True
+                        elif self.__sel==7: #Hints
+                            self.__LINK["hints"] = self.__opts[7][0]==True
+                        elif self.__sel==8: #Threading
+                            self.__LINK["threading"] = self.__opts[8][0]==True
+                        elif self.__sel==9: #Change Reslution
+                            self.__screen=3
+                            self.__sel = 0
+                            self.__opts = ["1366x768","1920x1080","1440x900","1600x900","1280x1024","1536x864","1680x1050","1280x720","1360x768","2560x1440","1920x1200","1280x768","1024x600","1152x864","800x600","3840x2160","3440x1440","2560x1080","Back"]
+                        elif self.__sel==10: #Back
+                            self.__sel = 0
+                            self.__screen = 0
+                            self.__opts = ["Take tutorial","Play game","Play multiplayer","Options","Map designer","Quit"]
+                    elif self.__screen==3: #Reslution selecting screen
+                        if "x" in self.__opts[self.__sel]: #Change reslution of game
+                            spl = self.__opts[self.__sel].split("x")
+                            self.__LINK["reslution"] = [int(spl[0]),int(spl[1])]
+                            self.__LINK["main"] = pygame.display.set_mode([int(spl[0]),int(spl[1])]) #Remake the pygame window
+                        #Go back to options menu
+                        self.__screen = 2
+                        self.__sel = 0
+                        self.__opts = [[self.__LINK["showFPS"],"FPS counter"],[self.__LINK["particles"],"Particles"],[self.__LINK["floorScrap"],"Floor scrap"],
+                                        [self.__LINK["popView"],"pop view (make rooms pop into view, reduced CPU)"],[self.__LINK["simpleModels"],"Simplified 3D models"],
+                                        [self.__LINK["backgroundStatic"],"Background static"],[self.__LINK["viewDistort"],"View distortion effects"],
+                                        [self.__LINK["hints"],"Hints"],[self.__LINK["threading"],"Multiplayer threading"],"Reslution","Back"]
+                    elif self.__screen==4: #IP address entering
+                        if self.__sel==0: #Connect to server
+                            self.__restoreDefaults()
+                            self.displayLoadingScreen()
+                            self.__LINK["cli"] = self.__LINK["client"].Client(self.__IPType,3746,self.__LINK["threading"])
+                            self.__LINK["multi"] = 1 #Set to client mode
+                            self.__LINK["loadScreen"]("game")
+                            return None
+                        else: #Go back to main menu
+                            self.__sel = 0
+                            self.__screen = 0
+                            self.__opts = ["Take tutorial","Play game","Play multiplayer","Options","Map designer","Quit"]
+                elif self.__screen==4: #IP address entering
+                    if event.key == pygame.K_BACKSPACE:
+                        self.__IPType = self.__IPType[:-1]
+                    elif (event.key>=48 and event.key<=57) or event.key==46:
+                        self.__IPType = self.__IPType+chr(event.key)
                 self.__sel = self.__sel % len(self.__opts)
         #Scroll accross the map
         self.__maps[0]+=math.cos(self.__maps[2]/180*math.pi)*lag
@@ -193,10 +265,29 @@ class Main:
         surf.blit(self.__backSurf,(0,0)) #Render the final result of the background map onto the screen
         surf.blit(self.__title,((sx/2)-(sx2/2),(sy*0.2)-(sy2/2) )) #Render cached title surface
         mult = abs(math.cos(time.time()*3)) #Box flashing
-        for i,a in enumerate(self.__opts):
+        scroll = 0
+        if (sy*0.4)+(len(self.__opts)*45)>sy*0.8: #Too many options to display on screen
+            if (sy*0.4)+(self.__sel*45)>sy*0.6: #Selecting option is going off the screen
+                scroll = int((((sy*0.4)+(self.__sel*45))-(sy*0.6))/45) #Start at a few options before selection
+        for i,a in enumerate(self.__opts[scroll:]):
             pygame.draw.rect(surf,(0,0,0),[15,(sy*0.4)+(i*45)+1,330,35])
-            if i==self.__sel:
+            if i+scroll==self.__sel:
                 pygame.draw.rect(surf,(255*mult,255*mult,0),[15,(sy*0.4)+(i*45)+1,330,35],5)
             else:
                 pygame.draw.rect(surf,(0,255,0),[15,(sy*0.4)+(i*45)+1,330,35],2)
-            surf.blit(self.__LINK["font42"].render(a,16,(255,255,255)),(20,(sy*0.4)+(i*45)))
+            if type(a)==list: #Rendered option is a boolean option
+                col = (255,0,255)
+                if a[0]:
+                    col = (0,255,0)
+                else:
+                    col = (255,0,0)
+                pygame.draw.rect(surf,col,[20,(sy*0.4)+(i*45)+6,25,25])
+                surf.blit(self.__LINK["font42"].render(a[1],16,(255,255,255)),(50,(sy*0.4)+(i*45)))
+            else:
+                surf.blit(self.__LINK["font42"].render(a,16,(255,255,255)),(20,(sy*0.4)+(i*45)))
+        if self.__screen==4: #In IP entering screen
+            tex = self.__LINK["font42"].render(self.__IPType,16,(255,255,255))
+            sx2,sy2 = tex.get_size()
+            pygame.draw.rect(surf,(0,0,0),[(sx/2)-(sx2/2)-4,(sy*0.35)-4,sx2+8,sy2+8])
+            pygame.draw.rect(surf,(0,255*mult,0),[(sx/2)-(sx2/2)-4,(sy*0.35)-4,sx2+8,sy2+8],2)
+            surf.blit(tex,(int((sx/2)-(sx2/2)),int(sy*0.35)))

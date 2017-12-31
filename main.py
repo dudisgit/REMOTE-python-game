@@ -96,12 +96,12 @@ if name: #Is the main thread
     LINK["simpleModels"] = False #Enable/disable simple models
     LINK["hints"] = True #Enable game hints or not
     LINK["threading"] = False #Enable/disable cleint-side socket threading
-    LINK["backgroundStatic"] = True #Enable/disable background static
+    LINK["backgroundStatic"] = False #Enable/disable background static
     LINK["viewDistort"] = True #Drone view distortion
     LINK["names"] = ["Jeff","Tom","Nathon","Harry","Ben","Fred","Timmy","Potter","Stranger"] #Drone names
     LINK["shipNames"] = ["Franks","Daron","Hassle","SETT","BENZYA"] #Ship names
     LINK["simpleMovement"] = False #Simplified movement
-    LINK["commandSelect"] = False #Command selecting window
+    LINK["commandSelect"] = True #Command selecting window
     LINK["multi"] = 0 #Is the game currently multiplayer, -1 = Map editor, 0 = Single player, 1 = Client, 2 = Server
 
     print("Loading content")

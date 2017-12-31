@@ -56,7 +56,7 @@ class Main:
                         self.__targetEnt = None
     def afterDamage(self): #Damages the upgrade (only called after map)
         if self.used and self.damage!=2:
-            self.brakeprob += random.randint(1,20)*5
+            self.brakeprob += random.randint(1,20)
             if random.randint(0,100)<self.brakeprob:
                 self.damage+=1
                 self.brakeprob = 0
