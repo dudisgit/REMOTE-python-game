@@ -56,6 +56,7 @@ class Main(base.Main):
             self.__pullDrone = None
             return "Stopped towing"
         else: #Upgrade is not in use
+            self.used = True
             Droom = self.drone.findPosition() #Get the room the drone is inside of
             Ents = Droom.EntitiesInside() #Get all the entities in the room/door
             Finding = [self.getEnt("drone"),self.getEnt("ShipUpgrade")] #Entities we are looking for

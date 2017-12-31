@@ -38,6 +38,11 @@ class Main(base.Main):
     def clientLoop(self,lag): #Loop to call when a client runs an upgrade
         self.scansLeft = self.LINK["cli"].SYNC["u"+str(self.ID)]["N"]
         self.displayName = "Motion "+str(self.scansLeft)+"/50"
+    def saveData(self):
+        return [self.scansLeft+0]
+    def openData(self,lis):
+        self.scansLeft = lis[0]
+        self.displayName = "Motion "+str(self.scansLeft)+"/50"
     def loop(self,lag): #Constant event loop
         if self.LINK["multi"] == 2: #Is server
             self.LINK["serv"].SYNC["u"+str(self.ID)]["N"] = self.scansLeft
@@ -85,6 +90,7 @@ class Main(base.Main):
     def doCommand(self,com,usrObj=None):
         Droom = self.drone.findPosition() #Get the position of the drone
         self.__scanRooms = []
+        self.used = True
         self.__getRooms(Droom) #Get all the rooms this upgrade should scan
         self.__scanChange = [-1]*len(self.__scanRooms)
         self.__inUse = True #Upgrade is in use

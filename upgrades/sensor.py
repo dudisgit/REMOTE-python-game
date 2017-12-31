@@ -26,6 +26,11 @@ class Main(base.Main):
     def clientLoop(self,lag):
         self.sensors = self.LINK["cli"].SYNC["u"+str(self.ID)]["N"]
         self.displayName = "Sensor "+str(self.sensors)+"/30"
+    def saveData(self):
+        return [self.sensors]
+    def openData(self,lis):
+        self.sensors = lis[0]
+        self.displayName = "Sensor "+str(self.sensors)+"/30"
     def loop(self,lag):
         if self.LINK["multi"] == 2: #Is server
             self.LINK["serv"].SYNC["u"+str(self.ID)]["N"] = self.sensors

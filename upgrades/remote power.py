@@ -44,6 +44,7 @@ class Main(base.Main):
         return "Incorrect paramiters"
     def doCommand(self,com,usrObj=None): #Execute the upgrade (as in run)
         self.__used = True #Upgrade has been used from now on
+        self.used = True
         if self.__connected is None: #Is not connected to a power outlet
             spl = com.split(" ")
             E = self.LINK["IDref"][spl[1]] #Room entity

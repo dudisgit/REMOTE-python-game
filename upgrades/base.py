@@ -1,7 +1,7 @@
 #This is the base class, it is used by all other upgrades
 #this should NOT be used as an upgrade but a class for other upgrades to inherit.
 
-import math
+import math, random
 
 ACTIVATION_DIST = 40 #Distance from an object in order to be attached to it (e.g. generator or interface)
 
@@ -32,6 +32,7 @@ class Main:
         return self.LINK["null"]
     def headTowards(self,Ent,hitDist=ACTIVATION_DIST): #Makes the drone head towards an object, this can be canceled when the drone navigation is taken over
         self.drone.stopNavigation(0) #Stop the drone from moving other paths
+        self.drone.stopNavigation(2)
         self.__activationDist = hitDist+0
         self.__targetEnt = Ent
         self.drone.paths.append([2,[ [Ent.pos[0]+(Ent.size[0]/2), Ent.pos[1]+(Ent.size[1]/2) , Ent]]])
@@ -53,6 +54,17 @@ class Main:
                     self.hitFunction(self.__targetEnt)
                     if self.__activationDist==-1:
                         self.__targetEnt = None
+    def afterDamage(self): #Damages the upgrade (only called after map)
+        if self.used and self.damage!=2:
+            self.brakeprob += random.randint(1,20)*5
+            if random.randint(0,100)<self.brakeprob:
+                self.damage+=1
+                self.brakeprob = 0
+            self.used = False
+    def saveData(self):
+        return []
+    def openData(self,lis):
+        pass
     def init(self,LINK): #Init for the upgrade
         self.LINK = LINK
         self.drone = None #Drone this upgrade is linked to
@@ -63,5 +75,6 @@ class Main:
         self.name = "NO NAME" #Name of the upgrade
         self.displayName = "NO NAME"
         self.damage = 0 #Damage to the upgrade
+        self.brakeprob = 0 #Probibility of failure
         self.droneUpgrade = True #Is a drone upgrade
         self.caller = [] #List to refeerence commands that can be called to this upgrade

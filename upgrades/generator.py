@@ -46,7 +46,7 @@ class Main(base.Main):
         if not self.__activeGenerator is None: #Upgrade is currently in use and powering a generator
             dist = math.sqrt( ((self.drone.pos[0]+(self.drone.size[0]/2)-(self.__activeGenerator.pos[0]+(self.__activeGenerator.size[0]/2)))**2) +
                             ((self.drone.pos[1]+(self.drone.size[1]/2)-(self.__activeGenerator.pos[1]+(self.__activeGenerator.size[1]/2)) )**2) )
-            if dist>45: #Check distance to generator and disconnect if too far away
+            if dist>45 or not self.drone.alive: #Check distance to generator and disconnect if too far away
                 self.__activeGenerator.active = False
                 self.__activeGenerator = None
     def doCommand(self,com,usrObj=None): #Runs a command on this upgrade (only if sucsessful)

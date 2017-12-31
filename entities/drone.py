@@ -118,13 +118,17 @@ class Main(base.Main):
                     if len(a)>2:
                         self.settings["upgrades"][i][2] = self.LINK["upgradeIDCount"]+0
                     self.LINK["upgradeIDCount"] += 1
+                if len(a)==4:
+                    self.upgrades[-1].brakeprob = a[3]+0
+                if len(a)==5:
+                    self.upgrades[-1].openData(a[4])
                 self.upgrades[-1].damage = a[1]
                 self.upgrades[-1].drone = self #Link the upgrade to this drone
     def unloadUpgrades(self): #Imports all the upgrades into the drone for saving (used in multiplayer)
-        for a in self.settings["upgrades"]:
-            a = ["",0,-1]
+        for a in range(len(self.settings["upgrades"])):
+            self.settings["upgrades"][a] = ["",0,-1,0,[]]
         for i,a in enumerate(self.upgrades):
-            self.settings["upgrades"][i] = [a.name.lower(),a.damage+0,a.ID+0]
+            self.settings["upgrades"][i] = [a.name.lower(),a.damage+0,a.ID+0,a.brakeprob,a.saveData()]
     def SaveFile(self): #Give all infomation about this object ready to save to a file
         if self.LINK["multi"]==2:
             self.unloadUpgrades()

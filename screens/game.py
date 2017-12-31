@@ -251,6 +251,7 @@ class GameEventHandle: #Used to simulate and handle the events of the game world
                 self.IDLINK[a.ID] = a
                 if self.__LINK["multi"] == 2: #Is server
                     self.__LINK["serv"].SYNC["e"+str(a.ID)] = a.GiveSync()
+                a.stopNavigation()
         else: #Is a client
             self.drones = [] #Servers drones
             for i in range(2,6):
@@ -266,12 +267,29 @@ class GameEventHandle: #Used to simulate and handle the events of the game world
         self.__LINK["shipEnt"] = self.ship
         self.__LINK["mesh"] = self.Mesh #Link the new MESH to the global one
         self.__LINK["log"]("Opened file sucsessfuly!")
+    def clean(self): #Clears the map, unloads all entities and returns the entities inside the ship area
+        shipEnts = self.Ref["r1"].EntitiesInside()
+        self.__LINK["mesh"] = {}
+        self.__LINK["IDref"] = {}
+        self.Map = []
+        self.Ref = {}
+        self.IDLINK = {}
+        self.Mesh = {}
+        for a in shipEnts: #Go through all entities inside the ship room
+            if type(a)==self.getEnt("drone"): #Entity is a drone
+                for b in a.upgrades: #Go through all the drones upgrades
+                    b.afterDamage()
+        for a in self.__LINK["shipEnt"].upgrades:
+            a.afterDamage()
+        return shipEnts
     def doCommand(self,text,drone,usrObj=None): #Will execute a command and return the text the command outputs
         out = "Unknown command '"+text+"'"
         col = (255,255,0)
         spl = text.split(" ")
         if len(text)==0:
             return out,col
+        if spl[0]!="exit":
+            self.__quiting = False
         if text[0]=="d" and (text[1:].isnumeric() or len(text)==1): #Open/close a door
             gt = text[1:]
             if len(gt)==0:
@@ -569,6 +587,7 @@ class Main: #Used as the screen object for rendering and interaction
         sx2 = sy*1.777
         self.__loading = [False,pygame.transform.scale(LINK["content"]["loading"],(int(sx2),int(sy))),(sx2-sx)/-2,0,"Downloading variables",[sx,sy]]
         self.__fail = [False,pygame.transform.scale(LINK["content"]["loading"],(int(sx2),int(sy))),(sx2-sx)/-2,[sx,sy],"Unknown error"]
+        self.__extrInfo = [] #Extra info on a fail screen
         #syntax of loading = Active, pygame image, x offset, loading percentage, loading message, screen size
         self.__scemPos = [0,0] #Scematic position
         self.__HoldKeys = {} #Keys being held down
@@ -607,16 +626,17 @@ class Main: #Used as the screen object for rendering and interaction
         else:
             self.name = ""
         self.__LINK["outputCommand"] = self.putLine #So other entiteis can output to their tab
-        print("Generating overlays")
-        for a in range(3):
-            self.__cols.append(pygame.Surface((sx,sy)))
-            matr = pygame.PixelArray(self.__cols[-1])
-            for x in range(int(sx/3)):
-                for y in range(int(sy/3)):
-                    matr[x*3:(x*3)+3,y*3:(y*3)+3] = pygame.Color(random.randint(0,50),random.randint(0,50),random.randint(0,50))
-                if self.__LINK["multi"]==1:
-                    self.__LINK["cli"].loop()
-        print("Done")
+        if LINK["backgroundStatic"]:
+            print("Generating overlays")
+            for a in range(3):
+                self.__cols.append(pygame.Surface((sx,sy)))
+                matr = pygame.PixelArray(self.__cols[-1])
+                for x in range(int(sx/3)):
+                    for y in range(int(sy/3)):
+                        matr[x*3:(x*3)+3,y*3:(y*3)+3] = pygame.Color(random.randint(0,50),random.randint(0,50),random.randint(0,50))
+                    if self.__LINK["multi"]==1:
+                        self.__LINK["cli"].loop()
+            print("Done")
     def __disconnect(self,reason):
         self.__fail[0] = True
         self.__fail[4] = "Disconnected: "+reason
@@ -1307,18 +1327,91 @@ class Main: #Used as the screen object for rendering and interaction
                         break
             if self.__typingOut == "":
                 self.__typingOut = self.__typing+""
+    def __safeExit(self): #Safely exit
+        ENTS = self.__Event.clean() #Unload the map and return all entities inside the ship room
+        self.__Event.drones = []
+        self.__LINK["drones"] = []
+        DroneReferenceObject = self.getEnt("drone")
+        ShipUpgradeReferenceObject = self.getEnt("ShipUpgrade")
+        DeadDrones = [] #Stores dead drones (so if theres too many drones, dead drones will be dismantled first)
+        for a in ENTS:
+            if type(a)==DroneReferenceObject:
+                if len(self.__LINK["drones"])>=self.__LINK["shipData"]["maxDrones"]: #Drone fleet is full
+                    if len(self.__LINK["shipData"]["reserve"])>=self.__LINK["shipData"]["maxReserve"]: #Reserve fleet is full
+                        print("TOO MANY DRONES, dismantling, sorry :(")
+                        DeadDrones.append(a)
+                    else:
+                        if a.alive:
+                            self.__LINK["shipData"]["reserve"].append(a)
+                        else:
+                            DeadDrones.append(a)
+                else:
+                    if a.alive:
+                        self.__LINK["drones"].append(a)
+                    else:
+                        DeadDrones.append(a)
+            elif type(a)==ShipUpgradeReferenceObject: #Entity is a ship upgrade
+                if len(self.__LINK["shipData"]["shipUpgs"])<self.__LINK["shipData"]["maxShipUpgs"]: #Place upgrade in ship
+                    self.__LINK["shipData"]["shipUpgs"].append([a.type,0,-1,0])
+                elif len(self.__LINK["shipData"]["reserveUpgs"])!=self.__LINK["shipData"]["reserveMax"]: #Put upgrade in inventory
+                    self.__LINK["shipData"]["reserveUpgs"].append([a.type,0,-1,0])
+        for a in DeadDrones:
+            if len(self.__LINK["drones"])>=self.__LINK["shipData"]["maxDrones"]: #Drone fleet is full
+                if len(self.__LINK["shipData"]["reserve"])>=self.__LINK["shipData"]["maxReserve"]: #Reserve fleet is full
+                    if a.alive:
+                        self.__LINK["shipData"]["scrap"] += 12
+                    else:
+                        self.__LINK["shipData"]["scrap"] += 8
+                else:
+                    self.__LINK["shipData"]["reserve"].append(a)
+            else:
+                self.__LINK["drones"].append(a)
+        for l in range(len(self.__LINK["drones"])): #Bubble sort the drones in order of their number
+            for i,a in enumerate(self.__LINK["drones"][:-l]):
+                if a.number > self.__LINK["drones"][i+1].number:
+                    self.__LINK["drones"][i+1],self.__LINK["drones"][i]=self.__LINK["drones"][i],self.__LINK["drones"][i+1]
+        I = 1
+        for a in self.__LINK["drones"]:
+            a.number = I+0
+            I+=1
+        for a in self.__LINK["drones"]:
+            self.__extrInfo.append([a.settings["name"]+"'s upgrades:",(0,255,255)])
+            for b in a.upgrades:
+                if b.damage==1:
+                    self.__extrInfo.append(["    "+b.name+" upgrade is deteriorating, brake prob = "+str(b.brakeprob)+"%",(255,255,0)])
+                elif b.damage==2:
+                    self.__extrInfo.append(["    "+b.name+" upgrade is destroyed",(255,0,0)])
+        self.__extrInfo.append(["Ship's upgrades:",(0,255,255)])
+        for b in self.__LINK["shipEnt"].upgrades:
+            if b.damage==1:
+                self.__extrInfo.append(["    "+b.name+" upgrade is deteriorating, brake prop = "+str(b.brakeprob)+"%",(255,255,0)])
+            elif b.damage==2:
+                self.__extrInfo.append(["    "+b.name+" upgrade is destroyed",(255,0,0)])
+        self.__LINK["shipEnt"].unloadUpgrades()
+        if self.__LINK["fuelCollected"]==0:
+            self.__extrInfo.append(["You collected no fuel",(255,0,0)])
+        else:
+            self.__extrInfo.append(["You collected "+str(self.__LINK["fuelCollected"])+" fuel",(0,255,0)])
+        if self.__LINK["scrapCollected"]==0:
+            self.__extrInfo.append(["You collected no scrap",(255,0,0)])
+        else:
+            self.__extrInfo.append(["You collected "+str(self.__LINK["scrapCollected"])+" scrap",(0,255,0)])
     def loop(self,mouse,kBuf,lag): #Constant loop
         global start
         if self.__fail[0]: #Game has failed/connection failure
             for event in kBuf: #Loop for return button pressed
                 if event.type == pygame.KEYDOWN:
                     if event.key == pygame.K_RETURN:
-                        self.__LINK["loadScreen"]("mainMenu")
+                        if self.__Event.exit and not self.tutorial:
+                            self.__LINK["loadScreen"]("shipSelect")
+                        else:
+                            self.__LINK["loadScreen"]("mainMenu")
             return 0
-        self.__changeEffect[1]+=lag*4 #Used to alpha overlay
-        if self.__changeEffect[1]>=OVERLAY_OPASITY: #Next overlay
-            self.__changeEffect[1] = 0
-            self.__changeEffect[0] = (self.__changeEffect[0]+1)%len(self.__cols)
+        if self.__LINK["backgroundStatic"]:
+            self.__changeEffect[1]+=lag*4 #Used to alpha overlay
+            if self.__changeEffect[1]>=OVERLAY_OPASITY: #Next overlay
+                self.__changeEffect[1] = 0
+                self.__changeEffect[0] = (self.__changeEffect[0]+1)%len(self.__cols)
         if self.__LINK["multi"]==1: #Is a client
             if self.__LINK["cli"].failConnect:
                 self.__fail[0] = True
@@ -1543,10 +1636,12 @@ class Main: #Used as the screen object for rendering and interaction
                     mv = True
                 if mv:
                     self.currentDrone.go(lag)
-        if self.__Event.exit:
+        if self.__Event.exit: #Game has ended due to user entering "exit"
             self.__fail[0] = True
-            self.__fail[4] = "Your score is "+str(self.__Event.getScore())
-            self.__Event.exit = False
+            SCOR = self.__Event.getScore()
+            self.__fail[4] = "Your score is "+str(SCOR)
+            self.__LINK["shipData"]["maxScore"]+=SCOR
+            self.__safeExit()
         if not self.__Event is None and self.__LINK["currentScreen"]==self:
             try:
                 self.__Event.loop()
@@ -1625,6 +1720,8 @@ class Main: #Used as the screen object for rendering and interaction
             pygame.draw.rect(surf,(0,0,0),[int(self.__fail[3][0]/2)-int(sx/2)-5,int(self.__fail[3][1]*0.8)-5,sx+10,sy+10])
             pygame.draw.rect(surf,(0,255,0),[int(self.__fail[3][0]/2)-int(sx/2)-5,int(self.__fail[3][1]*0.8)-5,sx+10,sy+10],2)
             surf.blit(fren,(int(self.__fail[3][0]/2)-int(sx/2),int(self.__fail[3][1]*0.8)))
+            for i,a in enumerate(self.__extrInfo):
+                surf.blit(self.__LINK["font24"].render(a[0],16,a[1]),[self.__fail[3][0]/8,(self.__fail[3][1]/8)+(i*30)])
         elif self.__loading[0]: #Loading screen
             surf.blit(self.__loading[1],(self.__loading[2],0))
             pygame.draw.rect(surf,(0,0,0),[50,int(self.__loading[5][1]*0.8),self.__loading[5][0]-100,40],4)

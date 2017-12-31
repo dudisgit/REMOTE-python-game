@@ -64,7 +64,7 @@ class Main:
         self.__LINK["allPower"] = False #Enable power for all rooms
         self.__LINK["multi"] = 0
         self.__LINK["drones"] = [] #Drone list of the players drones
-        for i in range(0,4):
+        for i in range(0,3):
             self.__LINK["drones"].append(self.__LINK["ents"]["drone"].Main(i*60,0,self.__LINK,-2-i,i+1))
         self.__LINK["drones"][0].settings["upgrades"][0] = ["motion",0,-1]
         self.__LINK["drones"][0].settings["upgrades"][1] = ["gather",0,-1]
@@ -75,8 +75,9 @@ class Main:
         self.__LINK["drones"][1].loadUpgrades()
         self.__LINK["drones"][2].loadUpgrades()
         self.__LINK["shipEnt"] = self.__LINK["ents"]["ship"].Main(0,0,self.__LINK,-1)
-        self.__LINK["shipEnt"].settings["upgrades"][0] = ["remote power",0,-1]
         self.__LINK["shipEnt"].loadUpgrades()
+        self.__LINK["shipData"] = {"fuel":5,"scrap":5,"shipUpgs":[],"maxShipUpgs":2,"reserveUpgs":[],"reserveMax":8,"invent":[],
+        "beforeMap":-1,"mapSaves":[],"maxScore":0,"reserve":[],"maxDrones":4,"maxReserve":2,"maxInvent":70} #Data about the players ship
     def __servInit(self): #Called when the server selecting screen is initilized
         self.__scan = 0
         self.__cli = self.__LINK["client"].Client(SERVERS[0],3746,False)
@@ -119,7 +120,6 @@ class Main:
                     if self.__screen==0: #Main screen
                         if self.__sel==0: #Start tutorial
                             self.__restoreDefaults()
-                            self.__LINK["drones"].pop()
                             self.displayLoadingScreen()
                             self.__LINK["loadScreen"]("game",True)
                             self.__LINK["currentScreen"].open("tutorial.map")
@@ -127,9 +127,9 @@ class Main:
                         elif self.__sel==1: #Play the game normaly
                             self.__restoreDefaults()
                             self.displayLoadingScreen()
-                            self.__LINK["loadScreen"]("game")
-                            mapGenerator.MapGenerator(self.__LINK,7,"playingMap.map")
-                            self.__LINK["currentScreen"].open("playingMap.map")
+                            self.__LINK["loadScreen"]("shipSelect")
+                            #mapGenerator.MapGenerator(self.__LINK,7,"playingMap.map")
+                            #self.__LINK["currentScreen"].open("playingMap.map")
                             return None
                         elif self.__sel==2: #Play multiplayer
                             self.__screen = 1

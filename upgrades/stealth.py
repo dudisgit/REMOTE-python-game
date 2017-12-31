@@ -65,5 +65,6 @@ class Main(base.Main):
             return "Stealth de-activated"
         else: #Upgrade is de-activated, turning on
             self.__active = True
+            self.used = True
             self.drone.stealth = True
             return "Stealth activated"

@@ -8,5 +8,7 @@ class Main(base.Main):
         self.displayName = "Surveyor" #Name of the upgrade (displayed)
         self.droneUpgrade = False
         self.damage = 0 #Damage to the upgrade.
-        if ID!=-1:
-            LINK["showRooms"] = True
+        self.used = True
+    def loop(self,lag): #Loop ran single player or server side
+        if not self.damage==2 and self.ID!=-1:
+            self.LINK["showRooms"] = True

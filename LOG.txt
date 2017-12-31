@@ -1,0 +1,122 @@
+This file will contain logs for the server
+
+New user connected 127.0.0.1
+User left 127.0.0.1
+New user connected 127.0.0.1
+User left 127.0.0.1
+New user connected 127.0.0.1
+User left 127.0.0.1
+New user connected 127.0.0.1
+New user namechange 7f000001 to test
+New user connected 127.0.0.1
+User left 127.0.0.1
+New user connected 127.0.0.1
+New user namechange 7f000001 to test
+User left 127.0.0.1
+New user connected 127.0.0.1
+User left 127.0.0.1
+New user connected 127.0.0.1
+New user namechange 7f000001 to test
+User left 127.0.0.1
+New user connected 127.0.0.1
+User left 127.0.0.1
+New user connected 127.0.0.1
+New user namechange 7f000001 to testing
+New user connected 127.0.0.1
+User left 127.0.0.1
+New user connected 127.0.0.1
+New user connected 127.0.0.1
+User left 127.0.0.1
+New user connected 127.0.0.1
+User left 127.0.0.1
+New user connected 127.0.0.1
+User left 127.0.0.1
+New user connected 127.0.0.1
+User left 127.0.0.1
+New user connected 127.0.0.1
+User left 127.0.0.1
+New user connected 127.0.0.1
+User left 127.0.0.1
+New user connected 127.0.0.1
+User left 127.0.0.1
+New user connected 127.0.0.1
+User left 127.0.0.1
+New user connected 127.0.0.1
+User left 127.0.0.1
+New user connected 127.0.0.1
+New user namechange 7f000001 to test
+New user namechange 7f000001 to test2
+User left 127.0.0.1
+New user connected 127.0.0.1
+User left 127.0.0.1
+New user connected 127.0.0.1
+New user namechange 7f000001 to test
+New user namechange 7f000001 to test2
+New user connected 127.0.0.1
+User left 127.0.0.1
+New user connected 127.0.0.1
+New user namechange 7f000001 to test
+User left 127.0.0.1
+New user connected 127.0.0.1
+User left 127.0.0.1
+New user connected 127.0.0.1
+New user namechange 7f000001 to test
+New user namechange 7f000001 to testing
+New user connected 127.0.0.1
+User left 127.0.0.1
+New user connected 127.0.0.1
+New user namechange 7f000001 to test
+New user namechange 7f000001 to test2
+New user namechange 7f000001 to test
+User left 127.0.0.1
+New user connected 127.0.0.1
+User left 127.0.0.1
+New user connected 127.0.0.1
+New user namechange 7f000001 to test
+User left 127.0.0.1
+New user connected 127.0.0.1
+User left 127.0.0.1
+New user connected 127.0.0.1
+New user namechange 7f000001 to test
+New user connected 127.0.0.1
+User left 127.0.0.1
+New user connected 127.0.0.1
+User left 127.0.0.1
+New user connected 127.0.0.1
+User left 127.0.0.1
+New user connected 127.0.0.1
+New user namechange 7f000001 to test
+New user namechange 7f000001 to testing
+User left 127.0.0.1
+New user connected 127.0.0.1
+User left 127.0.0.1
+New user connected 127.0.0.1
+New user namechange 7f000001 to test
+New user connected 127.0.0.1
+User left 127.0.0.1
+New user connected 127.0.0.1
+New user namechange 7f000001 to test
+User left 127.0.0.1
+New user connected 127.0.0.1
+User left 127.0.0.1
+New user connected 127.0.0.1
+New user namechange 7f000001 to test
+User left 127.0.0.1
+New user connected 127.0.0.1
+User left 127.0.0.1
+New user connected 127.0.0.1
+User left 127.0.0.1
+New user connected 127.0.0.1
+User left 127.0.0.1
+New user connected 127.0.0.1
+New user namechange 7f000001 to test
+New user connected 127.0.0.1
+User left 127.0.0.1
+New user connected 127.0.0.1
+User left 127.0.0.1
+New user connected 127.0.0.1
+User left 127.0.0.1
+New user connected 127.0.0.1
+User left 127.0.0.1
+New user connected 127.0.0.1
+User left 127.0.0.1

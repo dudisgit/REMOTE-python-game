@@ -35,7 +35,7 @@ if name: #Is the main thread
     LINK["screenLib"] = screenLib #Used as a GUI tool for the map designer
     LINK["log"] = ADDLOG #Used to log infomation (not seen in game unless developer console is turned on)
     LINK["DEVDIS"] = False #Development display
-    LINK["showFPS"] = True #If the FPS counter should be shown
+    LINK["showFPS"] = False #If the FPS counter should be shown
     LINK["NPCignorePlayer"] = False #Used for development
     LINK["floorScrap"] = True #Enable/disable floor scrap
     LINK["particles"] = True #Enable/disable particle effects
@@ -61,6 +61,7 @@ if name: #Is the main thread
     LINK["font24"] = pygame.font.Font("comandFont.ttf",24)
     LINK["font16"] = pygame.font.Font("comandFont.ttf",16)
     LINK["font42"] = pygame.font.Font("comandFont.ttf",42)
+    LINK["font64"] = pygame.font.Font("comandFont.ttf",64)
     LINK["font128"] = pygame.font.Font("comandFont.ttf",128)
     #Controlls (can be changed)
     LINK["controll"] = {} #Used to let controlls for the game be changable
@@ -74,14 +75,31 @@ if name: #Is the main thread
     LINK["upgradeIDCount"] = 0 #ID count for upgrades
     LINK["scrapCollected"] = 0 #Amount of scrap colected
     LINK["fuelCollected"] = 0 #Amount of fuel colected
+    LINK["shipData"] = {"fuel":5,"scrap":5,"shipUpgs":[],"maxShipUpgs":2,"reserveUpgs":[],"reserveMax":8,"invent":[],
+        "beforeMap":-1,"mapSaves":[],"maxScore":0,"reserve":[],"maxDrones":4,"maxReserve":2,"maxInvent":70} #Data about the players ship
+    #Reference:
+    #'fuel' - Amount of fuel inside the ship
+    #'scrap' - Amount of scrap insdie the ship
+    #'shupUpgs' - List of ship upgrades
+    #'maxShipUpgs' - Maximum number of ship upgrades allowed on the ship when docked.
+    #'reserveUpgs' - Reserve ship upgrades
+    #'reserveMax' - Maximum reserve upgrades allowed on the ship
+    #'invent' - Upgrade inventory (not on the drones)
+    #'beforeMap' - Index of the previously loaded map (stops the same map being played twise)
+    #'mapSaves' - Stores info about previously generated maps
+    #'maxScore' - Overall score added up each map
+    #'reserve' - Drones in reserve
+    #'maxDrones' - Maximum number of drones the ship can take on a mission
+    #'maxReserve' - Maximum number of reserve drones
     LINK["allPower"] = False #Enable global power, a cheat for development
     LINK["absoluteDoorSync"] = False #Send packets randomly to make doors in SYNC perfectly (bigger the map the more packets)
     LINK["simpleModels"] = False #Enable/disable simple models
-    LINK["hints"] = False #Enable game hints or not
+    LINK["hints"] = True #Enable game hints or not
     LINK["threading"] = False #Enable/disable cleint-side socket threading
     LINK["backgroundStatic"] = True #Enable/disable background static
     LINK["viewDistort"] = True #Drone view distortion
     LINK["names"] = ["Jeff","Tom","Nathon","Harry","Ben","Fred","Timmy","Potter","Stranger"] #Drone names
+    LINK["shipNames"] = ["Franks","Daron","Hassle","SETT","BENZYA"] #Ship names
     LINK["simpleMovement"] = False #Simplified movement
     LINK["commandSelect"] = False #Command selecting window
     LINK["multi"] = 0 #Is the game currently multiplayer, -1 = Map editor, 0 = Single player, 1 = Client, 2 = Server
@@ -157,7 +175,7 @@ if name: #Is the main thread
     LINK["null"] = NULLENT
     print("Initilazing drones")
     LINK["drones"] = [] #Drone list of the players drones
-    for i in range(0,4):
+    for i in range(0,3):
         LINK["drones"].append(LINK["ents"]["drone"].Main(i*60,0,LINK,-2-i,i+1))
     LINK["drones"][0].settings["upgrades"][0] = ["motion",0,-1]
     LINK["drones"][0].settings["upgrades"][1] = ["gather",0,-1]

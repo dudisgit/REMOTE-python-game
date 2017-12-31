@@ -26,6 +26,11 @@ class Main(base.Main):
     def clientLoop(self,lag):
         self.lures = self.LINK["cli"].SYNC["u"+str(self.ID)]["N"]
         self.displayName = "Lure "+str(self.lures)+"/4"
+    def saveData(self):
+        return [self.lures+0]
+    def openData(self,lis):
+        self.lures = lis[0]
+        self.displayName = "Lure "+str(self.lures)+"/4"
     def loop(self,lag):
         if self.LINK["multi"] == 2: #Is server
             self.LINK["serv"].SYNC["u"+str(self.ID)]["N"] = self.lures

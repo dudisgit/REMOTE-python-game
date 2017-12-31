@@ -44,13 +44,15 @@ class Main(base.Main):
                     self.upgrades.append(self.LINK["shipUp"][a[0]].Main(self.LINK,self.LINK["upgradeIDCount"]+0))
                     self.settings["upgrades"][i][2] = self.LINK["upgradeIDCount"]+0
                     self.LINK["upgradeIDCount"] += 1
+                if len(a)==4:
+                    self.upgrades[-1].brakeprob = a[3]+0
                 self.upgrades[-1].damage = a[1]
                 self.upgrades[-1].drone = self #Link the upgrade to this ship
     def unloadUpgrades(self): #Imports all the upgrades into the ship for saving (used in multiplayer)
         for a in self.settings["upgrades"]:
-            a = ["",0,-1]
+            a = ["",0,-1,0]
         for i,a in enumerate(self.upgrades):
-            self.settings["upgrades"][i] = [a.name.lower(),a.damage+0,a.ID]
+            self.settings["upgrades"][i] = [a.name.lower(),a.damage+0,a.ID,a.brakeprob]
     def rightInit(self,surf): #Initialize context menu for map designer
         self.__surface = pygame.Surface((210,40)) #Surface to render too
         self.__lastRenderPos = [0,0] #Last rendering position

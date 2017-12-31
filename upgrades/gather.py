@@ -1,5 +1,5 @@
 import upgrades.base as base
-import math, time
+import math, time, random
 
 class Main(base.Main):
     def __init__(self,LINK,ID=-1):
@@ -41,7 +41,7 @@ class Main(base.Main):
             scrap.used = True
             self.drone.pause = time.time()+1.5
             self.LINK["outputCommand"]("Gathering fuel...",(0,255,0),False,self.drone) #Send command message that the upgrade collected scrap
-            self.LINK["fuelCollected"] += 1 #Increment scrap amount
+            self.LINK["fuelCollected"] += random.randint(1,5) #Increment scrap amount
         else:
             scrap.REQUEST_DELETE = True #Delete the scrap
             self.LINK["outputCommand"]("Collected scrap",(0,255,0),False) #Send command message that the upgrade collected scrap

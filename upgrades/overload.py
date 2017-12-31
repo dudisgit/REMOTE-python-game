@@ -24,6 +24,7 @@ class Main(base.Main):
         return "Incorrect paramiters"
     def doCommand(self,com,usrObj=None):
         self.__used = True
+        self.used = True
         E = self.LINK["IDref"][com.split(" ")[1]] #Room entity
         Ents = E.EntitiesInside() #Get all entities inside the room
         KillObjs = [self.getEnt("android"),self.getEnt("interface"),self.getEnt("generator"),self.getEnt("sensor"),self.getEnt("turret"),self.getEnt("drone")]
