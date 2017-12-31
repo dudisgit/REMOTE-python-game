@@ -27,7 +27,8 @@ HELP_COMS = {"navigate":"Navigate a drone to a room, \nUsage: navigate <DRONE NU
             "motion":"Scans nearby rooms for motion \nUsage: motion",
             "overload":"Surges a room and kills anything electronic \nUsage: overload <ROOM>",
             "stealth":"Makes drone invisible to threats \nUsage: stealth",
-            "tow":"Tows nearby drones/upgrades \nUsage: tow"}
+            "tow":"Tows nearby drones/upgrades \nUsage: tow",
+            "exit":"Leaves the ship"}
 COMPARAMS = {"open":"e",
             "close":"e",
             "say":"T",
@@ -50,7 +51,8 @@ COMPARAMS = {"open":"e",
             "remote":"R",
             "sensor":"",
             "tow":"",
-            "help":"T"} #Paramiters for commands, (used for controllers)
+            "help":"T",
+            "exit":""} #Paramiters for commands, (used for controllers)
 OVERLAY_OPASITY = 30 #Opasity of the overlay (0-255)
 COMMAND_HISTORY_LENGTH = 30 #Length of the command history
 
@@ -1270,7 +1272,7 @@ class Main: #Used as the screen object for rendering and interaction
                 for b in upg.caller:
                     if not b in coms:
                         coms.append(b) #Add its commands to the list
-        return ["open","close","navigate","dock","swap","flag"]+coms+["pickup","info"]
+        return ["open","close","navigate","dock","swap","flag","exit"]+coms+["pickup","info"]
     def getObjs(self,key): #Return all objects for the given key (used with COMPARAMS to get paramiters)
         res = []
         if key=="e": #Door or airlock
@@ -1772,9 +1774,10 @@ class Main: #Used as the screen object for rendering and interaction
             self.__LINK["render"].drawConnection(10,10,surf,self.__LINK)
         if not self.__loading[0] and not self.__fail[0]:
             sx,sy = surf.get_size()
+            mult = (abs(math.cos(time.time()*3))/2)+0.5 #Box flashing
             self.__command.render(self.__reslution[0]-CONSOLE_SIZE[0]-20,self.__reslution[1]-CONSOLE_SIZE[1]-20,CONSOLE_SIZE[0],CONSOLE_SIZE[1],surf) #Render command line
             if self.__typing!=self.__typingOut: #Hinting
-                surf.blit(self.__LINK["font24"].render("Press TAB to auto complete",16,(0,0,255)),[sx-CONSOLE_SIZE[0],sy-20])
+                surf.blit(self.__LINK["font24"].render("Press TAB to auto complete",16,(0,255*mult,255*mult)),[sx-CONSOLE_SIZE[0],sy-20])
         for a in self.force: #Upgrade force menues
             a[2](surf,list(surf.get_size()))
         if self.tutorial:

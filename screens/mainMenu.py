@@ -123,6 +123,7 @@ class Main:
                     if self.__screen==0: #Main screen
                         if self.__sel==0: #Start tutorial
                             self.__restoreDefaults()
+                            self.__LINK["hints"] = False
                             self.displayLoadingScreen()
                             self.__LINK["loadScreen"]("game",True)
                             self.__LINK["currentScreen"].open("tutorial.map")
@@ -269,12 +270,24 @@ class Main:
         if (sy*0.4)+(len(self.__opts)*45)>sy*0.8: #Too many options to display on screen
             if (sy*0.4)+(self.__sel*45)>sy*0.6: #Selecting option is going off the screen
                 scroll = int((((sy*0.4)+(self.__sel*45))-(sy*0.6))/45) #Start at a few options before selection
-        for i,a in enumerate(self.__opts[scroll:]):
-            pygame.draw.rect(surf,(0,0,0),[15,(sy*0.4)+(i*45)+1,330,35])
-            if i+scroll==self.__sel:
-                pygame.draw.rect(surf,(255*mult,255*mult,0),[15,(sy*0.4)+(i*45)+1,330,35],5)
+        MX = 0 #Maximum width
+        Buf = []
+        for i,a in enumerate(self.__opts): #Go through to find and measure the longest peaice of text
+            if type(a)==list:
+                Buf.append(self.__LINK["font42"].render(a[1],16,(255,255,255)))
+                if Buf[-1].get_width()+30>MX:
+                    MX = Buf[-1].get_width()+30
             else:
-                pygame.draw.rect(surf,(0,255,0),[15,(sy*0.4)+(i*45)+1,330,35],2)
+                Buf.append(self.__LINK["font42"].render(a,16,(255,255,255)))
+                if Buf[-1].get_width()>MX:
+                    MX = Buf[-1].get_width()+0
+        MX+=5
+        for i,a in enumerate(self.__opts[scroll:]):
+            pygame.draw.rect(surf,(0,0,0),[15,(sy*0.4)+(i*45)+1,MX,35])
+            if i+scroll==self.__sel:
+                pygame.draw.rect(surf,(255*mult,255*mult,0),[15,(sy*0.4)+(i*45)+1,MX,35],5)
+            else:
+                pygame.draw.rect(surf,(0,255,0),[15,(sy*0.4)+(i*45)+1,MX,35],2)
             if type(a)==list: #Rendered option is a boolean option
                 col = (255,0,255)
                 if a[0]:
@@ -282,9 +295,9 @@ class Main:
                 else:
                     col = (255,0,0)
                 pygame.draw.rect(surf,col,[20,(sy*0.4)+(i*45)+6,25,25])
-                surf.blit(self.__LINK["font42"].render(a[1],16,(255,255,255)),(50,(sy*0.4)+(i*45)))
+                surf.blit(Buf[i+scroll],(50,(sy*0.4)+(i*45)))
             else:
-                surf.blit(self.__LINK["font42"].render(a,16,(255,255,255)),(20,(sy*0.4)+(i*45)))
+                surf.blit(Buf[i+scroll],(20,(sy*0.4)+(i*45)))
         if self.__screen==4: #In IP entering screen
             tex = self.__LINK["font42"].render(self.__IPType,16,(255,255,255))
             sx2,sy2 = tex.get_size()

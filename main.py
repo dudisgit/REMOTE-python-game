@@ -29,7 +29,7 @@ if name: #Is the main thread
     LINK = {} #This is a global variable for allowing controll over the whole program through one variable. Every class in this program should have a link to this!
     LINK["errorDisplay"] = ERROR #Used to show errors
     LINK["reslution"] = RESLUTION #Reslution of the game
-    LINK["DEV"] = True #Development mode, this will stop the game when errors occur.
+    LINK["DEV"] = False #Development mode, this will stop the game when errors occur.
     LINK["loadScreen"] = loadScreen #Used so other scripts can load the map
     LINK["render"] = render #Used so other scripts can use its tools for rendering
     LINK["screenLib"] = screenLib #Used as a GUI tool for the map designer
@@ -128,6 +128,7 @@ if name: #Is the main thread
         elif a[-4:]==".obj":
             LINK["models"][a[:-4]] = render.openModel("content/"+a)
     LINK["cont"] = {} #This is used for storing "content" in LINK but is resized every frame.
+    pygame.display.set_icon(LINK["content"]["gameIcon"])
     #Maps
     LINK["maps"] = os.listdir("maps")
     #Upgrades
