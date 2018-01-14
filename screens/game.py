@@ -1353,9 +1353,7 @@ class Main: #Used as the screen object for rendering and interaction
                     else:
                         DeadDrones.append(a)
             elif type(a)==ShipUpgradeReferenceObject: #Entity is a ship upgrade
-                if len(self.__LINK["shipData"]["shipUpgs"])<self.__LINK["shipData"]["maxShipUpgs"]: #Place upgrade in ship
-                    self.__LINK["shipData"]["shipUpgs"].append([a.type,0,-1,0])
-                elif len(self.__LINK["shipData"]["reserveUpgs"])!=self.__LINK["shipData"]["reserveMax"]: #Put upgrade in inventory
+                if len(self.__LINK["shipData"]["reserveUpgs"])!=self.__LINK["shipData"]["reserveMax"]: #Put upgrade in inventory
                     self.__LINK["shipData"]["reserveUpgs"].append([a.type,0,-1,0])
         for a in DeadDrones:
             if len(self.__LINK["drones"])>=self.__LINK["shipData"]["maxDrones"]: #Drone fleet is full

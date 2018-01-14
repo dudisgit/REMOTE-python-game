@@ -203,7 +203,7 @@ class Main:
                         if "x" in self.__opts[self.__sel]: #Change reslution of game
                             spl = self.__opts[self.__sel].split("x")
                             self.__LINK["reslution"] = [int(spl[0]),int(spl[1])]
-                            self.__LINK["main"] = pygame.display.set_mode([int(spl[0]),int(spl[1])]) #Remake the pygame window
+                            self.__LINK["main"] = pygame.display.set_mode([int(spl[0]),int(spl[1])],pygame.FULLSCREEN) #Remake the pygame window
                         #Go back to options menu
                         self.__screen = 2
                         self.__sel = 0
