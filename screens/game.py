@@ -2,7 +2,7 @@
 import pygame, time, pickle, sys, socket, random, traceback
 import math #tempory
 
-VERSION = 0.2
+VERSION = 0.3
 
 SCROLL_SPEED = 4 #Scematic scroll speed
 CONSOLE_SIZE = [440,205] #Size of the console

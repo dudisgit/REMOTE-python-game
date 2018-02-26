@@ -1,7 +1,7 @@
 import socket,select,pickle,time,render, os, importlib, sys, traceback,mapGenerator
 import entities.base as base
 
-VERSION = 0.2 #Version number, used so clients with incorrect versions cannot connect
+VERSION = 0.3 #Version number, used so clients with incorrect versions cannot connect
 
 TCP_port = 3746 #Port for serious data transfer, e.g. chat messages
 TCP_BUF_SIZE = 4046 #Receiving buffer size
@@ -532,7 +532,7 @@ def loadLINK(serv): #Loads all content
     LINK["hints"] = False
     LINK["hintDone"] = []
     LINK["upgradeIDCount"] = 0 #Upgrade ID Count
-    LINK["NPCignorePlayer"] = True #Used for development
+    LINK["NPCignorePlayer"] = False #Used for development
     LINK["floorScrap"] = False #Enable/disable floor scrap
     LINK["absoluteDoorSync"] = False #Send packets randomly to make doors in SYNC perfectly (bigger the map the more packets)
     LINK["particles"] = False #Disable particle effects on server
@@ -725,8 +725,6 @@ class GameServer:
 if __name__=="__main__": #If not imported the run as a server without a game running in the background.
     ERROR = enError
     IP = socket.gethostbyname(socket.gethostname())
-    IP = "127.0.1.1"
-    #IP = "10.42.0.1"
     Game = GameServer(IP)
     while True:
         Game.loop()
