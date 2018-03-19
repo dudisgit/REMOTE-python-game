@@ -100,6 +100,8 @@ class Main:
         else: #Reached the end of the server list
             self.__scan = -1
             self.__cli = None
+    def __initMultiplayer(self): #Multiplayer was initilized, load client settings
+        self.__LINK["cli"].TRIGGER["lda"] = self.__LINK["loadScreen"] #Allow the server to load screens
     def loop(self,mouse,kBuf,lag): #Called continuesly to update the title screen
         if time.time()>self.__buzz:
             for a in range(6): #Go through all the charicter introductions
@@ -168,7 +170,8 @@ class Main:
                             self.displayLoadingScreen()
                             self.__LINK["cli"] = self.__LINK["client"].Client(SERVERS[self.__sel],3746,self.__LINK["threading"])
                             self.__LINK["multi"] = 1 #Set to client mode
-                            self.__LINK["loadScreen"]("game")
+                            self.__initMultiplayer()
+                            self.__LINK["loadScreen"]("shipSelect")
                             return None
                     elif self.__screen==2: #In the options menu
                         if type(self.__opts[self.__sel])==list:
@@ -217,7 +220,8 @@ class Main:
                             self.displayLoadingScreen()
                             self.__LINK["cli"] = self.__LINK["client"].Client(self.__IPType,3746,self.__LINK["threading"])
                             self.__LINK["multi"] = 1 #Set to client mode
-                            self.__LINK["loadScreen"]("game")
+                            self.__initMultiplayer()
+                            self.__LINK["loadScreen"]("shipSelect")
                             return None
                         else: #Go back to main menu
                             self.__sel = 0

@@ -414,6 +414,7 @@ class Client:
             return False
         if self.loading:
             self.__loadCur += 1
+        #print(data)
         if type(data[0])==list: #Is a bundle of commands
             for a in data:
                 if type(a) == list:
@@ -432,6 +433,7 @@ class Client:
         elif data[0][0]=="l": #Loading a map
             self.loading = True
             self.__loadingMax = int(data[0][1:])
+            self.__loadCur = 0
             print("Loading START",data[0])
         else: #Is a single command
             self.doCommand(data,tcpSent)

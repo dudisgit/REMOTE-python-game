@@ -13,7 +13,7 @@ FREQUENT_TIME = 4 #Seconds to update all users with frequently changed variables
 ERROR = None #Function to call when an error happens
 MAX_KEEP = 60 # Maximum packets to keep for users to access if missed, the higher this the more memory used and possibly a user could request a packet from a while ago.
 MAX_PACKET = 200 #Maximum size of one packet sent to a user
-WORLD_UPDATE_TICK = 0.08 #Time to wait until updating the world again
+WORLD_UPDATE_TICK = 0.05 #Time to wait until updating the world again
 
 def nameIP(IP): #Turns an IP into hexadecimal charicters
     res = ""
@@ -250,6 +250,9 @@ class Server: #Class for a server
     def reset(self): #Reset sync variables
         self.__SYNCBefore = {}
         self.SYNC = {}
+        for a in self.users:
+            self.SYNC[self.users[a].ip2] = {"N":self.users[a].name}
+            self.__SYNCBefore[self.users[a].ip2] = {"N":self.users[a].name}
     def getValue(self,path,currentList): #Returns the value at the specified path (path is a list)
         if type(currentList[path[0]])==dict and len(path)!=1:
             return self.getValue(path[1:],currentList[path[0]])
@@ -532,6 +535,8 @@ def loadLINK(serv): #Loads all content
     LINK["hints"] = False
     LINK["hintDone"] = []
     LINK["upgradeIDCount"] = 0 #Upgrade ID Count
+    LINK["scrapCollected"] = 0 #Amount of scrap colected
+    LINK["fuelCollected"] = 0 #Amount of fuel colected
     LINK["NPCignorePlayer"] = False #Used for development
     LINK["floorScrap"] = False #Enable/disable floor scrap
     LINK["absoluteDoorSync"] = False #Send packets randomly to make doors in SYNC perfectly (bigger the map the more packets)
@@ -541,6 +546,9 @@ def loadLINK(serv): #Loads all content
     LINK["backgroundStatic"] = False #Enable/disable background static
     LINK["viewDistort"] = False #Drone view distortion
     LINK["names"] = ["Jeff","Tom","Nathon","Harry","Ben","Fred","Timmy","Potter","Stranger"] #Drone names
+    LINK["shipNames"] = ["Franks","Daron","Hassle","SETT","BENZYA"] #Ship names
+    LINK["shipData"] = {"fuel":5,"scrap":5,"shipUpgs":[],"maxShipUpgs":2,"reserveUpgs":[],"reserveMax":8,"invent":[],
+        "beforeMap":-1,"mapSaves":[],"maxScore":0,"reserve":[],"maxDrones":4,"maxReserve":2,"maxInvent":70} #Data about the players ship
     LINK["multi"] = 2 #Running as server
     #Screens
     files = os.listdir("screens")
@@ -582,6 +590,7 @@ def loadLINK(serv): #Loads all content
     
     LINK["shipEnt"] = LINK["ents"]["ship"].Main(0,0,LINK,-1)
     LINK["shipEnt"].settings["upgrades"][0] = ["remote power",0,-1]
+    
     #LINK["shipEnt"].settings["upgrades"][1] = ["surveyor",1,-1]
     LINK["shipEnt"].loadUpgrades()
     return LINK
@@ -597,23 +606,34 @@ class GameServer:
         self.LINK["serv"].TRIGGER["com"] = self.doCommand #Execute a command
         self.LINK["serv"].TRIGGER["mvu"] = self.__moveUpgrade #Move an upgade from one drone to anouther
         self.LINK["serv"].TRIGGER["sup"] = self.__swapUpgrade #Swap two upgrades in a drone, (used instead of two "self.__moveUpgrade" calls)
-        DEFMAP = "ServGen.map" #Map to load (tempory)
-        mapGenerator.MapGenerator(self.LINK,7,"ServGen.map")
-        self.mapName = DEFMAP
+        self.LINK["serv"].TRIGGER["sls"] = self.__selectShip #Select a ship to dock to
+        #DEFMAP = "ServGen.map" #Map to load (tempory)
+        #mapGenerator.MapGenerator(self.LINK,7,"ServGen.map")
+        self.mapName = ""
         if self.LINK["DEV"]:
             self.__rend = render.DebugServer(self.LINK)
-        self.world = self.LINK["screens"]["game"].GameEventHandle(self.LINK) #The game world to simulate
-        self.world.open(DEFMAP) #Open the map in the world
+        self.shipSelect = True #Is the server inside a ship selecting screen
+        self.gameOver = False #Is the game over?
+        self.world = None
+        #self.world = self.LINK["screens"]["game"].GameEventHandle(self.LINK) #The game world to simulate
+        #self.world.open(DEFMAP) #Open the map in the world
         self.LINK["world"] = self.world
         self.serv.SYNC["V"] = VERSION #Server version
         self.serv.SYNC["P"] = {} #Players
-        self.serv.SYNC["M"] = {} #Map
-        self.serv.SYNC["M"]["h"] = self.LINK["screens"]["game"].getMapMash(DEFMAP) #Map hash
-        self.serv.SYNC["M"]["n"] = DEFMAP #Map name
+        #self.serv.SYNC["M"] = {} #Map
+        self.serv.SYNC["SS"] = True #Inside ship selecting screen
+        #self.serv.SYNC["M"]["h"] = self.LINK["screens"]["game"].getMapMash(DEFMAP) #Map hash
+        #self.serv.SYNC["M"]["n"] = DEFMAP #Map name
         self.LINK["outputCommand"] = self.putLine
         self.LINK["Broadcast"] = self.broadCast
         self.__updateTime = time.time()
-        print("Done, entering event loop, map mash is "+str(self.serv.SYNC["M"]["h"]))
+        self.startShipSelectingScreen()
+        print("Done, entering event loop")
+    def __selectShip(self,sock,ship): #Select a ship in the ship selecting screen
+        if self.shipSelect:
+            self.world.selectShip(ship)
+            self.resetSync()
+            self.startNewGame("ShipSelect"+str(ship))
     def __moveUpgrade(self,sock,drone1ID,drone2ID,index):
         #Index 0 should allways be a "swap.py" upgrade
         #Move the upgrade server-side
@@ -639,25 +659,139 @@ class GameServer:
         else:
             TB = Tab
         self.broadCast("com","",TB,flash,[tex,col])
-    def startNewGame(self): #Tempory
-        mapGenerator.MapGenerator(self.LINK,7,"ServGen.map")
-        self.LINK = None
+    def resetSync(self): #Resets the syncing variables
         self.serv.reset()
-        self.LINK = loadLINK(self.serv)
-        self.LINK["serv"] = self.serv
-        self.LINK["serv"].newUser = self.userJoin
-        self.LINK["serv"].closeUser = self.userLeave
-        self.LINK["serv"].TRIGGER["com"] = self.doCommand #Execute a command
-        self.LINK["serv"].TRIGGER["mvu"] = self.__moveUpgrade #Move an upgade from one drone to anouther
-        self.LINK["serv"].TRIGGER["sup"] = self.__swapUpgrade #Swap two upgrades in a drone, (used instead of two "self.__moveUpgrade" calls)
-        self.serv.SYNC["V"] = VERSION #Server version
-        self.serv.SYNC["P"] = {} #Players
+        self.serv.SYNC["V"] = VERSION
+        self.serv.SYNC["SS"] = self.shipSelect
+        self.LINK["mesh"] = {}
+        #rem = []
+        #for a in self.serv.SYNC:
+        #    if a[0]=="e" and not "-" in a:
+        #        rem.append(a)
+        #for a in rem:
+        #    self.serv.SYNC.pop(a)
+    def startNewGame(self,mapName): #Load the game into a world
+        #mapGenerator.MapGenerator(self.LINK,7,"ServGen.map")
+        #self.LINK = None
+        #self.serv.reset()
+        #self.LINK = loadLINK(self.serv)
+        #self.LINK["serv"] = self.serv
+        #self.LINK["serv"].newUser = self.userJoin
+        #self.LINK["serv"].closeUser = self.userLeave
+        #self.LINK["serv"].TRIGGER["com"] = self.doCommand #Execute a command
+        #self.LINK["serv"].TRIGGER["mvu"] = self.__moveUpgrade #Move an upgade from one drone to anouther
+        #self.LINK["serv"].TRIGGER["sup"] = self.__swapUpgrade #Swap two upgrades in a drone, (used instead of two "self.__moveUpgrade" calls)
+        #self.serv.SYNC["V"] = VERSION #Server version
+        self.resetSync()
         self.serv.SYNC["M"] = {} #Map
-        self.serv.SYNC["M"]["h"] = self.LINK["screens"]["game"].getMapMash("ServGen.map") #Map hash
-        self.serv.SYNC["M"]["n"] = "ServGen.map" #Map name
+        self.serv.SYNC["SS"] = False
+        self.shipSelect = False
+        #self.serv.SYNC["M"]["h"] = self.LINK["screens"]["game"].getMapMash("ServGen.map") #Map hash
+        #self.serv.SYNC["M"]["n"] = "ServGen.map" #Map name
         self.world = self.LINK["screens"]["game"].GameEventHandle(self.LINK) #The game world to simulate
-        self.world.open("ServGen.map") #Open the map in the world
+        self.world.open(mapName) #Open the map in the world
+        self.world.loop()
         self.LINK["world"] = self.world
+        #self.broadCast("lda","game")
+        self.__causeLoadingToAll()
+        for a in self.serv.users:
+            self.serv.users[a].updateSlow.insert(1,["tlda","game"])
+        mapEnts = self.getAllMapEnts()
+        for usr in self.LINK["serv"].users:
+            for a in mapEnts:
+                self.LINK["serv"].users[usr].updateSlow.append(["tdsnd",a])
+            self.serv.users[usr].updateSlow[0] = "l"+str(len(self.serv.users[usr].updateSlow)-1) #For loading bar on users
+            self.LINK["serv"].users[usr].updateSlow.append(["tsetn",self.LINK["serv"].users[usr].name])
+    def startShipSelectingScreen(self):
+        self.shipSelect = True
+        self.resetSync()
+        self.world = self.LINK["screens"]["shipSelect"].Main(self.LINK)
+        self.LINK["world"] = self.world
+        if self.world.failed[0]: #Game is over
+            self.gameOver = True
+            return None
+        for i,a in enumerate(self.world.maps):
+            self.serv.SYNC["S"+str(i)] = {}
+            self.serv.SYNC["S"+str(i)]["N"] = a[3] #Ship name
+            self.serv.SYNC["S"+str(i)]["S"] = a[1] #Scrap capasity
+            self.serv.SYNC["S"+str(i)]["T"] = a[4] #Threat types
+            self.serv.SYNC["S"+str(i)]["D"] = a[5] #Distance/fuel
+            self.serv.SYNC["S"+str(i)]["A"] = a[2] #Age
+        self.serv.SYNC["MD"] = self.LINK["shipData"]["maxDrones"]+0 #Max drones
+        self.serv.SYNC["MR"] = self.LINK["shipData"]["maxReserve"]+0 #Max reserved drones
+        self.serv.SYNC["MS"] = self.LINK["shipData"]["maxShipUpgs"]+0 #Maximum ship upgrades
+        self.serv.SYNC["MSS"] = self.LINK["shipData"]["reserveMax"]+0 #Maximum reserved ship upgrades
+        self.serv.SYNC["MI"] = self.LINK["shipData"]["maxInvent"]+0 #Max inventory size
+        self.serv.SYNC["DC"] = len(self.LINK["drones"])
+        self.serv.SYNC["UC"] = len(self.LINK["shipData"]["shipUpgs"])
+        for i in range(0,self.LINK["shipData"]["maxDrones"]+self.LINK["shipData"]["maxReserve"]):
+            self.serv.SYNC["D"+str(i)] = {}
+            a = None
+            if i<self.LINK["shipData"]["maxDrones"] and i<len(self.LINK["drones"]):
+                a = self.LINK["drones"][i]
+                self.LINK["drones"][i].GID = i+0 #Give this drone a reference back to its SYNCs
+            elif i-self.LINK["shipData"]["maxDrones"]<len(self.LINK["shipData"]["reserve"]) and i-self.LINK["shipData"]["maxDrones"]>=0:
+                a = self.LINK["shipData"]["reserve"][i-self.LINK["shipData"]["maxDrones"]]
+                self.LINK["shipData"]["reserve"][i-self.LINK["shipData"]["maxDrones"]].GID = i+0 #Give this drone a reference back to its SYNCs
+            if a is None: #Drone doesen't exist
+                self.serv.SYNC["D"+str(i)]["E"] = False
+            else: #Drone exists
+                self.serv.SYNC["D"+str(i)]["E"] = True
+                self.serv.SYNC["D"+str(i)]["N"] = a.settings["name"]
+                self.serv.SYNC["D"+str(i)]["H"] = a.health
+                self.serv.SYNC["D"+str(i)]["HM"] = a.settings["maxHealth"]
+                self.serv.SYNC["D"+str(i)]["A"] = a.alive
+                self.serv.SYNC["D"+str(i)]["O"] = i+0 #Drone order
+                self.serv.SYNC["D"+str(i)]["US"] = len(a.settings["upgrades"]) #Drone upgrade amount
+                for i2,b in enumerate(a.settings["upgrades"]): #Sync all the drones upgrades
+                    if b[0]=="":
+                        self.serv.SYNC["D"+str(i)]["U"+str(i2)] = ""
+                    else:
+                        if len(b)==5:
+                            if len(b[4])!=0:
+                                self.serv.SYNC["D"+str(i)]["U"+str(i2)] = b[0]+","+str(b[1])+","+str(b[4][0])
+                            else:
+                                self.serv.SYNC["D"+str(i)]["U"+str(i2)] = b[0]+","+str(b[1])
+                        else:
+                            self.serv.SYNC["D"+str(i)]["U"+str(i2)] = b[0]+","+str(b[1])
+        for i in range(0,self.LINK["shipData"]["maxInvent"]): #Sync all inventory upgrades
+            self.serv.SYNC["U"+str(i)] = {}
+            if i<len(self.LINK["shipData"]["invent"]): #Upgrade exists
+                self.serv.SYNC["U"+str(i)]["E"] = True
+                A = self.LINK["shipData"]["invent"][i]
+                self.serv.SYNC["U"+str(i)]["N"] = A[0]
+                self.serv.SYNC["U"+str(i)]["D"] = A[1]
+                if i+1<len(self.LINK["shipData"]["invent"]):
+                    self.serv.SYNC["U"+str(i)]["P"] = i+1 #Point to the next upgrade
+                else:
+                    self.serv.SYNC["U"+str(i)]["P"] = -1 #Set pointer as end
+            else:
+                self.serv.SYNC["U"+str(i)]["E"] = False
+                self.serv.SYNC["U"+str(i)]["N"] = "Empty"
+                self.serv.SYNC["U"+str(i)]["D"] = 0
+                self.serv.SYNC["U"+str(i)]["P"] = -1 #Doesen't point to anything
+        for i in range(0,self.LINK["shipData"]["maxShipUpgs"]+self.LINK["shipData"]["reserveMax"]):
+            self.serv.SYNC["G"+str(i)] = {}
+            self.serv.SYNC["G"+str(i)]["E"] = False
+            self.serv.SYNC["G"+str(i)]["P"] = i+0
+            UPG = None
+            if i>=self.LINK["shipData"]["maxShipUpgs"]: #Reserved ship upgrade
+                if i-self.LINK["shipData"]["maxShipUpgs"]<len(self.LINK["shipData"]["reserveUpgs"]):
+                    self.serv.SYNC["G"+str(i)]["E"] = True
+                    self.serv.SYNC["G"+str(i)]["N"] = self.LINK["shipData"]["reserveUpgs"][i-self.LINK["shipData"]["maxShipUpgs"]][0]
+                    self.serv.SYNC["G"+str(i)]["D"] = self.LINK["shipData"]["reserveUpgs"][i-self.LINK["shipData"]["maxShipUpgs"]][1]+0
+                    self.serv.SYNC["G"+str(i)]["I"] = self.LINK["shipData"]["reserveUpgs"][i-self.LINK["shipData"]["maxShipUpgs"]][2]+0
+            else: #Ship upgrade
+                if i<len(self.LINK["shipData"]["shipUpgs"]):
+                    self.serv.SYNC["G"+str(i)]["E"] = True
+                    self.serv.SYNC["G"+str(i)]["N"] = self.LINK["shipData"]["shipUpgs"][i][0]
+                    self.serv.SYNC["G"+str(i)]["D"] = self.LINK["shipData"]["shipUpgs"][i][1]+0
+                    self.serv.SYNC["G"+str(i)]["I"] = self.LINK["shipData"]["shipUpgs"][i][2]+0
+        self.__causeLoadingToAll()
+    def __causeLoadingToAll(self): #Loads varaibles into all clients
+        for a in self.serv.users:
+            self.serv.users[a].updateSlow = ["l"]+self.serv.sensify(detectChanges({},self.serv.SYNC),False) #Send the whole SYNC list to the user
+            self.serv.users[a].updateSlow[0] = "l"+str(len(self.serv.users[a].updateSlow)-1) #For loading bar on users
     def doCommand(self,sock,command,drone): #Called when a user enteres a command into their command line
         pName = sock.getpeername()[0]
         usr = self.LINK["serv"].users[pName]
@@ -673,12 +807,20 @@ class GameServer:
         file.write("User left "+addr+"\n")
         file.close()
     def userJoin(self,addr): #A new user has joined
-        mapEnts = self.getAllMapEnts()
-        for a in mapEnts:
-            self.LINK["serv"].users[addr].updateSlow.append(["tdsnd",a])
+        if self.shipSelect:
+            pass
+        else:
+            mapEnts = self.getAllMapEnts()
+            for a in mapEnts:
+                self.LINK["serv"].users[addr].updateSlow.append(["tdsnd",a])
+            self.broadCast("com","User "+addr+" joined",-2,False,(255,153,0)) #Broadcast that the user joined
         self.LINK["serv"].users[addr].updateSlow[0] = "l"+str(len(self.LINK["serv"].users[addr].updateSlow)) #For loading bar on users
         self.LINK["serv"].users[addr].updateSlow.insert(0,["tpls",len(self.LINK["serv"].users)-1]) #Send player count
-        self.broadCast("com","User "+addr+" joined",-2,False,(255,153,0)) #Broadcast that the user joined
+        FL = -1
+        if self.shipSelect:
+            if self.world.failed[0]:
+                FL = self.world.failed[1]
+        self.LINK["serv"].users[addr].updateSlow.insert(1,["tsss",self.shipSelect,FL]) #Send player count
         print("New connection "+addr)
         file = open("LOG.txt","a")
         file.write("New user connected "+addr+"\n")
@@ -692,25 +834,33 @@ class GameServer:
             res.append(sD)
         return res
     def loop(self): #Game loop
-        if time.time()>self.__updateTime: #Only update the world a certain amounts of times in a second
-            self.__updateTime = time.time()+WORLD_UPDATE_TICK
-            try:
-                self.world.loop() #Simulate world events
-            except:
-                print("Failed to run world loop within server")
-                traceback.print_exc()
-            try:
-                for a in self.world.drones:
-                    a.discoverAround()
-            except:
-                print("Discovering failed on drones")
-                traceback.print_exc()
-        if self.world.exit:
-            SCR = self.world.getScore()
-            for a in self.LINK["serv"].users:
-                self.LINK["serv"].users[a].sendTrigger("disc","Score: "+str(SCR))
-            self.world.exit = False
-            self.startNewGame()
+        if self.shipSelect: #In ship selecting screen
+            pass
+        else: #Inside game
+            if time.time()>self.__updateTime: #Only update the world a certain amounts of times in a second
+                self.__updateTime = time.time()+WORLD_UPDATE_TICK
+                try:
+                    self.world.loop() #Simulate world events
+                except:
+                    print("Failed to run world loop within server")
+                    traceback.print_exc()
+                try:
+                    for a in self.world.drones:
+                        a.discoverAround()
+                except:
+                    print("Discovering failed on drones")
+                    traceback.print_exc()
+            if self.world.exit:
+                SCR = self.world.getScore()
+                INF = self.world.safeExit()
+                self.startShipSelectingScreen()
+                if self.gameOver:
+                    for a in self.LINK["serv"].users:
+                        self.serv.users[a].updateSlow.insert(1,["tlda","death",self.world.failed[1]])
+                else:
+                    for a in self.LINK["serv"].users:
+                        self.serv.users[a].updateSlow.insert(1,["tlda","shipSelect"])
+                        self.serv.users[a].updateSlow.insert(2,["tdinf",INF,SCR])
         self.serv.loop() #Deal with server events and variable changes in SYNC
         if self.LINK["DEV"]:
             try:
@@ -725,6 +875,7 @@ class GameServer:
 if __name__=="__main__": #If not imported the run as a server without a game running in the background.
     ERROR = enError
     IP = socket.gethostbyname(socket.gethostname())
+    IP = "127.0.1.1"
     Game = GameServer(IP)
     while True:
         Game.loop()

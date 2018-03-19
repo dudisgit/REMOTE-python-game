@@ -33,6 +33,8 @@ class Main(base.Main):
         self.displayName = "Sensor "+str(self.sensors)+"/30"
     def loop(self,lag):
         if self.LINK["multi"] == 2: #Is server
+            if not "u"+str(self.ID) in self.LINK["serv"].SYNC:
+                self.LINK["serv"].SYNC["u"+str(self.ID)] = {}
             self.LINK["serv"].SYNC["u"+str(self.ID)]["N"] = self.sensors
         self.displayName = "Sensor "+str(self.sensors)+"/30"
     def doCommand(self,text,usrObj=None):

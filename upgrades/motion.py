@@ -45,6 +45,8 @@ class Main(base.Main):
         self.displayName = "Motion "+str(self.scansLeft)+"/50"
     def loop(self,lag): #Constant event loop
         if self.LINK["multi"] == 2: #Is server
+            if not "u"+str(self.ID) in self.LINK["serv"].SYNC:
+                self.LINK["serv"].SYNC["u"+str(self.ID)] = {}
             self.LINK["serv"].SYNC["u"+str(self.ID)]["N"] = self.scansLeft
         if self.__inUse: #Is this upgrade currently being used
             if time.time()>self.__scanAgain: #Scan all rooms for NPCs

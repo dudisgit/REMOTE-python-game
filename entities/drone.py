@@ -315,6 +315,8 @@ class Main(base.Main):
             self.LINK["cli"].SYNC["e"+str(self.ID)] = self.GiveSync(True)
             self.overide = False
         elif self.LINK["multi"] == 2: #Server
+            if not "e"+str(self.ID) in self.LINK["serv"].SYNC: #Incase drone was deleted
+                self.LINK["serv"].SYNC["e"+str(self.ID)] = self.GiveSync()
             if self.SyncChangedServer(): #If drone has been moved by a client than cancel any navigation
                 self.stopNavigation(0)
             bpos = [self.pos[0]+0,self.pos[1]+0]

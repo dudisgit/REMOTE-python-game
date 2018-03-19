@@ -244,6 +244,7 @@ class GameEventHandle: #Used to simulate and handle the events of the game world
             self.addToMesh(self.ship) #Add the ship to the MESH
             self.addToMesh(self.ship.room) #Add the ship's room to the MESH
             for i,a in enumerate(self.drones): #Add all the users drones to the map
+                a.ID = -2-i
                 self.Map.append(a)
                 if self.ship.LR: #Is the ship left to right
                     a.pos = [self.ship.room.pos[0]+(i*60)+40,self.ship.room.pos[1]+40]
@@ -259,8 +260,6 @@ class GameEventHandle: #Used to simulate and handle the events of the game world
             for i in range(2,6):
                 if 0-i in self.IDLINK:
                     self.drones.append(self.IDLINK[0-i])
-                else:
-                    break
             self.__LINK["drones"] = self.drones
             self.ship = self.IDLINK[-1] #Servers ship
             self.ship.room = self.IDLINK[-6] #Set the ships room to the servers one
@@ -375,6 +374,7 @@ class GameEventHandle: #Used to simulate and handle the events of the game world
                             break
                     else:
                         self.__LINK["serv"].SYNC[usrObj.ip2]["N"] = spl[1]
+                        self.__LINK["serv"].users[usrObj.ip].name = spl[1]
                         usrObj.sendTrigger("setn",spl[1])
                         out = "NOMES"
                         file = open("LOG.txt","a")
@@ -542,6 +542,75 @@ class GameEventHandle: #Used to simulate and handle the events of the game world
         score+=self.__LINK["scrapCollected"]
         score+=self.__LINK["fuelCollected"]*50
         return score
+    def safeExit(self): #Safely exit
+        ENTS = self.clean() #Unload the map and return all entities inside the ship room
+        self.drones = []
+        self.__LINK["drones"] = []
+        DroneReferenceObject = self.getEnt("drone")
+        ShipUpgradeReferenceObject = self.getEnt("ShipUpgrade")
+        DeadDrones = [] #Stores dead drones (so if theres too many drones, dead drones will be dismantled first)
+        for a in ENTS:
+            if type(a)==DroneReferenceObject:
+                if len(self.__LINK["drones"])>=self.__LINK["shipData"]["maxDrones"]: #Drone fleet is full
+                    if len(self.__LINK["shipData"]["reserve"])>=self.__LINK["shipData"]["maxReserve"]: #Reserve fleet is full
+                        print("TOO MANY DRONES, dismantling, sorry :(")
+                        DeadDrones.append(a)
+                    else:
+                        if a.alive:
+                            self.__LINK["shipData"]["reserve"].append(a)
+                        else:
+                            DeadDrones.append(a)
+                else:
+                    if a.alive:
+                        self.__LINK["drones"].append(a)
+                    else:
+                        DeadDrones.append(a)
+            elif type(a)==ShipUpgradeReferenceObject: #Entity is a ship upgrade
+                if len(self.__LINK["shipData"]["reserveUpgs"])!=self.__LINK["shipData"]["reserveMax"]: #Put upgrade in inventory
+                    self.__LINK["shipData"]["reserveUpgs"].append([a.type,0,-1,0])
+        for a in DeadDrones:
+            if len(self.__LINK["drones"])>=self.__LINK["shipData"]["maxDrones"]: #Drone fleet is full
+                if len(self.__LINK["shipData"]["reserve"])>=self.__LINK["shipData"]["maxReserve"]: #Reserve fleet is full
+                    if a.alive:
+                        self.__LINK["shipData"]["scrap"] += 12
+                    else:
+                        self.__LINK["shipData"]["scrap"] += 8
+                else:
+                    self.__LINK["shipData"]["reserve"].append(a)
+            else:
+                self.__LINK["drones"].append(a)
+        for l in range(len(self.__LINK["drones"])): #Bubble sort the drones in order of their number
+            for i,a in enumerate(self.__LINK["drones"][:-l]):
+                if a.number > self.__LINK["drones"][i+1].number:
+                    self.__LINK["drones"][i+1],self.__LINK["drones"][i]=self.__LINK["drones"][i],self.__LINK["drones"][i+1]
+        extrInfo = []
+        I = 1
+        for a in self.__LINK["drones"]:
+            a.number = I+0
+            I+=1
+        for a in self.__LINK["drones"]:
+            extrInfo.append([a.settings["name"]+"'s upgrades:",(0,255,255)])
+            for b in a.upgrades:
+                if b.damage==1:
+                    extrInfo.append(["    "+b.name+" upgrade is deteriorating, brake prob = "+str(b.brakeprob)+"%",(255,255,0)])
+                elif b.damage==2:
+                    extrInfo.append(["    "+b.name+" upgrade is destroyed",(255,0,0)])
+        extrInfo.append(["Ship's upgrades:",(0,255,255)])
+        for b in self.__LINK["shipEnt"].upgrades:
+            if b.damage==1:
+                extrInfo.append(["    "+b.name+" upgrade is deteriorating, brake prop = "+str(b.brakeprob)+"%",(255,255,0)])
+            elif b.damage==2:
+                extrInfo.append(["    "+b.name+" upgrade is destroyed",(255,0,0)])
+        self.__LINK["shipEnt"].unloadUpgrades()
+        if self.__LINK["fuelCollected"]==0:
+            extrInfo.append(["You collected no fuel",(255,0,0)])
+        else:
+            extrInfo.append(["You collected "+str(self.__LINK["fuelCollected"])+" fuel",(0,255,0)])
+        if self.__LINK["scrapCollected"]==0:
+            extrInfo.append(["You collected no scrap",(255,0,0)])
+        else:
+            extrInfo.append(["You collected "+str(self.__LINK["scrapCollected"])+" scrap",(0,255,0)])
+        return extrInfo
 
 
 class Main: #Used as the screen object for rendering and interaction
@@ -604,7 +673,7 @@ class Main: #Used as the screen object for rendering and interaction
         self.__LINK["force"] = self.force #Make it so everything can access this
         self.currentDrone = None #A reference to the currently selected drone
         if LINK["multi"] == 1: #Client to server
-            self.__loading[0] = True
+            self.__loading[0] = self.__LINK["cli"].loading == True
             self.__LINK["cli"].TRIGGER["dsnd"] = self.downLoadingMap #Downloading map function
             self.__LINK["cli"].finishLoading = self.finishSYNC #SYNC has finished downloading
             self.__LINK["cli"].TRIGGER["com"] = self.addCommands #Write text to the command line
@@ -620,7 +689,7 @@ class Main: #Used as the screen object for rendering and interaction
             self.__LINK["cli"].TRIGGER["disc"] = self.__disconnect #Server disconencted user
             self.name = socket.gethostbyname(socket.gethostname())
             self.IP = nameIP(self.name)
-            mapLoading = True
+            mapLoading = self.__loading[0] == True
             if self.__LINK["cli"].failConnect:
                 self.__loading[0] = False
                 self.__fail[0] = True
@@ -1330,72 +1399,7 @@ class Main: #Used as the screen object for rendering and interaction
             if self.__typingOut == "":
                 self.__typingOut = self.__typing+""
     def __safeExit(self): #Safely exit
-        ENTS = self.__Event.clean() #Unload the map and return all entities inside the ship room
-        self.__Event.drones = []
-        self.__LINK["drones"] = []
-        DroneReferenceObject = self.getEnt("drone")
-        ShipUpgradeReferenceObject = self.getEnt("ShipUpgrade")
-        DeadDrones = [] #Stores dead drones (so if theres too many drones, dead drones will be dismantled first)
-        for a in ENTS:
-            if type(a)==DroneReferenceObject:
-                if len(self.__LINK["drones"])>=self.__LINK["shipData"]["maxDrones"]: #Drone fleet is full
-                    if len(self.__LINK["shipData"]["reserve"])>=self.__LINK["shipData"]["maxReserve"]: #Reserve fleet is full
-                        print("TOO MANY DRONES, dismantling, sorry :(")
-                        DeadDrones.append(a)
-                    else:
-                        if a.alive:
-                            self.__LINK["shipData"]["reserve"].append(a)
-                        else:
-                            DeadDrones.append(a)
-                else:
-                    if a.alive:
-                        self.__LINK["drones"].append(a)
-                    else:
-                        DeadDrones.append(a)
-            elif type(a)==ShipUpgradeReferenceObject: #Entity is a ship upgrade
-                if len(self.__LINK["shipData"]["reserveUpgs"])!=self.__LINK["shipData"]["reserveMax"]: #Put upgrade in inventory
-                    self.__LINK["shipData"]["reserveUpgs"].append([a.type,0,-1,0])
-        for a in DeadDrones:
-            if len(self.__LINK["drones"])>=self.__LINK["shipData"]["maxDrones"]: #Drone fleet is full
-                if len(self.__LINK["shipData"]["reserve"])>=self.__LINK["shipData"]["maxReserve"]: #Reserve fleet is full
-                    if a.alive:
-                        self.__LINK["shipData"]["scrap"] += 12
-                    else:
-                        self.__LINK["shipData"]["scrap"] += 8
-                else:
-                    self.__LINK["shipData"]["reserve"].append(a)
-            else:
-                self.__LINK["drones"].append(a)
-        for l in range(len(self.__LINK["drones"])): #Bubble sort the drones in order of their number
-            for i,a in enumerate(self.__LINK["drones"][:-l]):
-                if a.number > self.__LINK["drones"][i+1].number:
-                    self.__LINK["drones"][i+1],self.__LINK["drones"][i]=self.__LINK["drones"][i],self.__LINK["drones"][i+1]
-        I = 1
-        for a in self.__LINK["drones"]:
-            a.number = I+0
-            I+=1
-        for a in self.__LINK["drones"]:
-            self.__extrInfo.append([a.settings["name"]+"'s upgrades:",(0,255,255)])
-            for b in a.upgrades:
-                if b.damage==1:
-                    self.__extrInfo.append(["    "+b.name+" upgrade is deteriorating, brake prob = "+str(b.brakeprob)+"%",(255,255,0)])
-                elif b.damage==2:
-                    self.__extrInfo.append(["    "+b.name+" upgrade is destroyed",(255,0,0)])
-        self.__extrInfo.append(["Ship's upgrades:",(0,255,255)])
-        for b in self.__LINK["shipEnt"].upgrades:
-            if b.damage==1:
-                self.__extrInfo.append(["    "+b.name+" upgrade is deteriorating, brake prop = "+str(b.brakeprob)+"%",(255,255,0)])
-            elif b.damage==2:
-                self.__extrInfo.append(["    "+b.name+" upgrade is destroyed",(255,0,0)])
-        self.__LINK["shipEnt"].unloadUpgrades()
-        if self.__LINK["fuelCollected"]==0:
-            self.__extrInfo.append(["You collected no fuel",(255,0,0)])
-        else:
-            self.__extrInfo.append(["You collected "+str(self.__LINK["fuelCollected"])+" fuel",(0,255,0)])
-        if self.__LINK["scrapCollected"]==0:
-            self.__extrInfo.append(["You collected no scrap",(255,0,0)])
-        else:
-            self.__extrInfo.append(["You collected "+str(self.__LINK["scrapCollected"])+" scrap",(0,255,0)])
+        self.__extrInfo = self.__Event.safeExit()
     def loop(self,mouse,kBuf,lag): #Constant loop
         global start
         if self.__fail[0]: #Game has failed/connection failure

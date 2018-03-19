@@ -541,7 +541,7 @@ class Main(object):
             if type(a[1][0][2]) == self.getEnt("airlock") or type(a[1][0][2]) == self.getEnt("door"):
                 if not a[1][0][2].settings["open"] and a[0]!=2 and a[0]!=4:
                     if type(self)==self.getEnt("drone") and a[0]==0:
-                        self.LINK["outputCommand"]("Drone navigation opstructed",(255,255,0),self)
+                        self.LINK["outputCommand"]("Drone navigation opstructed",(255,255,0),False,self)
                     rem.append(a)
             if type(a[1][-1][2])==self.getEnt("airlock") and a[0]==1:
                 if not a[1][-1][2].settings["open"]:

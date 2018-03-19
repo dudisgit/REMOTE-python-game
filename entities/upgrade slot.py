@@ -37,9 +37,10 @@ class Main(base.Main):
         self.settings["upgrade"] = data[4]
         if self.LINK["multi"]==0 or self.LINK["multi"]==2: #Is single player or server
             #Create the upgrade in this slot
-            self.__upg = self.LINK["create"]("ShipUpgrade",[self.pos[0]+(self.size[0]/4),self.pos[1]+(self.size[1]/4)],data[4],self.settings["perm"])
-            self.__upgPos = [self.__upg.pos[0]+0,self.__upg.pos[1]+0]
-            self.__upg.upg_typ = data[4]
+            if data[4]!="Empty":
+                self.__upg = self.LINK["create"]("ShipUpgrade",[self.pos[0]+(self.size[0]/4),self.pos[1]+(self.size[1]/4)],data[4],self.settings["perm"])
+                self.__upgPos = [self.__upg.pos[0]+0,self.__upg.pos[1]+0]
+                self.__upg.upg_typ = data[4]
     def __renderParticle(self,x,y,scale,alpha,surf,a):
         pygame.draw.line(surf,(255,255,0),[x-(math.cos(a[2]/180*math.pi)*SPARK_SIZE*scale*a[3]),y-(math.sin(a[2]/180*math.pi)*SPARK_SIZE*scale*a[3])],[x+(math.cos(a[2]/180*math.pi)*SPARK_SIZE*scale*a[3]),y+(math.sin(a[2]/180*math.pi)*SPARK_SIZE*scale*a[3])],int(1*scale))
     def SyncData(self,data): #Syncs the data with this upgrade
@@ -62,7 +63,7 @@ class Main(base.Main):
             self.SyncData(self.LINK["cli"].SYNC["e"+str(self.ID)])
         elif self.LINK["multi"]==2: #Server
             self.LINK["serv"].SYNC["e"+str(self.ID)] = self.GiveSync()
-        if not self.__used and not self.__upg is None:
+        if not self.__used and not self.__upg is None and self.settings["upgrade"]!="Empty":
             dis = math.sqrt(((self.__upg.pos[0]-self.__upgPos[0])**2)+((self.__upg.pos[1]-self.__upgPos[1])**2))
             if dis>DISCONNECT_DIST:
                 self.__used = True

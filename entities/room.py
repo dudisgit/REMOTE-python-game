@@ -347,6 +347,8 @@ class Main(base.Main):
         self.__loadScrap()
     def afterLoad(self): #Link generators inside this room to the room
         Ents = self.EntitiesInside()
+        if self.LINK["multi"]==1 and self.ID<0:
+            self.reloadCorners()
         GenObj = self.getEnt("generator")
         for a in Ents:
             if type(a)==GenObj:
