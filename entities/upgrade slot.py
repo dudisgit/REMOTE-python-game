@@ -88,7 +88,7 @@ class Main(base.Main):
         self.__surface = pygame.Surface((280,110)) #Surface to render too
         self.__lastRenderPos = [0,0] #Last rendering position
         self.__but1 = self.LINK["screenLib"].Button(5,5,self.LINK,"Delete",lambda LINK: self.delete()) #Delete button
-        self.__check = self.LINK["screenLib"].CheckButton(5,40,self.LINK,"Permanatly installed",self.settings["perm"],self.__ChangePerm)
+        self.__check = self.LINK["screenLib"].CheckButton(5,40,self.LINK,"Permanently installed",self.settings["perm"],self.__ChangePerm)
         #Get all the possible entities
         adding = ["Empty"]
         for a in self.LINK["shipUp"]:

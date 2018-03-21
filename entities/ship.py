@@ -65,7 +65,7 @@ class Main(base.Main):
             if self.LINK["multi"]!=1: #Is not a client, single player or server
                 if not self.airlock.alive: #Airlock is dead
                     self.airlock.OPEN(True)
-                self.LINK["outputCommand"]("Sucsessfuly docked to A"+str(self.airlock.number),(0,255,0),False)
+                self.LINK["outputCommand"]("Successfully docked to A"+str(self.airlock.number),(0,255,0),False)
         if self.LINK["multi"]!=1: #Is not a client, single player or server
             for a in self.upgrades: #Do an event loop on all upgrades
                 a.loop(lag)

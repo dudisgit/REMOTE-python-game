@@ -192,7 +192,7 @@ class Model: #An object to reprisent a model
         self.__modelSize[1]-=1
         self.__modelSize[2]+=1
         self.__modelSize[3]+=1
-        self.__size = list(self.__LINK["main"].get_size()) #Get the size of the screen
+        self.__size = self.__LINK["reslution"] #Get the size of the screen
         self.__DIV = math.sqrt((self.__size[0]**2)+(self.__size[1]**2))/2.5 #Divide amount
         self.__updateRotate(0) #Fill polygon rotation list
         self.__updateModel(0,0,0,None,1,ARC_SIZE) #Fill render polygon list

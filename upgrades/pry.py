@@ -20,7 +20,7 @@ class Main(base.Main):
             for a in Droom.doors: #Go through every door of the room
                 if not a.settings["open"] and type(a)==self.getEnt("door") and (not a.powered or not a.alive): #Door is open and is not an airlock
                     return True
-            return "No doors that arn't open/powered"
+            return "No doors that aren't open/powered"
     def hitDoor(self,door): #Drone has reached door
         door.pry() #Pry open the door
         if door.alive:

@@ -27,8 +27,8 @@ class Main(base.Main):
         self.__inRoom = False #Is true if the interface is inside a room
         self.__isVac = False #Used to detect change in air pressure inside the current room
         self.powered = False #Is this interface powered or not
-        self.hintMessage = "An interface can be used to controll turrets or survey the ship. They must be powered and can be accessed using the interface upgrade on a drone."
-        self.gameHint = "Use 'interface' upgrade to interact. \nWill controll ship defences and survey rooms"
+        self.hintMessage = "An interface can be used to control turrets or survey the ship. They must be powered and can be accessed using the interface upgrade on a drone."
+        self.gameHint = "Use 'interface' upgrade to interact. \nWill control ship defences and survey rooms"
         if self.LINK["multi"]!=-1 and self.LINK["hints"]:
             self.HINT = True #Show hints
     def SaveFile(self): #Give all infomation about this object ready to save to a file

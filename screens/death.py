@@ -22,7 +22,7 @@ class Main:
         if self.__LINK["multi"]==1: #Game is running as a client
             self.__LINK["cli"].close()
             self.__LINK["multi"] = 0
-    def loop(self,mouse,kBuf,lag): 
+    def loop(self,mouse,kBuf,lag):
         if time.time()>self.__titleTime and not self.__titleTime==-1: #Increase the text count on the title
             self.__titleAdd+=1
             if self.__titleAdd==len(self.__title): #Finished title
@@ -35,6 +35,10 @@ class Main:
                 self.__boxTime = -1
             else:
                 self.__boxTime = time.time()+0.05
+        if not self.__LINK["controller"] is None:
+            if self.__LINK["controller"].selectChange():
+                if self.__LINK["controller"].select():
+                    self.__LINK["loadScreen"]("mainMenu")
         for event in kBuf: #Go through keyboard events
             if event.type == pygame.KEYDOWN: #User pressed a button
                 if event.key == pygame.K_RETURN: #Return key was pressed
@@ -56,6 +60,10 @@ class Main:
                 sx2,sy2 = tex.get_size()
                 surf.blit(tex,[(sx/2)-(sx2/2),320]) #Render reason
                 surf.blit(self.__LINK["font42"].render("Overall score: "+str(self.__LINK["shipData"]["maxScore"]),16,(255,255,0)),[(sx/2)-125,400])
-                surf.blit(self.__LINK["font42"].render("Press return to continue",16,(255,255,0)),[(sx/2)-180,450])
+                if self.__LINK["controller"] is None:
+                    surf.blit(self.__LINK["font42"].render("Press return to continue",16,(255,255,0)),[(sx/2)-180,450])
+                else:
+                    A = self.__LINK["controller"].keyName["select"]
+                    surf.blit(self.__LINK["font42"].render("Press "+A+" to continue",16,(255,255,0)),[(sx/2)-180,450])
             else: #Draw reason box building.
                 pygame.draw.rect(surf,(0,255,0),[(sx/2)-350,300,self.__boxAdd*30,80])

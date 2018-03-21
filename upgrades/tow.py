@@ -39,7 +39,7 @@ class Main(base.Main):
         else:
             Ents = Droom.EntitiesInside() #Get all entities in the room/door
             Objects = [self.getEnt("drone"),self.getEnt("ShipUpgrade")] #Entitiy we are expecting
-            Err = "No disabled drones/non-perminant upgrades found in room"
+            Err = "No disabled drones/non-permanent upgrades found in room"
             for a in Ents: #Loop through every entitiy in the room/door
                 if type(a) in Objects and a!=self.drone: #Drone that is dead
                     if type(a)==Objects[1]:

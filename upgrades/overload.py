@@ -21,7 +21,7 @@ class Main(base.Main):
                     return "Expected a ROOM"
             else:
                 return "No such room"
-        return "Incorrect paramiters"
+        return "Incorrect parameters"
     def doCommand(self,com,usrObj=None):
         self.__used = True
         self.used = True

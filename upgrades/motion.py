@@ -27,7 +27,7 @@ class Main(base.Main):
         elif type(Droom)!=self.getEnt("room"): #Not inside a room
             return "Drone isn't in a room"
         elif self.__inUse: #Allredey being used
-            return "Allredey scanning rooms"
+            return "Already scanning rooms"
         elif self.scansLeft<=0: #Ran out of scans to scan a room
             return "Ran out of scans"
         elif not self.drone.alive: #Drone is dead

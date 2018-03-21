@@ -31,7 +31,7 @@ class Main(base.Main):
                         if type(a)==GeneratorObject: #Entity is a generator
                             if a.alive: #Entity is alive
                                 if a.active: #Generator is allredey being powered by something
-                                    Err = "Generator allredey powered"
+                                    Err = "Generator already powered"
                                 else:
                                     return True
                             else:
@@ -41,7 +41,7 @@ class Main(base.Main):
                     return "Expected a ROOM"
             else:
                 return "No such room"
-        return "Incorrect paramiters"
+        return "Incorrect parameters"
     def doCommand(self,com,usrObj=None): #Execute the upgrade (as in run)
         self.__used = True #Upgrade has been used from now on
         self.used = True

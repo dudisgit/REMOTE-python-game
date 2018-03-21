@@ -40,7 +40,7 @@ class Main(base.Main):
         self.beingSucked = False #Make this entity suckable in a vacum
         self.__sShow = True #Show in games scematic view
         self.__inRoom = False #Is true if the NPC is inside a room
-        self.hintMessage = "A brute will charge at a player when spotted. They are less fearful but deal heavy damage. \nIt is also REALY slow"
+        self.hintMessage = "A brute will charge at a player when spotted. They are less fearful but deal heavy damage. \nIt is also REALLY slow"
     def takeDamage(self,dmg,reason=""):
         self.health -= dmg
         if self.health<0:

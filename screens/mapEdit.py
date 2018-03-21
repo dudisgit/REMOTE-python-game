@@ -402,7 +402,7 @@ class Main:
     def SaveFileButton(self,*args):
         text = self.__NameInput.text
         if "\\" in text or "/" in text:
-            self.__WarnLabel.text = "File name contains invalid charicters!"
+            self.__WarnLabel.text = "File name contains invalid characters!"
             self.__WarnLabel.flickr()
             text = ""
         else:
@@ -419,7 +419,7 @@ class Main:
                 text = text+".map"
         if len(text)!=0:
             if text in self.__LINK["maps"]:
-                self.__openDialog("The file allredey exists, overwrite?",self.__dialogSave)
+                self.__openDialog("The file already exists, overwrite?",self.__dialogSave)
             else:
                 try:
                     self.saveAs(text)
@@ -452,7 +452,7 @@ class Main:
     def OpenFileButton(self,*args):
         text = self.__NameInput.text
         if "\\" in text or "/" in text:
-            self.__WarnLabel.text = "File name contains invalid charicters!"
+            self.__WarnLabel.text = "File name contains invalid characters!"
             self.__WarnLabel.flickr()
             text = ""
         else:
@@ -543,6 +543,6 @@ class Main:
         elif self.__Hinting == 1: #Render entity adding hint
             self.renderHint(surf,"You can add new entities using this menu here, click on an entity and click where you want it",[self.__entSelect.pos[0]+120,self.__entSelect.pos[1]+120])
         elif self.__Hinting == 2: #Render controlls hint
-            self.renderHint(surf,"You can move and resize objects using the left mouse button. \nRight click to open the context/options menu of an entity, to close simply click (mouse 1) on anouther entity.\nHold mouse 2 (right click) to scroll around.\nPress backspace to reset scroll position.",[self.__reslution[0]/3,180])
+            self.renderHint(surf,"You can move and resize objects using the left mouse button. \nRight click to open the context/options menu of an entity, to close simply click (mouse 1) on another entity. \nHold mouse 2 (right click) to scroll around. \nPress backspace to reset scroll position.",[self.__reslution[0]/3,180])
         elif self.__Hinting == 3: #Hints hint
             self.renderHint(surf,"Most objects you spawn will want to be inside of rooms. Objects that don't are rooms, doors, and airlocks. Entities that encounter errors will be highlighted RED \nWhen spawning entities for the first time, you will get a hint box. To close this simply open the objects context/option menu by right clicking on it.",[self.__reslution[0]/3,240])

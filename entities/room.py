@@ -420,7 +420,7 @@ class Main(base.Main):
         ins = self.findInsideOrNextTo(ents,[self])
         for ent in ins:
             if type(ent)==Main:
-                return "Room colide"
+                return "Room collide"
         if len(self.settings["power"])==0:
             return "No power (room)"
         return False
@@ -428,15 +428,18 @@ class Main(base.Main):
         if surf is None:
             surf = self.LINK["main"]
         if self.SCAN!=0: #Draw scan lines on room
+            sped = 0.25
             if self.SCAN==1: #Safe
                 col = (0,255,0)
             elif self.SCAN==2: #Error
                 col = (255,255,0)
+                sped = 0.6
             elif self.SCAN==3: #Bad
                 col = (255,0,0)
+                sped = 1.25
             else: #Scan variable error
                 col = (255,255,255)
-            perc = (time.time()-int(time.time()))*2
+            perc = ((time.time()*sped)-int((time.time()*sped)))*2
             if perc>1:
                 perc = 2-perc
             pygame.draw.line(surf,col,[x+(self.size[0]*scale*perc),y],[x+(self.size[0]*scale*perc),y+(self.size[1]*scale)],int(5*scale))

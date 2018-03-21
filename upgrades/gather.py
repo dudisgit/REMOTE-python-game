@@ -15,7 +15,7 @@ class Main(base.Main):
         spl = com.split(" ")
         if len(spl)>1: #Is there a paramiter
             if spl[1]!="all" and spl[1]!="":
-                return "Invalid paramiters entered"
+                return "Invalid parameters entered"
         Droom = self.drone.findPosition() #Get the room the drone is in
         if Droom==-1: #Outside map
             return False
@@ -30,7 +30,7 @@ class Main(base.Main):
                 if type(a)==ScrapObject or type(a)==FuelObject: #Entity is scrap
                     if type(a)==FuelObject:
                         if a.used:
-                            err = "Fuel port allredey used"
+                            err = "Fuel port already used"
                         else:
                             return True
                     else:

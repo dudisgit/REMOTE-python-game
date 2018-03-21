@@ -30,8 +30,9 @@ class Main:
         #2: Options
         #3: Reslution changing
         #4: IP address entering screen
+        #5: Game type selection
         self.__sel = 0
-        self.__opts = ["Take tutorial","Play game","Play multiplayer","Options","Map designer","Quit"]
+        self.__opts = ["Play","Options","Map designer","Quit"]
         sx,sy = LINK["main"].get_size()
         self.__LINK["multi"] = 0
         #sx = 1000
@@ -65,7 +66,11 @@ class Main:
     def __restoreDefaults(self):
         self.__LINK["showRooms"] = False #Show all rooms
         self.__LINK["allPower"] = False #Enable power for all rooms
+        if not self.__LINK["befRes"] is None:
+            self.__LINK["reslution"] = self.__LINK["befRes"].copy()
+            self.__LINK["befRes"] = None
         self.__LINK["multi"] = 0
+        self.__LINK["splitScreen"] = False
         self.__LINK["drones"] = [] #Drone list of the players drones
         for i in range(0,3):
             self.__LINK["drones"].append(self.__LINK["ents"]["drone"].Main(i*60,0,self.__LINK,-2-i,i+1))
@@ -115,6 +120,37 @@ class Main:
                 if self.__scan!=-1:
                     if self.__cli.failConnect: #Connection failure
                         self.__servGetPly(None)
+        if not self.__LINK["controller"] is None:
+            if self.__LINK["controller"].getMenuUpChange():
+                if self.__LINK["controller"].getMenuUp():
+                    pygame.event.post(pygame.event.Event(pygame.KEYDOWN,{"key":pygame.K_UP}))
+                else:
+                    pygame.event.post(pygame.event.Event(pygame.KEYUP,{"key":pygame.K_UP}))
+            if self.__LINK["controller"].getMenuDownChange():
+                if self.__LINK["controller"].getMenuDown():
+                    pygame.event.post(pygame.event.Event(pygame.KEYDOWN,{"key":pygame.K_DOWN}))
+                else:
+                    pygame.event.post(pygame.event.Event(pygame.KEYUP,{"key":pygame.K_DOWN}))
+            if self.__LINK["controller"].getMenuLeftChange():
+                if self.__LINK["controller"].getMenuLeft():
+                    pygame.event.post(pygame.event.Event(pygame.KEYDOWN,{"key":pygame.K_LEFT}))
+                else:
+                    pygame.event.post(pygame.event.Event(pygame.KEYUP,{"key":pygame.K_LEFT}))
+            if self.__LINK["controller"].getMenuRightChange():
+                if self.__LINK["controller"].getMenuRight():
+                    pygame.event.post(pygame.event.Event(pygame.KEYDOWN,{"key":pygame.K_RIGHT}))
+                else:
+                    pygame.event.post(pygame.event.Event(pygame.KEYUP,{"key":pygame.K_RIGHT}))
+            if self.__LINK["controller"].selectChange():
+                if self.__LINK["controller"].select():
+                    pygame.event.post(pygame.event.Event(pygame.KEYDOWN,{"key":pygame.K_RETURN}))
+                else:
+                    pygame.event.post(pygame.event.Event(pygame.KEYUP,{"key":pygame.K_RETURN}))
+            if self.__LINK["controller"].backChange():
+                if self.__LINK["controller"].back():
+                    self.__sel = 0
+                    self.__screen = 0
+                    self.__opts = ["Play","Options","Map designer","Quit"]
         for event in kBuf: #Event loop for keyboard
             if event.type == pygame.KEYDOWN:
                 if event.key == pygame.K_UP: #Up arrow pressed
@@ -123,44 +159,32 @@ class Main:
                     self.__sel += 1
                 elif event.key == pygame.K_RETURN: #Return key pressed
                     if self.__screen==0: #Main screen
-                        if self.__sel==0: #Start tutorial
-                            self.__restoreDefaults()
-                            self.__LINK["hints"] = False
-                            self.displayLoadingScreen()
-                            self.__LINK["loadScreen"]("game",True)
-                            self.__LINK["currentScreen"].open("tutorial.map")
-                            return None
-                        elif self.__sel==1: #Play the game normaly
-                            self.__restoreDefaults()
-                            self.displayLoadingScreen()
-                            self.__LINK["loadScreen"]("shipSelect")
-                            #mapGenerator.MapGenerator(self.__LINK,7,"playingMap.map")
-                            #self.__LINK["currentScreen"].open("playingMap.map")
-                            return None
-                        elif self.__sel==2: #Play multiplayer
-                            self.__screen = 1
+                        if self.__sel==0: #Go into game selection
+                            self.__screen = 5
                             self.__sel = 0
-                            self.__opts = SERVERS.copy()+["Direct connect","Back"]
-                            self.__servInit()
-                        elif self.__sel==3: #Options menu
+                            if self.__LINK["controller"] is None:
+                                self.__opts = ["Tutorial","Singleplayer","Multiplayer","Host multiplayer","Back"]
+                            else:
+                                self.__opts = ["Tutorial","Singleplayer","Multiplayer","Host multiplayer","Split screen","Back"]
+                        elif self.__sel==1: #Options menu
                             self.__screen = 2
                             self.__sel = 0
                             self.__opts = [[self.__LINK["showFPS"],"FPS counter"],[self.__LINK["particles"],"Particles"],[self.__LINK["floorScrap"],"Floor scrap"],
                                            [self.__LINK["popView"],"pop view (make rooms pop into view, reduced CPU)"],[self.__LINK["simpleModels"],"Simplified 3D models"],
                                            [self.__LINK["backgroundStatic"],"Background static"],[self.__LINK["viewDistort"],"View distortion effects"],
-                                           [self.__LINK["hints"],"Hints"],[self.__LINK["threading"],"Multiplayer threading"],"Reslution","Back"]
-                        elif self.__sel==4: #Map editor
+                                           [self.__LINK["hints"],"Hints"],[self.__LINK["threading"],"Multiplayer threading"],"Resolution","Back"]
+                        elif self.__sel==2: #Map editor
                             self.__restoreDefaults()
                             self.__LINK["loadScreen"]("mapEdit")
                             return None
-                        elif self.__sel==5: #Quit game
+                        elif self.__sel==3: #Quit game
                             pygame.event.post(pygame.event.Event(pygame.QUIT)) #Simulate the user pressing the X on the pygame window
                     elif self.__screen==1 and self.__scan==-1: #Multiplayer selecting screen
                         spl = self.__opts[self.__sel].split(" ")
                         if spl[0]=="Back": #Go back to main menu
                             self.__sel = 0
                             self.__screen = 0
-                            self.__opts = ["Take tutorial","Play game","Play multiplayer","Options","Map designer","Quit"]
+                            self.__opts = ["Play","Options","Map designer","Quit"]
                         elif self.__opts[self.__sel]=="Direct connect": #Go into direct connection window
                             self.__sel = 0
                             self.__screen = 4
@@ -201,7 +225,7 @@ class Main:
                         elif self.__sel==10: #Back
                             self.__sel = 0
                             self.__screen = 0
-                            self.__opts = ["Take tutorial","Play game","Play multiplayer","Options","Map designer","Quit"]
+                            self.__opts = ["Play","Options","Map designer","Quit"]
                     elif self.__screen==3: #Reslution selecting screen
                         if "x" in self.__opts[self.__sel]: #Change reslution of game
                             spl = self.__opts[self.__sel].split("x")
@@ -226,7 +250,39 @@ class Main:
                         else: #Go back to main menu
                             self.__sel = 0
                             self.__screen = 0
-                            self.__opts = ["Take tutorial","Play game","Play multiplayer","Options","Map designer","Quit"]
+                            self.__opts = ["Play","Options","Map designer","Quit"]
+                    elif self.__screen==5: #Game type selecting screen
+                        if self.__sel==0: #Start tutorial
+                            self.__restoreDefaults()
+                            self.__LINK["hints"] = False
+                            self.displayLoadingScreen()
+                            self.__LINK["loadScreen"]("game",True)
+                            self.__LINK["currentScreen"].open("tutorial.map")
+                            return None
+                        elif self.__sel==1: #Play single player
+                            self.__restoreDefaults()
+                            self.displayLoadingScreen()
+                            self.__LINK["loadScreen"]("shipSelect")
+                            return None
+                        elif self.__sel==2: #Play multiplayer
+                            self.__screen = 1
+                            self.__sel = 0
+                            self.__opts = SERVERS.copy()+["Direct connect","Back"]
+                            self.__servInit()
+                        elif self.__sel==3: #Host multiplayer
+                            pass
+                        elif self.__sel==4 and len(self.__opts)==6: #Play split screen
+                            self.__restoreDefaults()
+                            self.__LINK["befRes"] = self.__LINK["reslution"].copy()
+                            self.__LINK["reslution"][1] = int(self.__LINK["reslution"][1]/2)
+                            self.__LINK["splitScreen"] = True
+                            self.displayLoadingScreen()
+                            self.__LINK["loadScreen"]("shipSelect")
+                            return None
+                        elif (self.__sel==4 and len(self.__opts)==5) or self.__sel==5: #Back to main menu
+                            self.__sel = 0
+                            self.__screen = 0
+                            self.__opts = ["Play","Options","Map designer","Quit"]
                 elif self.__screen==4: #IP address entering
                     if event.key == pygame.K_BACKSPACE:
                         self.__IPType = self.__IPType[:-1]

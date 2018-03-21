@@ -41,7 +41,7 @@ class Main(base.Main):
         self.__sShow = True #Show in games scematic view
         self.__inRoom = False #Is true if the door is inside a room
         self.__radFill = 0 #Time until the airlock should fill the room with radiation
-        self.hintMessage = "An airlock is like a door but must not conenct two rooms but rather one room to outerspace. \nAn airlock can be made default by using its context/options menu. \nAn airlock also does not need its own power."
+        self.hintMessage = "An airlock is like a door but must not connect two rooms but rather one room to outerspace. \nAn airlock can be made default by using its context/options menu. \nAn airlock also does not need its own power."
     def SaveFile(self): #Give all infomation about this object ready to save to a file
         pows = []
         for i,a in enumerate(self.settings["power"]):
@@ -93,6 +93,12 @@ class Main(base.Main):
             else:
                 self.room1.doors.append(self)
                 self.__roomAddDirection(self.room1)
+            if not self.room2 is None:
+                if self.room2 != -1:
+                    if self.room2.isShipRoom:
+                        self.__roomAddDirection(self.room2)
+                        self.room2.reloadCorners()
+                    
     def deleting(self): #Called when this entity is being deleted
         if self.LINK["multi"]==2: #Is server
             self.LINK["serv"].SYNC.pop("e"+str(self.ID))
@@ -152,7 +158,7 @@ class Main(base.Main):
             self.LINK["outputCommand"](self.reference()+" seal integrety failed!",(255,0,0),True)
             self.__failing = False
         elif self.__failing and (not self.room2 is None or self.settings["open"]): #A ship has docked to an airlock, stop failing
-            self.LINK["outputCommand"](self.reference()+" seal integrety stabilized",(0,255,0),False)
+            self.LINK["outputCommand"](self.reference()+" seal integrety stabilised",(0,255,0),False)
             self.__parts = None
             self.__failing = False
         elif not self.alive and not self.room2 is None: #A ship has docked to this airlock when it failed

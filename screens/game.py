@@ -52,7 +52,10 @@ COMPARAMS = {"open":"e",
             "sensor":"",
             "tow":"",
             "help":"T",
-            "exit":""} #Paramiters for commands, (used for controllers)
+            "exit":"",
+            "defence":"",
+            "scan":""} #Paramiters for commands, (used for controllers)
+PRICE = {"gather":8,"generator":8,"interface":12,"lure":16,"motion":12,"overload":8,"pry":12,"remote power":12,"sensor":16,"stealth":12,"surveyor":8,"tow":8}
 OVERLAY_OPASITY = 30 #Opasity of the overlay (0-255)
 COMMAND_HISTORY_LENGTH = 30 #Length of the command history
 
@@ -378,13 +381,13 @@ class GameEventHandle: #Used to simulate and handle the events of the game world
                         usrObj.sendTrigger("setn",spl[1])
                         out = "NOMES"
                         file = open("LOG.txt","a")
-                        file.write("New user namechange "+str(usrObj.ip2)+" to "+str(spl[1])+"\n")
+                        file.write("New user name change "+str(usrObj.ip2)+" to "+str(spl[1])+"\n")
                         file.close()
                 else:
                     out = "No name supplied"
         elif spl[0]=="navigate": #Auto pilot a drone to a specific room
             if len(spl[0])<2:
-                out = "Incorrect number of paramiters"
+                out = "Incorrect number of parameters"
             else:
                 if not spl[-1] in self.Ref: #Room exists
                     out = "No such room"
@@ -445,7 +448,7 @@ class GameEventHandle: #Used to simulate and handle the events of the game world
             elif spl[1][0]!="a":
                 out = "Can only dock to an airlock"
             elif self.Ref[spl[1]]==self.ship.airlock:
-                out = "Allredey docket to airlock"
+                out = "Already docked to airlock"
             elif not self.Ref[spl[1]].discovered:
                 out = "No such airlock"
             else:
@@ -568,6 +571,7 @@ class GameEventHandle: #Used to simulate and handle the events of the game world
             elif type(a)==ShipUpgradeReferenceObject: #Entity is a ship upgrade
                 if len(self.__LINK["shipData"]["reserveUpgs"])!=self.__LINK["shipData"]["reserveMax"]: #Put upgrade in inventory
                     self.__LINK["shipData"]["reserveUpgs"].append([a.type,0,-1,0])
+        extrInfo = []
         for a in DeadDrones:
             if len(self.__LINK["drones"])>=self.__LINK["shipData"]["maxDrones"]: #Drone fleet is full
                 if len(self.__LINK["shipData"]["reserve"])>=self.__LINK["shipData"]["maxReserve"]: #Reserve fleet is full
@@ -575,6 +579,19 @@ class GameEventHandle: #Used to simulate and handle the events of the game world
                         self.__LINK["shipData"]["scrap"] += 12
                     else:
                         self.__LINK["shipData"]["scrap"] += 8
+                    if len(a.upgrades)==0:
+                        extrInfo.append["Dismantled drone "+a.settings["name"]+" due to drone storage overflow",(0,255,0)]
+                    else:
+                        extrInfo.append["Dismantled drone "+a.settings["name"]+" due to drone storage overflow, it contains the following upgrades",(0,255,0)]
+                    a.unloadUpgrades()
+                    for b in a.settings["upgrades"]:
+                        if a.settings["upgrades"][b][0]!="": #Is an upgrade
+                            if len(self.__LINK["shipData"]["invent"])<self.__LINK["shipData"]["maxInvent"]:
+                                self.__LINK["shipData"]["invent"].append(a.settings["upgrades"][b].copy())
+                                extrInfo.append(["    "+a.settings["upgrades"][b][0]+", moving to reserved area",(255,0,0)])
+                            else:
+                                self.__LINK["shipData"]["scrap"] += PRICE[a.settings["upgrades"][b][0]]/(a.settings["upgrades"][b][1]+1)
+                                extrInfo.append(["    "+a.settings["upgrades"][b][0]+", dismantling",(0,255,0)])
                 else:
                     self.__LINK["shipData"]["reserve"].append(a)
             else:
@@ -583,7 +600,6 @@ class GameEventHandle: #Used to simulate and handle the events of the game world
             for i,a in enumerate(self.__LINK["drones"][:-l]):
                 if a.number > self.__LINK["drones"][i+1].number:
                     self.__LINK["drones"][i+1],self.__LINK["drones"][i]=self.__LINK["drones"][i],self.__LINK["drones"][i+1]
-        extrInfo = []
         I = 1
         for a in self.__LINK["drones"]:
             a.number = I+0
@@ -598,7 +614,7 @@ class GameEventHandle: #Used to simulate and handle the events of the game world
         extrInfo.append(["Ship's upgrades:",(0,255,255)])
         for b in self.__LINK["shipEnt"].upgrades:
             if b.damage==1:
-                extrInfo.append(["    "+b.name+" upgrade is deteriorating, brake prop = "+str(b.brakeprob)+"%",(255,255,0)])
+                extrInfo.append(["    "+b.name+" upgrade is deteriorating, brake prob = "+str(b.brakeprob)+"%",(255,255,0)])
             elif b.damage==2:
                 extrInfo.append(["    "+b.name+" upgrade is destroyed",(255,0,0)])
         self.__LINK["shipEnt"].unloadUpgrades()
@@ -631,12 +647,20 @@ class Main: #Used as the screen object for rendering and interaction
         self.__commandSelect = 0 #Selecting command
         self.__viewChangeEffect = 0
         self.__controllerMenu = [0,[]] #Controller menu
-        self.__controllHold = -1 #Controller key hold
+        #self.__controllHold = -1 #Controller key hold
         self.__controllSelect = None #The entity the drone is facing (for easy controller interface)
-        self.__controllerChange = {"x":False,"y":False,"b":False,"a":False,"sel":False,"start":False,"lt":False,"rt":False,"up":False,"down":False,"left":False,"right":False} #Used to detect changed in controller button sates
+        #self.__controllerChange = {"x":False,"y":False,"b":False,"a":False,"sel":False,"start":False,"lt":False,"rt":False,"up":False,"down":False,"left":False,"right":False} #Used to detect changed in controller button sates
         #1 = Command selecting
         self.scematic = True #If viewing in scematic view
         self.tutorial = tutorial #Enable/disable tutorial mission
+        if self.__LINK["splitScreen"]:
+            self.scematic2 = True #If viewing in scematic view for player 2
+            self.currentDrone2 = None #Current drone 2
+            self.__scemPos2 = [0,0] #Scematic pos for player 2
+            self.__viewChangeEffect2 = 0
+            self.__controllSelect2 = None #The entity the drone is facing for player 2
+            self.__top = pygame.Surface(self.__LINK["reslution"])
+            self.__bottom = pygame.Surface(self.__LINK["reslution"])
         if tutorial: #In a tutorial mission
             self.tpart = [0,False,False,0,[],[]] #Tutorial part, used to track progression in the tutorial.
             for a in LINK["drones"]+[LINK["shipEnt"]]:
@@ -650,7 +674,7 @@ class Main: #Used as the screen object for rendering and interaction
             LINK["drones"][0].loadUpgrades()
             LINK["drones"][1].loadUpgrades()
             LINK["drones"][2].loadUpgrades()
-            LINK["shipEnt"].settings["upgrades"][0] = ["overload",1,-1]
+            LINK["shipEnt"].settings["upgrades"][0] = ["overload",0,-1]
             LINK["shipEnt"].loadUpgrades()
         sx,sy = LINK["main"].get_size()
         #sx = 1000
@@ -712,66 +736,50 @@ class Main: #Used as the screen object for rendering and interaction
         self.__fail[0] = True
         self.__fail[4] = "Disconnected: "+reason
         self.__LINK["cli"].close()
-    def controller_key(self,typ): #Returns wether a button is pressed
-        if self.__LINK["controller"] is None:
-            return False
-        if typ=="up": #Up button
-            return self.__LINK["controller"].get_axis(1)<-0.5
-        elif typ=="down": #Down button
-            return self.__LINK["controller"].get_axis(1)>0.5
-        elif typ=="left": #Left button
-            return self.__LINK["controller"].get_axis(0)<-0.5
-        elif typ=="right": #Right button
-            return self.__LINK["controller"].get_axis(0)>0.5
-        elif typ=="x": #X button
-            return self.__LINK["controller"].get_button(0)
-        elif typ=="y": #Y button
-            return self.__LINK["controller"].get_button(3)
-        elif typ=="b": #B button
-            return self.__LINK["controller"].get_button(2)
-        elif typ=="a": #A button
-            return self.__LINK["controller"].get_button(1)
-        elif typ=="lt": #Left trigger
-            return self.__LINK["controller"].get_button(4)
-        elif typ=="rt": #Right trigger
-            return self.__LINK["controller"].get_button(5)
-        elif typ=="sel": #Select button
-            return self.__LINK["controller"].get_button(8)
-        elif typ=="start": #Start button
-            return self.__LINK["controller"].get_button(9)
-        return False
-    def __droneMove(self): #Highlights the closest door to the drones angle
-        self.__controllSelect = None
+    def __droneMove(self,drone,Pl2=False): #Highlights the closest door to the drones angle
+        if Pl2:
+            self.__controllSelect2 = None
+        else:
+            self.__controllSelect = None
         if self.__LINK["controller"] is None:
             return 0
-        if not self.currentDrone is None: #A drone is acvtivly being controlled 
-            rm = self.currentDrone.findPosition()
+        if not drone is None: #A drone is acvtivly being controlled 
+            rm = drone.findPosition()
             AirlockReferenceObject = self.getEnt("airlock")
             if type(rm)==self.getEnt("room"): #Drone is in a room
                 closest = [-1,None]
                 for a in rm.doors: #Go through the rooms doors
                     if a.powered and not (type(a)==AirlockReferenceObject and a.room2 is None): #Door is powered and is not an un-docked airlock
                         #Get the angle of the drone towards the door and compare distances
-                        angle = math.atan2(self.currentDrone.pos[0]-a.pos[0],self.currentDrone.pos[1]-a.pos[1])*180/math.pi
+                        angle = math.atan2(drone.pos[0]-a.pos[0],drone.pos[1]-a.pos[1])*180/math.pi
                         angle = int(angle) % 360 #Put into the range 0-360
                         dist2 = 360
-                        if angle > self.currentDrone.angle:
-                            if angle - self.currentDrone.angle > 180:
-                                dist2 = 180 - (angle - 180 - self.currentDrone.angle)
+                        if angle > drone.angle:
+                            if angle - drone.angle > 180:
+                                dist2 = 180 - (angle - 180 - drone.angle)
                             else:
-                                dist2 = angle - self.currentDrone.angle
+                                dist2 = angle - drone.angle
                         else:
-                            if self.currentDrone.angle - angle > 180:
-                                dist2 = 180 - (self.currentDrone.angle - 180 - angle)
+                            if drone.angle - angle > 180:
+                                dist2 = 180 - (drone.angle - 180 - angle)
                             else:
-                                dist2 = self.currentDrone.angle - angle
+                                dist2 = drone.angle - angle
                         if abs(dist2)<closest[0] or closest[0]==-1: #Check if the door/airlock is closest to the centre of the room
                             closest[0] = abs(dist2)+0
                             closest[1] = a
-                self.__controllSelect = closest[1]
+                if Pl2:
+                    self.__controllSelect2 = closest[1]
+                else:
+                    self.__controllSelect = closest[1]
     def changeName(self,nam):
         self.name=nam
-    def renderHint(self,surf,message,pos,ctext="Press enter or space to continue"): #Render a hint box
+    def renderHint(self,surf,message,pos,ctext=None): #Render a hint box
+        if ctext is None:
+            if self.__LINK["controller"] is None:
+                ctext = "Press enter or space to continue"
+            else:
+                B = self.__LINK["controller"].keyName["select"]
+                ctext = "Press "+B+" to continue"
         screenRes = self.__LINK["reslution"] #Screen reslution
         boxPos = [pos[0]+10,pos[1]+10] #Position of the box
         boxWidth = screenRes[0]/2 #Width of the box will be half the screen width
@@ -811,6 +819,11 @@ class Main: #Used as the screen object for rendering and interaction
                     if self.tpart[0]<2:
                         self.tpart[0]+=1
                         self.tpart[3] = 0
+        if not self.__LINK["controller"] is None:
+            if self.tpart[0]<2 and self.__LINK["controller"].selectChange():
+                if self.__LINK["controller"].select():
+                    self.tpart[0]+=1
+                    self.tpart[3] = 0
         if self.__Event.Ref["a1"].settings["open"] and self.tpart[0]==2: #Openeing a1
             self.tpart[0]+=1
             self.tpart[3] = 0
@@ -862,7 +875,7 @@ class Main: #Used as the screen object for rendering and interaction
             ScrapReferenceObject = self.__Event.getEnt("scrap")
             for a in ENTS:
                 scrapCount+=int(type(a)==ScrapReferenceObject)
-            if scrapCount==0: #No more scrap in room
+            if scrapCount==0 or not self.__LINK["controller"] is None: #No more scrap in room
                 self.tpart[0]+=1
                 self.tpart[3] = 0
         elif self.tpart[0]==8: #Enter scematic view
@@ -883,6 +896,12 @@ class Main: #Used as the screen object for rendering and interaction
                     self.__scemPos = [-600,-400]
                     self.tpart[4] = [False]
         elif self.tpart[0]==11: #Open and close door
+            if not self.currentDrone is None:
+                self.scematic = True
+                if not self.currentDrone is None: #Drone active
+                    self.currentDrone.selectControll(False,self.name) #Let drone free
+                self.currentDrone = None
+                self.__command.activeTab = len(self.__command.tabs)-1 #Goto the ships command line
             if not self.__Event.Ref["d1"].settings["open"]:
                 self.tpart[4][0] = True
             elif self.tpart[4][0]:
@@ -905,6 +924,12 @@ class Main: #Used as the screen object for rendering and interaction
                 self.tpart[0] += 1
                 self.tpart[3] = 0
         elif self.tpart[0]==16: #Threat safe
+            if not self.currentDrone is None and not self.__LINK["controller"] is None:
+                self.scematic = True
+                if not self.currentDrone is None: #Drone active
+                    self.currentDrone.selectControll(False,self.name) #Let drone free
+                self.currentDrone = None
+                self.__command.activeTab = len(self.__command.tabs)-1 #Goto the ships command line
             if self.__Event.Ref["r3"].SCAN==3 and not self.__Event.Ref["d3"].settings["open"]:
                 self.tpart[0] += 1
                 self.tpart[3] = 0
@@ -958,9 +983,16 @@ class Main: #Used as the screen object for rendering and interaction
                 self.tpart[0]+=1
                 self.tpart[3] = 0
         elif self.tpart[0]==22: #Navigate drone 3 to R4
-            if self.__Event.drones[2].findPosition()==self.__Event.Ref["r4"]:
+            PS = self.__Event.drones[2].findPosition()
+            if PS==self.__Event.Ref["r4"]:
                 self.tpart[0] += 1
                 self.tpart[3] = 0
+            elif PS!=self.__Event.Ref["r1"]:
+                for a in self.__Event.drones[2].upgrades:
+                    if a.name=="tow":
+                        if a.beingUsed():
+                            self.__Event.drones[2].pos = [self.__Event.Ref["r1"].pos[0]+(self.__Event.Ref["r1"].size[0]/2),self.__Event.Ref["r1"].pos[1]+(self.__Event.Ref["r1"].size[1]/2)]
+                            self.__Event.drones[2].stopNavigation()
         elif self.tpart[0]==23: #Interface with interface
             for a in self.__Event.drones[2].upgrades:
                 if a.name=="interface":
@@ -1025,11 +1057,17 @@ class Main: #Used as the screen object for rendering and interaction
             else:
                 self.tpart[0]+=1
                 self.tpart[3] = 0
+        elif self.tpart[0]==35: #Score screen
+            if self.__fail[0]:
+                self.tpart[0] += 1
+                self.tpart[3] = 0
     def renderTutorial(self,surf): #Render tutorial overlay
         sx,sy = surf.get_size()
         T = None
+        ps = [0,0]
+        tex = ""
         if self.tpart[0]==0: #Welcome screen
-            tex = "Welcome to REMOTE, this is a strategy game set in a world full of derilic ships where the only way to survive is gather resources with your drones and progress through each ship"
+            tex = "Welcome to REMOTE, this is a clone of a strategy game called DUSKERS that is set in a world full of derelict ships where the only way to survive is gather resources with your drones"
             ps = [10,sy-10]
         elif self.tpart[0]==1: #Introduction to console tabs
             tex = "These tabs are for your individual drones and their upgrades. \nThe green bar is their health and the slanted text is their upgrades."
@@ -1038,113 +1076,202 @@ class Main: #Used as the screen object for rendering and interaction
                             [1,[sx-CONSOLE_SIZE[0]-25,sy-CONSOLE_SIZE[1]-175],[(sx/2.5)+20,sy-CONSOLE_SIZE[1]-175]],
                             [1,[(sx/2.5)+20,sy-CONSOLE_SIZE[1]-175],[(sx/2.5)+20,sy-CONSOLE_SIZE[1]-190]] ]
         elif self.tpart[0]==2: #Introduction to the command line interface
-            tex = "This is the command line, use this to controll drones, upgrades and doors \nLets start by typing 'a1' to open/close the airlock we see on our screen"
+            if self.__LINK["controller"] is None:
+                tex = "This is the command line, use this to control drones, upgrades and doors \nLet's start by typing 'a1' to open/close the airlock we see on our screen"
+                T = "Type 'a1' and hit enter"
+            else:
+                B = self.__LINK["controller"].keyName["select"]
+                tex = "This is the command line, use this to control drones, upgrades and doors \nLet's start by opening a1. To open/close the airlock, go into the command menu with "+B+" on your controller"
+                T = "Press "+B+" to enter command menu and select open with "+B
             ps = [sx/2.5,sy-CONSOLE_SIZE[1]]
-            T = "Type 'a1' and hit enter"
             self.tpart[2] = True
             self.tpart[5] = [ [0,[sx-CONSOLE_SIZE[0]-20,sy-CONSOLE_SIZE[1]-20,CONSOLE_SIZE[0],CONSOLE_SIZE[1]]] ]
         elif self.tpart[0]==3: #Request to go to a drone
-            tex = "We are now ready to venture the ship, to manualy controll a drone simply press its number on your keyboard \nFor this example lets controll drone 1"
+            if self.__LINK["controller"] is None:
+                tex = "We are now ready to venture onto the ship, to manually control a drone simply press its number on your keyboard \nFor this example let's control drone 1"
+                T = "Press 1 to control drone 1"
+            else:
+                LT = self.__LINK["controller"].keyName["bfDrone"]
+                RT = self.__LINK["controller"].keyName["nxDrone"]
+                tex = "We are now ready to venture onto the ship, to manually control a drone use "+LT+" and "+RT+" \nFor this example let's control drone 1 by pressing "+LT
+                T = "Press "+LT+" to control drone 1"
             ps = [10,sy-10]
             self.tpart[1] = True
             self.tpart[5] = []
-            T = "Press 1 to controll drone 1"
         elif self.tpart[0]==4: #Tell drone controlls
-            tex = "Use the arrow keys to move (or what ever keys you changed it to) \nLeft, right - Turn left and right \nUp, down - Move forward/backward \nNavigate the drone out the ship into the fisrt room"
+            if self.__LINK["controller"] is None:
+                tex = "Use the arrow keys to move \nLeft, right - Turn left and right \nUp, down - Move forward/backward \nNavigate the drone out of the ship into the first room"
+            else:
+                mov = self.__LINK["controller"].keyName["mov"]
+                aim = self.__LINK["controller"].keyName["aim"]
+                tex = "Use the "+mov+" to move and the "+aim+" to aim \nNavigate the drone out of the ship into the first room on the left"
             ps = [10,sy-10]
             T = "Navigate drone into first room"
         elif self.tpart[0]==5: #Scavange first room
-            tex = "Objects that are in BLUE are entities you can interact with, but first lets find some scrap. \nIf there is no scrap in this room then head into the next room above"
+            tex = "Objects that are in BLUE are entities you can interact with, but first let's find some scrap. \nIf there is no scrap in this room then head into the next room above"
             ps = [10,sy-10]
             T = "Navigate drone into second room"
         elif self.tpart[0]==6: #Gather scrap
-            tex = "Looks like their scrap in this room, this is indicated by the yellow/orange icons. \nTo gather this scrap type 'gather' in console\n If the console gives you a hint while typing then hit TAB to auto complete!"
+            if self.__LINK["controller"] is None:
+                tex = "Looks like there's scrap in this room, this is indicated by the yellow/orange icons. \nTo gather this scrap type 'gather' in console\n If the console gives you a hint while typing then hit TAB to auto complete!"
+                T = "Type 'gather' and hit return"
+            else:
+                B = self.__LINK["controller"].keyName["select"]
+                tex = "Looks like there's scrap in this room, this is indicated by the yellow/orange icons. \nTo gather this scrap use the gather command in the command menu with "+B
+                T = "Open command menu and select 'gather' near the bottom with "+B
             ps = [10,sy-10]
-            T = "Type 'gather' and hit return"
         elif self.tpart[0]==7: #Gather more scrap
-            tex = "It can be annoying to have to type 'gather' again to gather more scrap! \nLuckily there is a shortcut, type 'gather all' to gather all scrap in the room your in"
+            tex = "It can be annoying to have to type 'gather' again to gather more scrap! \nLuckily there is a shortcut, type 'gather all' to gather all scrap in the room you're in"
             ps = [10,sy-10]
             T = "Type 'gather all' and hit return"
         elif self.tpart[0]==8: #Go into scematic view
-            tex = "There are no more rooms to explore, lets head into scematic view to have a better view of the ship. \nYou can access the scematic view by pressing space"
+            if self.__LINK["controller"] is None:
+                tex = "There are no more rooms to explore, let's head into scematic view to have a better view of the ship. \nYou can access the scematic view by pressing space"
+                T = "Press space to go into scematic view"
+            else:
+                S = self.__LINK["controller"].keyName["scem"]
+                tex = "There are no more rooms to explore, let's head into scematic view to have a better view of the ship. \nYou can access the scematic view by pressing "+S
+                T = "Press "+S+" to go into scematic view"
             ps = [10,sy-10]
-            T = "Press space to go into scematic view"
         elif self.tpart[0]==9: #Navigation command
-            tex = "This is the scematic view, use the arrow keys (same as drones) to move around. \nWhen rooms have a white border it means that they are not powered. \nTo power a room you need a drone with a generator, if we look in the tabs we can see that drone 2 has a generator. \nWe could controll drone 2 and move it towards the generator but lets be lazy! \nType 'navigate 2 r2'"
+            if self.__LINK["controller"] is None:
+                tex = "This is the scematic view, use the arrow keys (same as drones) to move around. \nWhen rooms have a white border it means that they are not powered. \nTo power a room you need a drone with a generator, if we look in the tabs we can see that drone 2 has a generator. \nWe could control drone 2 and move it towards the generator but let's be lazy! \nType 'navigate 2 r2'"
+                T = "Type 'navigate 2 r2' and hit enter"
+                self.tpart[1] = False
+            else:
+                mov = self.__LINK["controller"].keyName["mov"]
+                LT = self.__LINK["controller"].keyName["bfDrone"]
+                RT = self.__LINK["controller"].keyName["nxDrone"]
+                tex = "This is the scematic view, use the "+mov+" to move around. \nWhen rooms have a white border it means that they are not powered. \nTo power a room you need a drone with a generator, if we look in the tabs we can see that drone 2 has a generator."
+                T = "Navigate drone 2 to R2 by selecting it with "+LT+" or "+RT
+                self.tpart[1] = True
             ps = [10,sy-10]
-            self.tpart[1] = False
-            T = "Type 'navigate 2 r2' and hit enter"
             self.tpart[5] = [ [0,[sx-CONSOLE_SIZE[0]+60,sy-CONSOLE_SIZE[1]-80,70,70]],
                             [1,[sx-CONSOLE_SIZE[0]+60,sy-CONSOLE_SIZE[1]-80],[20,sy-CONSOLE_SIZE[1]-80]],
                             [1,[20,sy-CONSOLE_SIZE[1]-80],[20,sy-30] ] ]
         elif self.tpart[0]==10: #Navigation command explained
-            tex = "The navigate command takes the drone and the room you want to navigate it to seperated by two spaces, it will auto-pilot any drone you want to a room on the map. \nWe can specify a room by typing its label as shown by the centre of it. e.g. 'navigate 2 r1' \nNext, to use the generator upgrade type 'generator'"
+            if self.__LINK["controller"] is None:
+                tex = "The navigate command takes the drone and the room you want to navigate it to seperated by two spaces, it will auto-pilot any drone you want to a room on the map. \nWe can specify a room by typing its label as shown by the centre of it. e.g. 'navigate 2 r1' \nNext, to use the generator upgrade type 'generator'"
+                T = "Type 'generator' and hit enter"
+            else:
+                B = self.__LINK["controller"].keyName["select"]
+                tex = "To use the generator upgrade go in the command menu and select generator by pressing "+B
+                T = "Press "+B+" and select 'generator' near the bottom"
             ps = [10,sy-10]
             self.tpart[5] = []
-            T = "Type 'generator' and hit enter"
         elif self.tpart[0]==11: #Door controll
-            tex = "We can now see more rooms and controll various parts of the ship. \nFor example, lets open/close a door, close D1 by typing 'd1' and open it again by typing 'd1' \nDo NOT open any other door for now"
+            if self.__LINK["controller"] is None:
+                tex = "We can now see more rooms and control various parts of the ship. \nFor example, lets open/close a door, close D1 by typing 'd1' and open it again by typing 'd1' \nDo NOT open any other door for now"
+                T = "Type 'd1' and hit enter, then type again to close"
+            else:
+                B = self.__LINK["controller"].keyName["select"]
+                tex = "We can now see more rooms and control various parts of the ship. \nFor example, lets open/close a door, select 'close' then 'open' in the command menu \nDo NOT open any other door for now"
+                T = "Close D1 in the command menu with "+B+", repeat again but opening D1"
+            self.tpart[1] = False
             ps = [10,sy-10]
-            T = "Type 'd1' and hit enter, then type again to close"
         elif self.tpart[0]==12: #Motion scan rooms
-            tex = "Here's the trick, \nThere are monsters in some rooms and we do not know which ones they are in, when we first start a ship the first two rooms will be initialy safe. \nThankfully we can use the motion upgrade on drone 1, type 'motion' to turn the motion scanning on"
+            if self.__LINK["controller"] is None:
+                tex = "Here's the trick, \nThere are monsters in some rooms and we do not know which ones they are in, when we first start a ship the first two rooms will be initially safe. \nThankfully we can use the motion upgrade on drone 1, type 'motion' to turn the motion scanning on"
+                T = "Type 'motion' and hit enter"
+            else:
+                B = self.__LINK["controller"].keyName["select"]
+                tex = "Here's the trick, \nThere are monsters in some rooms and we do not know which ones they are in, when we first start a ship the first two rooms will be initially safe. \nThankfully we can use the motion upgrade on drone 1, select 'motion' in the command menu by pressing "+B
+                T = "Open the command menu and select 'motion' with "+B
             ps = [sx/2.5,sy-CONSOLE_SIZE[1]]
-            T = "Type 'motion' and hit enter"
         elif self.tpart[0]==13: #Motion command explination
-            tex = "It looks like theres a threat in R4, this means we cannot go in there or our drone will be under attack! \nThis is shown by the red scan lines \nLets do some trickery, navigate drone 1 back into R2"
+            tex = "It looks like there's a threat in R4, this means we cannot go in there or our drone will be under attack! \nThis is shown by the red scan lines \nLet's do some trickery, navigate drone 1 back into R2"
             ps = [sx/2.5,sy-CONSOLE_SIZE[1]]
-            T = "Type 'navigate 1 r2' to navigate drone 1 to R2"
+            if self.__LINK["controller"] is None:
+                T = "Type 'navigate 1 r2' to navigate drone 1 to R2"
+            else:
+                LT = self.__LINK["controller"].keyName["bfDrone"]
+                RT = self.__LINK["controller"].keyName["nxDrone"]
+                T = "Select drone 1 with "+LT+ " or "+RT+" and navigate it to R2"
+                self.tpart[1] = True
         elif self.tpart[0]==14: #Close door behind drone
-            tex = "Notice how the motion scanning stops when we move the drone that is scanning, your drone must be still for you to scan rooms. \nNow lets close D1"
+            if self.__LINK["controller"] is None:
+                tex = "Notice how the motion scanning stops when we move the drone that is scanning, your drone must be still for you to scan rooms. \nNow let's close D1"
+                T = "Type 'd1' to close D1"
+            else:
+                B = self.__LINK["controller"].keyName["qOpen"]
+                tex = "Notice how the motion scanning stops when we move the drone that is scanning, your drone must be still for you to scan rooms. \nNow let's close D1 by using a shortcut, aim your drone at D1 and press "+B
+                T = "Close D1 by looking at it and pressing "+B+" on your controller"
             ps = [10,sy-10]
-            T = "Type 'd1' to close D1"
         elif self.tpart[0]==15: #Motion scan
             tex = "Motion Scan again"
             ps = [10,sy-10]
-            T = "Type 'motion' to motion scan"
+            if self.__LINK["controller"] is None:
+                T = "Type 'motion' to motion scan"
+            else:
+                T = "Open the command menu and select 'motion' near the bottom"
         elif self.tpart[0]==16: #The trickery
             tex = "Now here comes the trickery, lets open D3 and wait for the threat to go into R3 then close the door behind it."
             ps = [10,sy-10]
             T = "Open D3 and close it when the threat is in R3"
+            if not self.__LINK["controller"] is None:
+                self.tpart[1] = False
         elif self.tpart[0]==17: #Go inside safe room
-            tex = "It is now safe to go in R4, open the door towards it and scavenge the room using drone 1 by pressing 1"
+            tex = "It is now safe to go in R4, open the door towards it and scavenge the room using drone 1"
             ps = [10,sy-10]
             self.tpart[1] = True
-            T = "Open D2 and scavenge the opposite room"
+            T = "Open D2 and scavenge the left room to R2"
         elif self.tpart[0]==18: #Gather everything
-            tex = "Like before, lets use the 'gather all' command to gather everything inside the room."
+            if self.__LINK["controller"] is None:
+                tex = "Like before, lets use the 'gather all' command to gather everything inside the room."
+                T = "Type 'gather all' to gather everything"
+            else:
+                tex = "Like before, lets gather everything inside the room."
+                T = "Gather all scrap by selecting 'scrap' in the command menu"
             ps = [10,sy-10]
-            T = "Type 'gather all' to gather everything"
         elif self.tpart[0]==19: #Towing and fuel
-            tex = "When gathering all scrap you will notice your drone will gather fuel from the fuel port (BLUE) and be paused for 1.5 seconds. \nFuel is used to go to new ships, if you have no fuel, you'r dead. \nThere is also a yellow box at the top of the room, this is a ship upgrade, if you tow it to your ship room (R1) it will be added to your inventory. \nDrone 3 has a tow upgade, navigate drone 3 to R4"
+            tex = "When gathering all scrap you will notice your drone will gather fuel from the fuel port (BLUE) and be paused for 1.5 seconds. \nFuel is used to go to new ships, if you have no fuel, it's game over! \nThere is also a yellow box at the top of the room, this is a ship upgrade, if you tow it to your ship room (R1) it will be added to your inventory. \nDrone 3 has a tow upgade, navigate drone 3 to R4"
             ps = [10,sy-10]
             self.tpart[5] = [ [0,[sx-CONSOLE_SIZE[0]+140,sy-CONSOLE_SIZE[1]-80,70,70]],
                             [1,[sx-CONSOLE_SIZE[0]+140,sy-CONSOLE_SIZE[1]-80],[20,sy-CONSOLE_SIZE[1]-80]],
                             [1,[20,sy-CONSOLE_SIZE[1]-80],[20,sy-30] ] ]
             T = "Navigate drone 3 to R4"
         elif self.tpart[0]==20: #Towing
-            tex = "To use the tow upgrade, type 'tow' and simular to scrap it will head towards the upgrade and tow it \nMake sure your on drone 3 before you do the command."
+            if self.__LINK["controller"] is None:
+                tex = "To use the tow upgrade, type 'tow' and similar to scrap it will head towards the upgrade and tow it \nMake sure you're controlling drone 3 before you do the command."
+                T = "Type 'tow' to use the tow upgrade to tow the newly found upgrade"
+            else:
+                tex = "To use the tow upgrade, select 'tow' in the command menu and it will head towards the upgrade to tow it \nMake sure you're controlling drone 3 before you do the command."
+                T = "Select 'tow' in the command menu"
             self.tpart[5] = []
             ps = [sx/2.5,sy-CONSOLE_SIZE[1]]
-            T = "Type 'tow' to activate the tow upgrade"
         elif self.tpart[0]==21: #Move new upgrade to R1
             tex = "Now we need to add the upgrade to our inventory when we exit the map, naivgate drone 3 back to R1"
             ps = [10,sy-10]
             T = "Naivgate drone 3 to R1"
         elif self.tpart[0]==22: #Navigate drone 3 back to R4
-            tex = "It looks like theres an 'interface' in R4, this is the panel againsed the wall (blue). \nDrone 3 has an interface upgrade so it should be able to use this entity. \nNavigate drone 3 to r4 but remember to stop towing the upgrade before by typing 'tow' again"
+            if self.__LINK["controller"] is None:
+                tex = "It looks like there's an interface in R4, this is the panel against the wall (blue). \nDrone 3 has an interface upgrade so it should be able to use this entity. \nNavigate drone 3 to r4 but remember to stop towing the upgrade before by typing 'tow' again"
+            else:
+                tex = "It looks like there's an interface in R4, this is the panel against the wall (blue). \nDrone 3 has an interface upgrade so it should be able to use this entity. \nNavigate drone 3 to r4 but remember to stop towing the upgrade before by selecting the 'tow' button in the command menu"
             ps = [10,sy-10]
             T = "Stop towing, navigate drone 3 to R4"
         elif self.tpart[0]==23: #Drone 3 inside R4
             tex = "Type 'interface' to use the interface upgrade and interface with the interface!"
             ps = [sx/2.5,sy-CONSOLE_SIZE[1]]
-            T = "Type 'interface' and hit enter"
+            if self.__LINK["controller"] is None:
+                T = "Type 'interface' and hit enter"
+            else:
+                T = "Select 'interface' in the command menu"
         elif self.tpart[0]==24: #Interface commands:
-            tex = "This interface has the ability to controll turret defences (as described in console). Turret defences are turrets in a room that will kill anything (including your drones) inside the room. We can see there one in R3 \nType 'defence' to turn defences on."
+            if self.__LINK["controller"] is None:
+                tex = "This interface has the ability to control turret defences (as described in console). Turret defences are turrets in a room that will kill anything (including your drones) inside the room. We can see there's one in R3 \nType 'defence' to turn defences on."
+                T = "Type 'defence' to turn ship defences on"
+            else:
+                tex = "This interface has the ability to control turret defences (as described in console). Turret defences are turrets in a room that will kill anything (including your drones) inside the room. We can see there's one in R3"
+                T = "Select 'defence' in the command menu"
             ps = [10,sy-10]
-            T = "Type 'defence' to turn ship defences on"
         elif self.tpart[0]==25: #Killed NPC
-            tex = "As said in the console, the turret has just killed the threat inside the room. But the turret is still on so we can't go inside. \nIn this situation you woulld type 'defence' again and turn the defences off but lets say the interface your using died. \nHow can we go in there, well what we can do is destroy the turret in there, lets use the overload ship upgrade (ship upgrades are above the scematic view tab). \nType 'overload r3'"
+            if self.__LINK["controller"] is None:
+                tex = "As said in the console, the turret has just killed the threat inside the room. But the turret is still on so we can't go inside. \nIn this situation you would type 'defence' again and turn the defences off but let's say the interface you're using died. \nHow can we go in there, well what we can do is destroy the turret in there, let's use the overload ship upgrade (ship upgrades are above the scematic view tab). \nType 'overload r3'"
+                T = "Type 'overload r3' to overload R3"
+            else:
+                tex = "As said in the console, the turret has just killed the threat inside the room. But the turret is still on so we can't go inside. \nIn this situation you would select 'defence' again and turn the defences off but let's say the interface you're using died. \nHow can we go in there?, well what we can do is destroy the turret in there, let's use the overload ship upgrade (ship upgrades are above the scematic view tab)."
+                T = "Select 'overload' and select R3 in the command menu"
             if not self.currentDrone is None:
                 self.scematic = True
                 if not self.currentDrone is None: #Drone active
@@ -1156,52 +1283,75 @@ class Main: #Used as the screen object for rendering and interaction
                             [1,[sx-CONSOLE_SIZE[0]+220,sy-CONSOLE_SIZE[1]-80],[20,sy-CONSOLE_SIZE[1]-80]],
                             [1,[20,sy-CONSOLE_SIZE[1]-80],[20,sy-30] ] ]
             ps = [10,sy-10]
-            T = "Type 'overload r3' to overload R3"
         elif self.tpart[0]==26: #Scavange more
             self.tpart[1] = True
             self.tpart[5] = []
-            tex = "If you want you can now enter R3 becuase the threat is dead. \nThe overload upgrade can also destroy certain threat types although it will destroy anything electronic inside rooms (including your drones) \nBut we still have two more rooms to scavenge, use motion in R4 when your ready."
+            tex = "If you want you can now enter R3 becuase the threat is dead. \nThe overload upgrade can also destroy certain threat types although it will destroy anything electronic inside rooms (including your drones) \nBut we still have two more rooms to scavenge, use motion in R4 when you're ready."
             ps = [10,sy-10]
-            T = "Type 'motion' with drone 1 in R4"
+            if self.__LINK["controller"] is None:
+                T = "Type 'motion' with drone 1 in R4"
+            else:
+                T = "Select 'motion' in the command menu"
         elif self.tpart[0]==27: #Incorrect scanning
-            tex = "R5 scan lines are yellow, why is that? \nWell it means the room cannot be scanned so you might have to come to other stategies to solving this, \nLets open D5 and wait until somethis goes into R6."
+            tex = "R5 scan lines are yellow, why is that? \nWell it means the room cannot be scanned so you might have to come up with other stategies for solving this, \nLet's open D5 and wait until something goes into R6."
             ps = [10,sy-10]
             T = "Open D5"
         elif self.tpart[0]==28:
             tex = ""
             ps = [-100,0]
         elif self.tpart[0]==29:
-            tex = "It looks like nothing has came out so lets assume the room is safe, go ahead and enter R5"
+            tex = "It looks like nothing has come out so let's assume the room is safe, go ahead and enter R5"
             ps = [10,sy-10]
             T = "Open D4 and go into room using drone 1"
         elif self.tpart[0]==30: #Swapping
-            tex = "You can see a disabled drone at the back of the room, disabled drones can be repaired to use for other ships and expand your drone fleet. They can also contain upgrades when you first find them. To use get its upgrades, type 'swap'"
+            if self.__LINK["controller"] is None:
+                tex = "You can see a disabled drone at the back of the room, disabled drones can be repaired to use for other ships and expand your drone fleet. They can also contain upgrades when you first find them. To get its upgrades, type 'swap'"
+                T = "Type 'swap' to swap upgrades"
+            else:
+                tex = "You can see a disabled drone at the back of the room, disabled drones can be repaired to use for other ships and expand your drone fleet. They can also contain upgrades when you first find them. To get its upgrades, select 'swap' in the command menu"
+                T = "Select 'swap' in the command menu"
             ps = [10,sy-10]
-            T = "Type 'swap' to swap upgrades"
         elif self.tpart[0]==31: #Swapping upgrades
-            tex = "In this menu you can use the arrow keys to swap upgrades, press enter to move the from one side to the next. \nMove all the upgrades from the disabled drone to drone 1"
+            if self.__LINK["controller"] is None:
+                tex = "In this menu you can use the arrow keys to swap upgrades, press enter to move them from one side to the next. \nMove all the upgrades from the disabled drone to drone 1"
+            else:
+                B = self.__LINK["controller"].keyName["select"]
+                tex = "In this menu you can use the arrow keys to swap upgrades, press "+B+" to move them from one side to the next. \nMove all the upgrades from the disabled drone to drone 1"
             ps = [10,sy-200]
             T = "Transfer upgrade from disabled drone to drone 1"
         elif self.tpart[0]==32: #Exiting swap menu
-            tex = "Press 'Esc' to exit the swap menu"
+            if self.__LINK["controller"] is None:
+                tex = "Press 'Esc' to exit the swap menu"
+                T = "Exit swap menu by pressing Esc"
+            else:
+                B = self.__LINK["controller"].keyName["back"]
+                tex = "Press "+B+" to exit the swap menu"
+                T = "Exit swap menu by pressing "+B
             ps = [10,sy-200]
-            T = "Exit swap menu by pressing Esc"
         elif self.tpart[0]==33: #Tow drone
             tex = "You can tow disabled drones and add them to your inventory to be repaired for future use. Use drone 3 to tow the disabled drone back to R1"
             ps = [10,sy-10]
             self.tpart[5] = [ [0,[sx-CONSOLE_SIZE[0]+140,sy-CONSOLE_SIZE[1]-80,70,70]],
                             [1,[sx-CONSOLE_SIZE[0]+140,sy-CONSOLE_SIZE[1]-80],[20,sy-CONSOLE_SIZE[1]-80]],
                             [1,[20,sy-CONSOLE_SIZE[1]-80],[20,sy-30] ] ]
-            T = "Navigate drone 3 to R5 and tow drone back to R1"
+            T = "Navigate drone 3 to R5 and tow the disabled drone back to R1"
         elif self.tpart[0]==34: #Finilizing
-            tex = "You can scavenge R6 if you want or leave now, once your done you can do a neat trick to quickly leave the ship. \nType 'navigate all r1' and it will navigate all drones to R1 (the ship room)"
+            if self.__LINK["controller"] is None:
+                tex = "You can scavenge R6 if you want or leave now, once you're done you can do a neat trick to quickly leave the ship. \nType 'navigate all r1' and it will navigate all drones to R1 (the ship room)"
+                T = "Type 'navigate all r1' and hit enter"
+            else:
+                tex = "You can scavenge R6 if you want or leave now, once you're done you must navigate all your drones to R1"
+                T = "Navigate all outer drones to R1 (player ship room)"
             ps = [10,sy-10]
             self.tpart[5] = []
-            T = "Type 'navigate all r1' and hit enter"
         elif self.tpart[0]==35:
-            tex = "This concludes this tutorial! \nIn the game you will face different challenges and will have to work out stragegies to overcome them to progress. \nType 'exit' to leave the ship your connected to."
+            if self.__LINK["controller"] is None:
+                tex = "This concludes this tutorial! \nIn the game you will face different challenges and will have to work out stragegies to overcome them to progress. \nType 'exit' to leave the ship you're connected to."
+                T = "Type 'exit' to exit the ship and tutorial"
+            else:
+                tex = "This concludes this tutorial! \nIn the game you will face different challenges and will have to work out stragegies to overcome them to progress. \nSelect 'exit' in the command menu to leave the ship you're connected to."
+                T = "Select 'exit' in the command menu to exit the ship and tutorial"
             ps = [10,sy-10]
-            T = "Type 'exit' to exit the ship and tutorial"
         self.tpart[3] = ((self.tpart[3]*3)+ps[1])/4
         #Render hint box
         if T is None:
@@ -1255,7 +1405,7 @@ class Main: #Used as the screen object for rendering and interaction
         if key in self.__HoldKeys: #Has the key been pressed before?
             return self.__HoldKeys[key]
         return False
-    def goToDrone(self,number,print=True): #Goto a specific drone number view
+    def goToDrone(self,number,print=True,PL2=False): #Goto a specific drone number view
         droneNums = {}
         if self.tutorial:
             if not self.tpart[1]: #Drone selecting is disabled
@@ -1267,13 +1417,31 @@ class Main: #Used as the screen object for rendering and interaction
                 self.putLine("No such drone "+str(number),(255,255,0),False)
             return False
         else: #Drone exists
-            if not self.currentDrone is None:
-                self.currentDrone.selectControll(False,self.name) #Let previous drone free
-            self.currentDrone = droneNums[number] #Set the current drone object to the one specified
-            self.currentDrone.selectControll(True,self.name)
-            self.__viewChangeEffect = time.time()+0.1
-            self.scematic = False #Is not viewing in scematic view
-            self.__command.activeTab = number-1 #Switch to the specific tab of the drone
+            if PL2:
+                if not self.currentDrone2 is None:
+                    self.currentDrone2.selectControll(False,self.name) #Let previous drone free
+                self.currentDrone2 = droneNums[number] #Set the current drone object to the one specified
+                self.currentDrone2.selectControll(True,self.name)
+                self.__viewChangeEffect2 = time.time()+0.1
+                self.scematic2 = False #Is not viewing in scematic view
+                if self.__LINK["controller2"] is None:
+                    self.__LINK["controller"].vibrate(0.2,0.3)
+                else:
+                    self.__LINK["controller2"].vibrate(0.2,0.3)
+            else:
+                if self.__LINK["splitScreen"]:
+                    if not self.__LINK["controller2"] is None:
+                        self.__LINK["controller"].vibrate(0.2,0.3)
+                elif not self.__LINK["controller"] is None:
+                    self.__LINK["controller"].vibrate(0.2,0.3)
+                if not self.currentDrone is None:
+                    self.currentDrone.selectControll(False,self.name) #Let previous drone free
+                self.currentDrone = droneNums[number] #Set the current drone object to the one specified
+                self.currentDrone.selectControll(True,self.name)
+                self.__viewChangeEffect = time.time()+0.1
+                self.scematic = False #Is not viewing in scematic view
+            if not self.__LINK["splitScreen"]:
+                self.__command.activeTab = number-1 #Switch to the specific tab of the drone
             self.__UpdateRender = 0
             return True
     def putLine(self,tex,col,flash,Tab=None): #Adds a line to the current command line
@@ -1293,7 +1461,7 @@ class Main: #Used as the screen object for rendering and interaction
             self.__command.addLine(self.name+">"+self.__typing,(255,255,255),False)
         else:
             self.__command.addLine(self.name+">"+self.__typing,(255,255,255),False,TB)
-    def doCommand(self,command): #Does a command to the currently selected drone/ship
+    def doCommand(self,command,drone): #Does a command to the currently selected drone/ship
         if command=="":
             return 0
         self.__commands.append(command)
@@ -1304,18 +1472,18 @@ class Main: #Used as the screen object for rendering and interaction
             if len(command)>175: #Max text limit for text
                 self.putLine("Gone over max text limit",(255,255,255))
             else:
-                if not self.currentDrone in self.__Event.drones:
-                    self.currentDrone = None
-                if self.currentDrone is None:
+                if not drone in self.__Event.drones:
+                    drone = None
+                if drone is None:
                     self.__LINK["cli"].sendTrigger("com",command,-1)
                 else:
-                    self.__LINK["cli"].sendTrigger("com",command,self.__Event.drones.index(self.currentDrone))
+                    self.__LINK["cli"].sendTrigger("com",command,self.__Event.drones.index(drone))
         else:
             self.__command.replaceLast(">"+self.__typing)
-            if self.currentDrone is None:
+            if drone is None:
                 tex,col = self.__Event.doCommand(command,-1)
             else:
-                tex,col = self.__Event.doCommand(command,self.__Event.drones.index(self.currentDrone))
+                tex,col = self.__Event.doCommand(command,self.__Event.drones.index(drone))
             if tex!="" and tex!="NOMES":
                 spl = tex.split("\n")
                 for a in spl:
@@ -1328,16 +1496,16 @@ class Main: #Used as the screen object for rendering and interaction
             if a!=str2[i]:
                 return False
         return True
-    def getAllCommands(self): #Returns all the possible commands that can be ran at the current time
+    def getAllCommands(self,drone): #Returns all the possible commands that can be ran at the current time
         coms = []
-        if self.currentDrone is None: #In scematic view
+        if drone is None: #In scematic view
             for a in self.__Event.drones+[self.__Event.ship]: #Go through all drones and ship
                 for upg in a.upgrades:
                     for b in upg.caller:
                         if not b in coms:
                             coms.append(b) #Add its commands to the list
         else:
-            for upg in self.currentDrone.upgrades:
+            for upg in drone.upgrades:
                 for b in upg.caller:
                     if not b in coms:
                         coms.append(b) #Add its commands to the list
@@ -1367,7 +1535,7 @@ class Main: #Used as the screen object for rendering and interaction
                     if a.discovered2:
                         res.append(a.reference())
         return res
-    def __hintTyping(self): #Hints what the user is typing
+    def __hintTyping(self,drone): #Hints what the user is typing
         if len(self.__typing)==0:
             self.__typingOut = ""
             return 0
@@ -1377,7 +1545,7 @@ class Main: #Used as the screen object for rendering and interaction
                 break
         else: #No matching default command found
             self.__typingOut = ""
-            if self.currentDrone is None: #Search all drones and ship upgrades
+            if drone is None: #Search all drones and ship upgrades
                 for d in self.__Event.drones+[self.__Event.ship]: #Go through every drone and the ship
                     for a in d.upgrades: #Go through all upgrades on the entity
                         for b in a.caller: #Loop through all the names it the upgrade can be called by
@@ -1389,7 +1557,7 @@ class Main: #Used as the screen object for rendering and interaction
                     if self.__typingOut!="":
                         break
             else: #Search active drone for hints
-                for a in self.currentDrone.upgrades: #Loop through all the drones upgades
+                for a in drone.upgrades: #Loop through all the drones upgades
                     for b in a.caller: #Loop throguh all the commands that can be called for this upgade
                         if self.__isAtStart(self.__typing,b) and a.damage!=2: #Should show a hint?
                             self.__typingOut = self.__typing+b[len(self.__typing):].upper()
@@ -1400,12 +1568,195 @@ class Main: #Used as the screen object for rendering and interaction
                 self.__typingOut = self.__typing+""
     def __safeExit(self): #Safely exit
         self.__extrInfo = self.__Event.safeExit()
+    def controllerProcess(self,cntl,Pl2=False):
+        DR = None
+        if Pl2:
+            DR = self.currentDrone2
+        else:
+            DR = self.currentDrone
+        if not cntl is None and self.__controllerMenu[0]==0: #Controller is present and not in menu
+            if cntl.selectChange(): #Load menu
+                if cntl.select(): #Open command selecting menu
+                    self.__controllerMenu[0] = 1
+                    if self.__LINK["splitScreen"] and Pl2:
+                        self.__controllerMenu[1] = [self.getAllCommands(self.currentDrone2),0,[],0]
+                    else:
+                        self.__controllerMenu[1] = [self.getAllCommands(self.currentDrone),0,[],0]
+            if cntl.beforeDroneChange(): #Previous drone
+                if cntl.beforeDrone() and len(self.__Event.drones)!=0:
+                    if not DR is None:
+                        N = DR.number-1
+                        if N<1:
+                            N = len(self.__command.tabs)-1
+                        while not self.goToDrone(N,False,Pl2) and N>1:
+                            N-=1
+                    else:
+                        self.goToDrone(1,True,Pl2)
+            if cntl.quickOpenChange(): #Quick open/close door/airlock
+                Ctl = None
+                if Pl2:
+                    Ctl = self.__controllSelect2
+                else:
+                    Ctl = self.__controllSelect
+                if cntl.quickOpen() and not Ctl is None:
+                    if self.__LINK["multi"]==1: #Game is running as a client
+                        if type(self.__controllSelect)==self.getEnt("airlock"):
+                            self.doCommand("a"+str(self.__controllSelect.number),self.currentDrone)
+                        else:
+                            self.doCommand("d"+str(self.__controllSelect.number),self.currentDrone)
+                    else:
+                        if Pl2:
+                            self.__controllSelect2.toggle()
+                        else:
+                            self.__controllSelect.toggle()
+            if cntl.nextDroneChange(): #Next drone
+                if cntl.nextDrone() and len(self.__Event.drones)!=0:
+                    if not DR is None:
+                        N = DR.number+1
+                        if N>len(self.__command.tabs)-(len(self.__command.tabs)-len(self.__Event.drones)):
+                            N = 1
+                        while not self.goToDrone(N,False,Pl2) and N<len(self.__command.tabs):
+                            N+=1
+                    else:
+                        self.goToDrone(len(self.__Event.drones),True,Pl2)
+            if cntl.enterScematicViewChange(): #Jump into scematic view
+                if cntl.enterScematicView():
+                    if Pl2:
+                        self.scematic2 = True
+                        if not self.currentDrone2 is None: #Drone active
+                            self.currentDrone2.selectControll(False,self.name) #Let drone free
+                        self.currentDrone2 = None
+                    else:
+                        self.scematic = True
+                        if not self.currentDrone is None: #Drone active
+                            self.currentDrone.selectControll(False,self.name) #Let drone free
+                        self.currentDrone = None
+                    if not self.__LINK["splitScreen"]:
+                        self.__command.activeTab = len(self.__command.tabs)-1 #Goto the ships command line
+    def controllMenuProcess(self,cont,Pl2=False):
+        if cont.back() or self.__isKeyDown(pygame.K_BACKSPACE): #Back button/exit button
+            self.__controllerMenu[0] = 0
+        if self.__controllerMenu[0]==1: #Command selecting
+            if cont.getMenuUpChange():
+                if cont.getMenuUp(): #Up button
+                    if len(self.__controllerMenu[1][2])==0: #Select previous command
+                        self.__controllerMenu[1][1]-=1
+                        if self.__controllerMenu[1][1]<0:
+                            self.__controllerMenu[1][1]=len(self.__controllerMenu[1][0])-1
+                    else: #Select previous paramiter
+                        self.__controllerMenu[1][3]-=1
+                        if self.__controllerMenu[1][3]<0:
+                            self.__controllerMenu[1][3]=len(self.__controllerMenu[1][2])-1
+            if cont.getMenuDownChange():
+                if cont.getMenuDown(): #Down button
+                    if len(self.__controllerMenu[1][2])==0: #Select next command
+                        self.__controllerMenu[1][1]+=1
+                        if self.__controllerMenu[1][1]>=len(self.__controllerMenu[1][0]):
+                            self.__controllerMenu[1][1]=0
+                    else: #Select next paramiter
+                        self.__controllerMenu[1][3]+=1
+                        if self.__controllerMenu[1][3]>=len(self.__controllerMenu[1][2]):
+                            self.__controllerMenu[1][3]=0
+            if cont.selectChange(): #Execute/select button
+                if cont.select():
+                    PS = COMPARAMS[self.__controllerMenu[1][0][self.__controllerMenu[1][1]]]
+                    DR = None
+                    if self.__LINK["splitScreen"] and Pl2:
+                        DR = self.currentDrone2
+                    else:
+                        DR = self.currentDrone
+                    if PS=="": #No paramiters given
+                        if self.__controllerMenu[1][0][self.__controllerMenu[1][1]]=="gather":
+                            self.doCommand("gather all",DR)
+                        else:
+                            self.doCommand(self.__controllerMenu[1][0][self.__controllerMenu[1][1]],DR)
+                        self.__controllerMenu[0]=0
+                    elif len(self.__controllerMenu[1][2])!=0: #Paramiter selected
+                        self.doCommand(self.__controllerMenu[1][0][self.__controllerMenu[1][1]]+" "+self.__controllerMenu[1][2][self.__controllerMenu[1][3]].lower(),DR)
+                        self.__controllerMenu[0]=0
+                    else: #Initilize paramiter selection
+                        self.__controllerMenu[1][2] = self.getObjs(PS)
+                        self.__controllerMenu[1][3] = 0
+    def controllerScemMove(self,cont,lag,Pl2=False):
+        sx,sy = self.__LINK["reslution"]
+        mov = cont.getMovement(self.__controllerMenu[0]!=0)
+        scemp = []
+        if Pl2:
+            scemp = self.__scemPos2
+        else:
+            scemp = self.__scemPos
+        if type(mov)==list:
+            if abs(mov[0])>0.1 or abs(mov[1])>0.1:
+                scemp[0] += mov[0]*lag*SCROLL_SPEED
+                scemp[1] += mov[1]*lag*SCROLL_SPEED
+        else:
+            aim = cont.getAim(self.__controllerMenu[0]!=0)
+            if abs(aim)>0.1 or abs(mov)>0.1:
+                scemp[0] += aim*lag*SCROLL_SPEED
+                scemp[1] += mov*lag*SCROLL_SPEED
+        if scemp[1]<self.__Event.mapSize[1]-400: #Hit limit on top side of screen
+            scemp[1] = self.__Event.mapSize[1]-400
+        if scemp[1]>self.__Event.mapSize[2]-sy+400: #Hit limit on bottom side of screen
+            scemp[1] = self.__Event.mapSize[2]-sy+400
+        if scemp[0]<self.__Event.mapSize[0]-400: #Hit limit on left side of screen
+            scemp[0] = self.__Event.mapSize[0]-400
+        if scemp[0]>self.__Event.mapSize[2]-sx+600: #Hit limit on right side of screen
+            scemp[0] = self.__Event.mapSize[2]-sx+600
+        if Pl2:
+            self.__scemPos2 = scemp
+        else:
+            self.__scemPos = scemp
+    def controllerMove(self,cntrl,drone,lag):
+        mov = cntrl.getMovement(self.__controllerMenu[0]!=0)
+        aim = cntrl.getAim(self.__controllerMenu[0]!=0)
+        if type(mov)!=list:
+            if abs(mov)>0.1:
+                if mov<0:
+                    drone.aimTo(0,lag*2)
+                else:
+                    drone.aimTo(180,lag*2)
+                if type(aim)!=list:
+                    if abs(aim)>0.1:
+                        drone.go(lag*0.5)
+                    else:
+                        drone.go(lag)
+                else:
+                    drone.go(lag)
+        elif abs(mov[0])>0.1 or abs(mov[1])>0.1:
+            drone.go([mov[0]*lag,mov[1]*lag])
+        if type(aim)!=list:
+            if abs(aim)>0.1:
+                if aim<0:
+                    drone.aimTo(90,lag*2)
+                else:
+                    drone.aimTo(270,lag*2)
+                if type(mov)!=list:
+                    if abs(mov)>0.1:
+                        drone.go(lag*0.5)
+                    else:
+                        drone.go(lag)
+                else:
+                    drone.go(lag)
+        elif abs(aim[0])>0.1 or abs(aim[1])>0.1:
+            ang = math.atan2(aim[0],aim[1])
+            try:
+                ang = int((ang*180/math.pi)+180) % 360 #Make sure this entitys angle is not out of range
+            except:
+                ang = int(cmath.phase(ang*180/math.pi)+180) % 360 #Do the same before but unconvert it from a complex number
+            drone.aimTo(ang,lag*2)
     def loop(self,mouse,kBuf,lag): #Constant loop
         global start
         if self.__fail[0]: #Game has failed/connection failure
             for event in kBuf: #Loop for return button pressed
                 if event.type == pygame.KEYDOWN:
                     if event.key == pygame.K_RETURN:
+                        if self.__Event.exit and not self.tutorial:
+                            self.__LINK["loadScreen"]("shipSelect")
+                        else:
+                            self.__LINK["loadScreen"]("mainMenu")
+            if not self.__LINK["controller"] is None:
+                if self.__LINK["controller"].selectChange():
+                    if self.__LINK["controller"].select():
                         if self.__Event.exit and not self.tutorial:
                             self.__LINK["loadScreen"]("shipSelect")
                         else:
@@ -1433,47 +1784,17 @@ class Main: #Used as the screen object for rendering and interaction
             for a in self.force:
                 a[1](mouse,kBuf,lag)
         else: #Run normaly
-            self.__droneMove()
-            if not self.__LINK["controller"] is None and self.__controllerMenu[0]==0: #Controller is present and not in menu
-                if self.controller_key("x")!=self.__controllerChange["x"]: #Load menu
-                    self.__controllerChange["x"] = self.controller_key("x")==True
-                    if self.controller_key("x"): #Open command selecting menu
-                        self.__controllerMenu[0] = 1
-                        self.__controllerMenu[1] = [self.getAllCommands(),0,[],0]
-                if self.controller_key("lt")!=self.__controllerChange["lt"]: #Previous drone
-                    self.__controllerChange["lt"] = self.controller_key("lt")==True
-                    if self.controller_key("lt") and len(self.__Event.drones)!=0:
-                        if not self.currentDrone is None:
-                            N = self.currentDrone.number-1
-                            if N<1:
-                                N = len(self.__command.tabs)-1
-                            while not self.goToDrone(N,False) and N>1:
-                                N-=1
-                        else:
-                            self.goToDrone(1)
-                if self.controller_key("a")!=self.__controllerChange["a"]: #Quick open/close door/airlock
-                    self.__controllerChange["a"] = self.controller_key("a")
-                    if self.controller_key("a") and not self.__controllSelect is None:
-                        self.__controllSelect.toggle()
-                if self.controller_key("rt")!=self.__controllerChange["rt"]: #Next drone
-                    self.__controllerChange["rt"] = self.controller_key("rt")==True
-                    if self.controller_key("rt") and len(self.__Event.drones)!=0:
-                        if not self.currentDrone is None:
-                            N = self.currentDrone.number+1
-                            if N>len(self.__command.tabs)-(len(self.__command.tabs)-len(self.__Event.drones)):
-                                N = 1
-                            while not self.goToDrone(N,False) and N<len(self.__command.tabs):
-                                N+=1
-                        else:
-                            self.goToDrone(len(self.__Event.drones))
-                if self.controller_key("y")!=self.__controllerChange["y"]: #Jump into scematic view
-                    self.__controllerChange["y"] = self.controller_key("y")
-                    if self.controller_key("y"):
-                        self.scematic = True
-                        if not self.currentDrone is None: #Drone active
-                            self.currentDrone.selectControll(False,self.name) #Let drone free
-                        self.currentDrone = None
-                        self.__command.activeTab = len(self.__command.tabs)-1 #Goto the ships command line
+            if self.__LINK["splitScreen"]:
+                self.__droneMove(self.currentDrone)
+                self.__droneMove(self.currentDrone2,True)
+                if self.__LINK["controller2"] is None:
+                    self.controllerProcess(self.__LINK["controller"],True)
+                else:
+                    self.controllerProcess(self.__LINK["controller"])
+                    self.controllerProcess(self.__LINK["controller2"],True)
+            else:
+                self.__droneMove(self.currentDrone)
+                self.controllerProcess(self.__LINK["controller"])
             self.__fChange = 0
             for event in kBuf: #Loop through keyboard event loops
                 if self.tutorial:
@@ -1491,23 +1812,18 @@ class Main: #Used as the screen object for rendering and interaction
                         self.__command.activeTab = len(self.__command.tabs)-1 #Goto the ships command line
                     elif event.key >= 32 and event.key <= 126 and not event.key in [self.__LINK["controll"]["up"],self.__LINK["controll"]["down"],self.__LINK["controll"]["left"],self.__LINK["controll"]["right"]]: #A key was pressed down for typing
                         self.__typing += chr(event.key)
-                        self.__hintTyping()
+                        self.__hintTyping(self.currentDrone)
                     elif event.key == pygame.K_BACKSPACE: #Backspace
                         self.__typing = self.__typing[:-1]
                         self.__backPress = time.time()+0.4
-                        self.__hintTyping()
+                        self.__hintTyping(self.currentDrone)
                     elif event.key == pygame.K_TAB: #Tab key, auto fill hint
                         if len(self.__typingOut)!=len(self.__typing):
                             self.__typing = self.__typingOut.lower()+" "
                             self.__typingOut = self.__typingOut.lower()+" "
                     elif event.key == pygame.K_RETURN: #Enter button was pressed
-                        if self.__LINK["commandSelect"] and len(self.__typing)==0:
-                            if self.__controllerMenu[0]!=1:
-                                self.__controllerMenu[0] = 1
-                                self.__controllerMenu[1] = [self.getAllCommands(),0,[],0]
-                                self.__controllerChange["x"] = True
-                        else:
-                            self.doCommand(self.__typing)
+                        if len(self.__typing)!=0:
+                            self.doCommand(self.__typing,self.currentDrone)
                             self.__typing = ""
                             self.__typingOut = ""
                     elif event.key == pygame.K_UP and self.__isKeyDown(pygame.K_LCTRL):
@@ -1515,13 +1831,13 @@ class Main: #Used as the screen object for rendering and interaction
                         if self.__commandSelect>=len(self.__commands):
                             self.__commandSelect = 0
                         self.__typing = self.__commands[-self.__commandSelect]+""
-                        self.__hintTyping()
+                        self.__hintTyping(self.currentDrone)
                     elif event.key == pygame.K_DOWN and self.__isKeyDown(pygame.K_LCTRL):
                         self.__commandSelect -= 1
                         if self.__commandSelect<1:
                             self.__commandSelect = len(self.__commands)
                         self.__typing = self.__commands[-self.__commandSelect]+""
-                        self.__hintTyping()
+                        self.__hintTyping(self.currentDrone)
                 elif event.type == pygame.KEYUP:
                     self.__HoldKeys[event.key] = False
         if self.mapLoaded:
@@ -1533,78 +1849,47 @@ class Main: #Used as the screen object for rendering and interaction
         if self.__isKeyDown(pygame.K_BACKSPACE) and time.time()>self.__backPress:
             self.__backPress = time.time()+0.05
             self.__typing = self.__typing[:-1]
-            self.__hintTyping()
-        if self.__controllerMenu[0]!=0: #A menu is open
-            if self.controller_key("b") or self.__isKeyDown(pygame.K_BACKSPACE): #Back button/exit button
-                self.__controllerMenu[0] = 0
-            if self.__controllerMenu[0]==1: #Command selecting
-                if (self.controller_key("up") or self.__isKeyDown(self.__LINK["controll"]["up"]))!=self.__controllerChange["up"] or (time.time()>self.__controllHold and self.__controllHold!=-1):
-                    self.__controllerChange["up"] = self.controller_key("up") or self.__isKeyDown(self.__LINK["controll"]["up"])
-                    if self.controller_key("up") or self.__isKeyDown(self.__LINK["controll"]["up"]): #Up button
-                        if len(self.__controllerMenu[1][2])==0: #Select previous command
-                            self.__controllerMenu[1][1]-=1
-                            if self.__controllerMenu[1][1]<0:
-                                self.__controllerMenu[1][1]=len(self.__controllerMenu[1][0])-1
-                        else: #Select previous paramiter
-                            self.__controllerMenu[1][3]-=1
-                            if self.__controllerMenu[1][3]<0:
-                                self.__controllerMenu[1][3]=len(self.__controllerMenu[1][2])-1
-                        if self.__controllHold==-1:
-                            self.__controllHold = time.time()+0.3
-                        else:
-                            self.__controllHold = time.time()+0.1
-                    elif not self.controller_key("down") and not self.__isKeyDown(self.__LINK["controll"]["down"]):
-                        self.__controllHold = -1
-                if (self.controller_key("down") or self.__isKeyDown(self.__LINK["controll"]["down"]))!=self.__controllerChange["down"] or (time.time()>self.__controllHold and self.__controllHold!=-1):
-                    self.__controllerChange["down"] = self.controller_key("down") or self.__isKeyDown(self.__LINK["controll"]["down"])
-                    if self.controller_key("down") or self.__isKeyDown(self.__LINK["controll"]["down"]): #Down button
-                        if len(self.__controllerMenu[1][2])==0: #Select next command
-                            self.__controllerMenu[1][1]+=1
-                            if self.__controllerMenu[1][1]>=len(self.__controllerMenu[1][0]):
-                                self.__controllerMenu[1][1]=0
-                        else: #Select next paramiter
-                            self.__controllerMenu[1][3]+=1
-                            if self.__controllerMenu[1][3]>=len(self.__controllerMenu[1][2]):
-                                self.__controllerMenu[1][3]=0
-                        if self.__controllHold==-1:
-                            self.__controllHold = time.time()+0.3
-                        else:
-                            self.__controllHold = time.time()+0.1
-                    elif not self.controller_key("up") and not self.__isKeyDown(self.__LINK["controll"]["up"]):
-                        self.__controllHold = -1
-                if (self.controller_key("x") or self.__isKeyDown(pygame.K_RETURN))!=self.__controllerChange["x"]: #Execute/select button
-                    self.__controllerChange["x"]=self.controller_key("x") or self.__isKeyDown(pygame.K_RETURN)
-                    if self.controller_key("x") or self.__isKeyDown(pygame.K_RETURN):
-                        PS = COMPARAMS[self.__controllerMenu[1][0][self.__controllerMenu[1][1]]]
-                        if PS=="": #No paramiters given
-                            self.doCommand(self.__controllerMenu[1][0][self.__controllerMenu[1][1]])
-                            self.__controllerMenu[0]=0
-                        elif len(self.__controllerMenu[1][2])!=0: #Paramiter selected
-                            self.doCommand(self.__controllerMenu[1][0][self.__controllerMenu[1][1]]+" "+self.__controllerMenu[1][2][self.__controllerMenu[1][3]].lower())
-                            self.__controllerMenu[0]=0
-                        else: #Initilize paramiter selection
-                            self.__controllerMenu[1][2] = self.getObjs(PS)
-                            self.__controllerMenu[1][3] = 0
-        elif self.scematic and not self.__isKeyDown(pygame.K_LCTRL) and len(self.force)==0 and self.__controllerMenu[0]==0: #Is currently in the scematic view
+            self.__hintTyping(self.currentDrone)
+        if self.__controllerMenu[0]==1:
+            if self.__LINK["splitScreen"]:
+                self.controllMenuProcess(self.__LINK["controller"],self.__LINK["controller2"] is None)
+                if not self.__LINK["controller2"] is None:
+                    self.controllMenuProcess(self.__LINK["controller2"],True)
+            else:
+                self.controllMenuProcess(self.__LINK["controller"])
+        if len(self.force)==0: #Is currently in the scematic view
             #Move the scematic view if the arrow keys are being held or pressed.
             sx,sy = self.__LINK["main"].get_size()
-            if self.__isKeyDown(self.__LINK["controll"]["up"]) or self.controller_key("up"):
-                self.__scemPos[1] -= SCROLL_SPEED*lag
+            if not self.__LINK["controller"] is None:
+                if self.__LINK["splitScreen"]:
+                    if self.__LINK["controller2"] is None:
+                        if self.scematic2:
+                            self.controllerScemMove(self.__LINK["controller"],lag,True)
+                    else:
+                        if self.scematic and not self.__isKeyDown(pygame.K_LCTRL):
+                            self.controllerScemMove(self.__LINK["controller"],lag)
+                        if self.scematic2:
+                            self.controllerScemMove(self.__LINK["controller2"],lag,True)
+                elif self.scematic and not self.__isKeyDown(pygame.K_LCTRL):
+                    self.controllerScemMove(self.__LINK["controller"],lag)
+            if self.scematic and not self.__isKeyDown(pygame.K_LCTRL):
+                if self.__isKeyDown(self.__LINK["controll"]["up"]):
+                    self.__scemPos[1] -= SCROLL_SPEED*lag
                 if self.__scemPos[1]<self.__Event.mapSize[1]-400: #Hit limit on top side of screen
                     self.__scemPos[1] = self.__Event.mapSize[1]-400
-            if self.__isKeyDown(self.__LINK["controll"]["down"]) or self.controller_key("down"):
-                self.__scemPos[1] += SCROLL_SPEED*lag
+                if self.__isKeyDown(self.__LINK["controll"]["down"]):
+                    self.__scemPos[1] += SCROLL_SPEED*lag
                 if self.__scemPos[1]>self.__Event.mapSize[2]-sy+400: #Hit limit on bottom side of screen
                     self.__scemPos[1] = self.__Event.mapSize[2]-sy+400
-            if self.__isKeyDown(self.__LINK["controll"]["left"]) or self.controller_key("left"):
-                self.__scemPos[0] -= SCROLL_SPEED*lag
+                if self.__isKeyDown(self.__LINK["controll"]["left"]):
+                    self.__scemPos[0] -= SCROLL_SPEED*lag
                 if self.__scemPos[0]<self.__Event.mapSize[0]-400: #Hit limit on left side of screen
                     self.__scemPos[0] = self.__Event.mapSize[0]-400
-            if self.__isKeyDown(self.__LINK["controll"]["right"]) or self.controller_key("right"):
-                self.__scemPos[0] += SCROLL_SPEED*lag
+                if self.__isKeyDown(self.__LINK["controll"]["right"]):
+                    self.__scemPos[0] += SCROLL_SPEED*lag
                 if self.__scemPos[0]>self.__Event.mapSize[2]-sx+600: #Hit limit on right side of screen
                     self.__scemPos[0] = self.__Event.mapSize[2]-sx+600
-        elif not self.currentDrone is None: #Move a drone the player is controlling
+        if not self.currentDrone is None: #Move a drone the player is controlling
             if self.currentDrone.REQUEST_DELETE:
                 if self.currentDrone in self.__Event.drones:
                     self.__Event.drones.remove(self.currentDrone)
@@ -1613,39 +1898,60 @@ class Main: #Used as the screen object for rendering and interaction
                 self.scematic = True
                 self.__command.activeTab = len(self.__command.tabs)-1
                 self.reloadCommandline()
-            elif not self.__isKeyDown(pygame.K_LCTRL) and not self.__LINK["simpleMovement"] and len(self.force)==0 and self.__controllerMenu[0]==0:
+            if not self.__LINK["controller"] is None:
+                if self.__LINK["splitScreen"]:
+                    if not self.__LINK["controller2"] is None:
+                        self.controllerMove(self.__LINK["controller"],self.currentDrone,lag)
+                else:
+                    self.controllerMove(self.__LINK["controller"],self.currentDrone,lag)
+            if not self.__isKeyDown(pygame.K_LCTRL) and len(self.force)==0 and not self.__LINK["simpleMovement"]:
                 if not self.currentDrone.allowed: #Attempt to take controll as soon as the person using this drone stops controlling it.
                     self.currentDrone.selectControll(True,self.name)
-                if self.__isKeyDown(self.__LINK["controll"]["up"]) or self.controller_key("up"):
+                if self.__isKeyDown(self.__LINK["controll"]["up"]):
                     self.currentDrone.go(lag)
-                if self.__isKeyDown(self.__LINK["controll"]["down"]) or self.controller_key("down"):
+                if self.__isKeyDown(self.__LINK["controll"]["down"]):
                     self.currentDrone.go(-1*lag)
-                if self.__isKeyDown(self.__LINK["controll"]["left"]) or self.controller_key("left"):
+                if self.__isKeyDown(self.__LINK["controll"]["left"]):
                     self.currentDrone.turn(lag*5)
-                if self.__isKeyDown(self.__LINK["controll"]["right"]) or self.controller_key("right"):
+                if self.__isKeyDown(self.__LINK["controll"]["right"]):
                     self.currentDrone.turn(-5*lag)
-            elif not self.__isKeyDown(pygame.K_LCTRL) and len(self.force)==0:
+            elif not self.__isKeyDown(pygame.K_LCTRL) and len(self.force)==0: #Simple movement
                 mv = False
-                if self.__isKeyDown(self.__LINK["controll"]["up"]) or self.controller_key("up"):
+                if self.__isKeyDown(self.__LINK["controll"]["up"]):
                     self.currentDrone.aimTo(0,lag*2)
                     mv = True
-                if self.__isKeyDown(self.__LINK["controll"]["down"]) or self.controller_key("down"):
+                if self.__isKeyDown(self.__LINK["controll"]["down"]):
                     self.currentDrone.aimTo(180,lag*2)
                     mv = True
-                if self.__isKeyDown(self.__LINK["controll"]["left"]) or self.controller_key("left"):
+                if self.__isKeyDown(self.__LINK["controll"]["left"]):
                     self.currentDrone.aimTo(90,lag*2)
                     mv = True
-                if self.__isKeyDown(self.__LINK["controll"]["right"]) or self.controller_key("right"):
+                if self.__isKeyDown(self.__LINK["controll"]["right"]):
                     self.currentDrone.aimTo(270,lag*2)
                     mv = True
                 if mv:
                     self.currentDrone.go(lag)
+        if self.__LINK["splitScreen"]:
+            if not self.currentDrone2 is None:
+                if self.currentDrone2.REQUEST_DELETE:
+                    if self.currentDrone2 in self.__Event.drones:
+                        self.__Event.drones.remove(self.currentDrone2)
+                    self.currentDrone2.selectControll(False,self.name)
+                    self.currentDrone2 = None
+                    self.scematic2 = True
+                    self.reloadCommandline()
+                if self.__LINK["controller2"] is None:
+                    self.controllerMove(self.__LINK["controller"],self.currentDrone2,lag)
+                else:
+                    self.controllerMove(self.__LINK["controller2"],self.currentDrone2,lag)
         if self.__Event.exit: #Game has ended due to user entering "exit"
             self.__fail[0] = True
             SCOR = self.__Event.getScore()
             self.__fail[4] = "Your score is "+str(SCOR)
             self.__LINK["shipData"]["maxScore"]+=SCOR
             self.__safeExit()
+            if self.tutorial:
+                self.tpart[0] = 36
         if not self.__Event is None and self.__LINK["currentScreen"]==self:
             try:
                 self.__Event.loop()
@@ -1700,12 +2006,51 @@ class Main: #Used as the screen object for rendering and interaction
         self.__renderFunc.ents = self.__Event.Map
         self.__droneFeed.ents = self.__Event.Map
         self.__scemPos = [self.__Event.ship.pos[0]-(self.__LINK["reslution"][0]/4),self.__Event.ship.pos[1]-(self.__LINK["reslution"][1]/4)] #Start the scematic position at the ships position
+        self.__scemPos2 = [self.__Event.ship.pos[0]-(self.__LINK["reslution"][0]/4),self.__Event.ship.pos[1]-(self.__LINK["reslution"][1]/4)] #Start the scematic position at the ships position
         self.__command.activeTab = len(self.__Event.drones)
         for i,a in enumerate(self.__Event.drones):
             self.__command.tabs.insert(i,["DRONE-"+str(i+1),[[">",[255,255,255],False]],0,[],False,a])
         self.reloadCommandline()
         self.mapLoaded = True
         self.mapLoading = False
+    def renderGameView(self,surf,scem,acDrone,sPos,scale,vchange,ctsel): #Render a game view, scematic or drone view
+        if scem: #Is inside the scematic view
+            if self.__LINK["DEVDIS"]:
+                self.__LINK["render"].drawDevMesh(sPos[0],sPos[1],0.8,surf,self.__LINK) #DEVELOPMENT
+            self.__renderFunc.render(sPos[0],sPos[1],0.8,surf) #Render the map.
+            if self.__LINK["backgroundStatic"]:
+                sx,sy = surf.get_size()
+                for y in range(0,int(sy/50)+1):
+                    Y = (y*50)+random.randint(-3,3)-(sPos[1]%50)
+                    for x in range(0,int(sx/50)+1):
+                        surf.blit(self.__LINK["content"]["gradient"],(x*50,Y))
+        elif not acDrone is None:
+            sx,sy = surf.get_size()
+            drpos = [acDrone.pos[0]*DRONE_VIEW_SCALE*scale,acDrone.pos[1]*DRONE_VIEW_SCALE*scale] #Find the drones position in screen coordinates
+            if self.__LINK["DEVDIS"]:
+                self.__LINK["render"].drawDevMesh(drpos[0]-(self.__LINK["reslution"][0]/2)+(25*scale),drpos[1]-(self.__LINK["reslution"][1]/2)+(25*scale),DRONE_VIEW_SCALE*scale,surf,self.__LINK) #DEVELOPMENT
+            self.__renderFunc.render(drpos[0]-(self.__LINK["reslution"][0]/2)+(25*scale),drpos[1]-(self.__LINK["reslution"][1]/2)+(25*scale),DRONE_VIEW_SCALE*scale,surf,True) #Render the map through drone view.
+            self.__droneFeed.render(drpos[0]-(self.__LINK["reslution"][0]/2)+(25*scale),drpos[1]-(self.__LINK["reslution"][1]/2)+(25*scale),DRONE_VIEW_SCALE*scale,acDrone.angle+90,acDrone.findPosition(),acDrone,surf) #Render map in 3D
+            if self.__LINK["viewDistort"]:
+                surf = self.__LINK["render"].distort(surf,int((1-(acDrone.health/acDrone.settings["maxHealth"]))*10*int(acDrone.alive)),not acDrone.alive)
+                if vchange>time.time(): #Screen judder from drone change
+                    surf = self.__LINK["render"].distort(surf,0,True)
+            if not ctsel is None:
+                pygame.draw.rect(surf,(0,255,0),[(ctsel.pos[0]*DRONE_VIEW_SCALE*scale)-(drpos[0]-(self.__LINK["reslution"][0]/2)+(25*scale)),
+                                                (ctsel.pos[1]*DRONE_VIEW_SCALE*scale)-(drpos[1]-(self.__LINK["reslution"][1]/2)+(25*scale)),
+                                                ctsel.size[0]*DRONE_VIEW_SCALE*scale,ctsel.size[1]*DRONE_VIEW_SCALE*scale],12)
+            if not acDrone.allowed: #Drone is being controlled by anouther player
+                fren = self.__LINK["font42"].render("Drone is being controlled by another player",16,(255,255,0))
+                sx2,sy2 = fren.get_size()
+                pygame.draw.rect(surf,(0,0,0),[int(sx/2)-int(sx2/2)-5,int(sy/4)-5,sx2+10,sy2+10])
+                pygame.draw.rect(surf,(0,255,0),[int(sx/2)-int(sx2/2)-5,int(sy/4)-5,sx2+10,sy2+10],2)
+                surf.blit(fren,(int(sx/2)-int(sx2/2),int(sy/4)))
+            if not acDrone.alive: #Display text saying the drone is disabled when the drone is disabled
+                fren = self.__LINK["font42"].render("Drone is disabled",16,(255,0,0))
+                sx2,sy2 = fren.get_size()
+                pygame.draw.rect(surf,(0,0,0),[int(sx/2)-int(sx2/2)-5,int(sy/4)-5,sx2+10,sy2+10])
+                pygame.draw.rect(surf,(0,255,0),[int(sx/2)-int(sx2/2)-5,int(sy/4)-5,sx2+10,sy2+10],2)
+                surf.blit(fren,(int(sx/2)-int(sx2/2),int(sy/4)))
     def render(self,surf=None): #Render everything.
         if surf is None:
             surf = self.__LINK["main"]
@@ -1719,7 +2064,12 @@ class Main: #Used as the screen object for rendering and interaction
             pygame.draw.rect(surf,(0,255,0),[int(self.__fail[3][0]/2)-int(sx/2)-5,int(self.__fail[3][1]/2)-5,sx+10,sy+10],2)
             surf.blit(fren,(int(self.__fail[3][0]/2)-int(sx/2),int(self.__fail[3][1]/2)))
             #'Press return to continue' sign at the bottom of the screen
-            fren = self.__LINK["font42"].render("Press return to continue",16,(255,255,0))
+            fren = None
+            if self.__LINK["controller"] is None:
+                fren = self.__LINK["font42"].render("Press return to continue",16,(255,255,0))
+            else:
+                B = self.__LINK["controller"].keyName["select"]
+                fren = self.__LINK["font42"].render("Press "+B+" to continue",16,(255,255,0))
             sx,sy = fren.get_size()
             pygame.draw.rect(surf,(0,0,0),[int(self.__fail[3][0]/2)-int(sx/2)-5,int(self.__fail[3][1]*0.8)-5,sx+10,sy+10])
             pygame.draw.rect(surf,(0,255,0),[int(self.__fail[3][0]/2)-int(sx/2)-5,int(self.__fail[3][1]*0.8)-5,sx+10,sy+10],2)
@@ -1735,49 +2085,24 @@ class Main: #Used as the screen object for rendering and interaction
             fren = self.__LINK["font42"].render(self.__loading[4],16,(255,255,255))
             sx,sy = fren.get_size()
             surf.blit(fren,(int(self.__loading[5][0]/2)-int(sx/2),int(self.__loading[5][1]*0.8)+50))
-        elif self.scematic: #Is inside the scematic view
-            if self.__LINK["DEVDIS"]:
-                self.__LINK["render"].drawDevMesh(self.__scemPos[0],self.__scemPos[1],0.8,surf,self.__LINK) #DEVELOPMENT
-            self.__renderFunc.render(self.__scemPos[0],self.__scemPos[1],0.8,surf) #Render the map.
-            if self.__LINK["backgroundStatic"]:
-                sx,sy = surf.get_size()
-                for y in range(0,int(sy/50)+1):
-                    Y = (y*50)+random.randint(-3,3)-(self.__scemPos[1]%50)
-                    for x in range(0,int(sx/50)+1):
-                        surf.blit(self.__LINK["content"]["gradient"],(x*50,Y))
-        elif not self.currentDrone is None:
-            sx,sy = surf.get_size()
-            drpos = [self.currentDrone.pos[0]*DRONE_VIEW_SCALE*scale,self.currentDrone.pos[1]*DRONE_VIEW_SCALE*scale] #Find the drones position in screen coordinates
-            if self.__LINK["DEVDIS"]:
-                self.__LINK["render"].drawDevMesh(drpos[0]-(self.__LINK["reslution"][0]/2)+(25*scale),drpos[1]-(self.__LINK["reslution"][1]/2)+(25*scale),DRONE_VIEW_SCALE*scale,surf,self.__LINK) #DEVELOPMENT
-            self.__renderFunc.render(drpos[0]-(self.__LINK["reslution"][0]/2)+(25*scale),drpos[1]-(self.__LINK["reslution"][1]/2)+(25*scale),DRONE_VIEW_SCALE*scale,surf,True) #Render the map through drone view.
-            self.__droneFeed.render(drpos[0]-(self.__LINK["reslution"][0]/2)+(25*scale),drpos[1]-(self.__LINK["reslution"][1]/2)+(25*scale),DRONE_VIEW_SCALE*scale,self.currentDrone.angle+90,self.currentDrone.findPosition(),self.currentDrone,surf) #Render map in 3D
-            if self.__LINK["viewDistort"]:
-                surf = self.__LINK["render"].distort(surf,int((1-(self.currentDrone.health/self.currentDrone.settings["maxHealth"]))*10*int(self.currentDrone.alive)),not self.currentDrone.alive)
-                if self.__viewChangeEffect>time.time(): #Screen judder from drone change
-                    surf = self.__LINK["render"].distort(surf,0,True)
-            if not self.__controllSelect is None:
-                pygame.draw.rect(surf,(0,255,0),[(self.__controllSelect.pos[0]*DRONE_VIEW_SCALE*scale)-(drpos[0]-(self.__LINK["reslution"][0]/2)+(25*scale)),
-                                                (self.__controllSelect.pos[1]*DRONE_VIEW_SCALE*scale)-(drpos[1]-(self.__LINK["reslution"][1]/2)+(25*scale)),
-                                                self.__controllSelect.size[0]*DRONE_VIEW_SCALE*scale,self.__controllSelect.size[1]*DRONE_VIEW_SCALE*scale],12)
-            if not self.currentDrone.allowed: #Drone is being controlled by anouther player
-                fren = self.__LINK["font42"].render("Drone is being controlled by anouther player",16,(255,255,0))
-                sx2,sy2 = fren.get_size()
-                pygame.draw.rect(surf,(0,0,0),[int(sx/2)-int(sx2/2)-5,int(sy/4)-5,sx2+10,sy2+10])
-                pygame.draw.rect(surf,(0,255,0),[int(sx/2)-int(sx2/2)-5,int(sy/4)-5,sx2+10,sy2+10],2)
-                surf.blit(fren,(int(sx/2)-int(sx2/2),int(sy/4)))
-            if not self.currentDrone.alive: #Display text saying the drone is disabled when the drone is disabled
-                fren = self.__LINK["font42"].render("Drone is disabled",16,(255,0,0))
-                sx2,sy2 = fren.get_size()
-                pygame.draw.rect(surf,(0,0,0),[int(sx/2)-int(sx2/2)-5,int(sy/4)-5,sx2+10,sy2+10])
-                pygame.draw.rect(surf,(0,255,0),[int(sx/2)-int(sx2/2)-5,int(sy/4)-5,sx2+10,sy2+10],2)
-                surf.blit(fren,(int(sx/2)-int(sx2/2),int(sy/4)))
+        elif self.__LINK["splitScreen"]:
+            self.__top.fill((0,0,0))
+            self.renderGameView(self.__top,self.scematic,self.currentDrone,self.__scemPos,scale,self.__viewChangeEffect,self.__controllSelect)
+            surf.blit(self.__top,(0,0))
+            pygame.draw.line(surf,(0,255,0),[0,self.__LINK["reslution"][1]],[self.__LINK["reslution"][0],self.__LINK["reslution"][1]],5)
+            self.__bottom.fill((0,0,0))
+            self.renderGameView(self.__bottom,self.scematic2,self.currentDrone2,self.__scemPos2,scale,self.__viewChangeEffect2,self.__controllSelect2)
+            surf.blit(self.__bottom,(0,self.__LINK["reslution"][1]))
+        elif not self.currentDrone is None or self.scematic:
+            self.renderGameView(surf,self.scematic,self.currentDrone,self.__scemPos,scale,self.__viewChangeEffect,self.__controllSelect)
         if self.__LINK["DEVDIS"]:
             self.__LINK["render"].drawConnection(10,10,surf,self.__LINK)
         if not self.__loading[0] and not self.__fail[0]:
             sx,sy = surf.get_size()
             mult = (abs(math.cos(time.time()*3))/2)+0.5 #Box flashing
-            self.__command.render(self.__reslution[0]-CONSOLE_SIZE[0]-20,self.__reslution[1]-CONSOLE_SIZE[1]-20,CONSOLE_SIZE[0],CONSOLE_SIZE[1],surf) #Render command line
+            if self.__LINK["splitScreen"]:
+                sy = int(sy/2)+int(CONSOLE_SIZE[1]/2)+40
+            self.__command.render(sx-CONSOLE_SIZE[0]-20,sy-CONSOLE_SIZE[1]-20,CONSOLE_SIZE[0],CONSOLE_SIZE[1],surf) #Render command line
             if self.__typing!=self.__typingOut: #Hinting
                 surf.blit(self.__LINK["font24"].render("Press TAB to auto complete",16,(0,255*mult,255*mult)),[sx-CONSOLE_SIZE[0],sy-20])
         for a in self.force: #Upgrade force menues
@@ -1794,6 +2119,8 @@ class Main: #Used as the screen object for rendering and interaction
             sx,sy = surf.get_size()
             if self.__controllerMenu[0]==1: #Command selecting menu
                 WX,WY = sx-CONSOLE_SIZE[0],sy-CONSOLE_SIZE[1]
+                if self.__LINK["splitScreen"]:
+                    WY = int(sy/2)-int(CONSOLE_SIZE[1]/2)+40
                 mult = abs(math.cos(time.time()*3)) #Box flashing
                 #Draw borders
                 pygame.draw.rect(surf,(0,0,0),[WX,WY,CONSOLE_SIZE[0]-50,CONSOLE_SIZE[1]-50])
@@ -1807,7 +2134,7 @@ class Main: #Used as the screen object for rendering and interaction
                     pygame.draw.rect(surf,(255*mult,255*mult,0),[WX+5,WY+((CONSOLE_SIZE[1]-75)/2),(CONSOLE_SIZE[0]-80)/2,15],2)
                 for i,a in enumerate(self.__controllerMenu[1][0][ADD:]): #Display all text on the first column
                     surf.blit(self.__LINK["font24"].render(a,16,(255,255,255)),[WX+5,WY+(i*15)])
-                    if WY+(i*15)>sy-100:
+                    if WY+(i*15)>WY+(CONSOLE_SIZE[1]/2)+30:#sy-100:
                         break
                 if len(self.__controllerMenu[1][2])!=0: #Second column is present
                     WX+=(CONSOLE_SIZE[0]-75)/2

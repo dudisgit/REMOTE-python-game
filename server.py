@@ -543,9 +543,10 @@ def loadLINK(serv): #Loads all content
     LINK["particles"] = False #Disable particle effects on server
     LINK["simpleModels"] = True #Simple models
     LINK["showRooms"] = False
+    LINK["splitScreen"] = False #Split screen is off because its a server
     LINK["backgroundStatic"] = False #Enable/disable background static
     LINK["viewDistort"] = False #Drone view distortion
-    LINK["names"] = ["Jeff","Tom","Nathon","Harry","Ben","Fred","Timmy","Potter","Stranger"] #Drone names
+    LINK["names"] = ["Jeff","Tom","Nathan","Harry","Ben","Fred","Timmy","Potter","Stranger"] #Drone names
     LINK["shipNames"] = ["Franks","Daron","Hassle","SETT","BENZYA"] #Ship names
     LINK["shipData"] = {"fuel":5,"scrap":5,"shipUpgs":[],"maxShipUpgs":2,"reserveUpgs":[],"reserveMax":8,"invent":[],
         "beforeMap":-1,"mapSaves":[],"maxScore":0,"reserve":[],"maxDrones":4,"maxReserve":2,"maxInvent":70} #Data about the players ship
@@ -590,7 +591,6 @@ def loadLINK(serv): #Loads all content
     
     LINK["shipEnt"] = LINK["ents"]["ship"].Main(0,0,LINK,-1)
     LINK["shipEnt"].settings["upgrades"][0] = ["remote power",0,-1]
-    
     #LINK["shipEnt"].settings["upgrades"][1] = ["surveyor",1,-1]
     LINK["shipEnt"].loadUpgrades()
     return LINK

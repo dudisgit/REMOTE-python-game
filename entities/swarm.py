@@ -28,7 +28,7 @@ class Main(base.Main):
         self.beingSucked = False #Make this entity suckable in a vacum
         self.isNPC = True
         self.__inRoom = False #Is true if the NPC is inside a room
-        self.hintMessage = "A swarm is the mose dangorus enemy in the game. Fast, quick and deadly. \nThey can travel through vents if in a room with them."
+        self.hintMessage = "A swarm is the most dangerous enemy in the game. Fast, quick and deadly. \nThey can travel through vents if in a room with them."
     def takeDamage(self,dmg,reason=""):
         self.health -= dmg
         if self.health<0:
@@ -61,7 +61,7 @@ class Main(base.Main):
         if data["T"]==0: #No target
             self.NPCATTACK = None
         elif not data["T"] in self.LINK["IDs"]: #Target doesen't exist
-            self.LINK["errorDisplay"]("Server is trying to target entity that doesen't exist ",data["T"])
+            self.LINK["errorDisplay"]("Server is trying to target entity that doesn't exist ",data["T"])
         else: #Target valid
             self.NPCATTACK = self.LINK["IDs"][data["T"]]
     def GiveSync(self): #Returns the synced data for this swarm

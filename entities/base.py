@@ -16,7 +16,7 @@ def nothing(*args): #Does nothing
 
 class Main(object):
     def __init__(self,x,y,LINK,ID):
-        LINK["errorDisplay"]("Base entitie was created but shouldn't be. This class is for inheriting uses only!")
+        LINK["errorDisplay"]("Base entity was created but shouldn't be. This class is for inheriting uses only!")
         self.init(x,y,LINK)
         self.__sShow = False #Don't show in scematic view
         self.ID = ID
@@ -541,7 +541,7 @@ class Main(object):
             if type(a[1][0][2]) == self.getEnt("airlock") or type(a[1][0][2]) == self.getEnt("door"):
                 if not a[1][0][2].settings["open"] and a[0]!=2 and a[0]!=4:
                     if type(self)==self.getEnt("drone") and a[0]==0:
-                        self.LINK["outputCommand"]("Drone navigation opstructed",(255,255,0),False,self)
+                        self.LINK["outputCommand"]("Drone navigation obstructed",(255,255,0),False,self)
                     rem.append(a)
             if type(a[1][-1][2])==self.getEnt("airlock") and a[0]==1:
                 if not a[1][-1][2].settings["open"]:

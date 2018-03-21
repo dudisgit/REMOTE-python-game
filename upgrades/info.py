@@ -37,7 +37,7 @@ class Main(base.Main):
             if type(a) in Finding: #Entity is an item
                 found += 1
                 if type(a)==self.getEnt("ShipUpgrade"): #Ship upgrade
-                    self.LINK["outputCommand"]("  Ship uprgade - "+a.upg_typ,(0,255,0),False)
+                    self.LINK["outputCommand"]("  Ship upgrade - "+a.upg_typ,(0,255,0),False)
                 elif type(a)==self.getEnt("interface"): #Interface
                     TPS = ""
                     if a.settings["scan"]:

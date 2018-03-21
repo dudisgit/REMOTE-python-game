@@ -85,6 +85,20 @@ class Main(base.Main):
         return False
     def takeDamage(self,dmg,reason=""): #Damage the drone
         self.health -= dmg
+        if self.alive:
+            amo = 0.3
+            if dmg>20:
+                amo = 1
+            if self.LINK["multi"]!=2: #Is not running as a server
+                if self.LINK["splitScreen"]:
+                    if self.LINK["currentScreen"].currentDrone==self and not self.LINK["controller2"] is None:
+                        self.LINK["controller"].vibrate(0.3,amo)
+                    elif self.LINK["currentScreen"].currentDrone2==self and self.LINK["controller2"] is None:
+                        self.LINK["controller"].vibrate(0.3,amo)
+                    elif self.LINK["currentScreen"].currentDrone2==self:
+                        self.LINK["controller2"].vibrate(0.3,amo)
+                elif not self.LINK["controller"] is None:
+                    self.LINK["controller"].vibrate(0.3,amo)
         if self.ID<0 and self.health<1: #Damage it as a player drone
             self.health = 1
             self.alive = False
@@ -387,25 +401,26 @@ class Main(base.Main):
                     last = [c[0]+0,c[1]+0] #Make this point the last point for the next point
                 break
     def aimTo(self,direction,lag): #Move in a direction
-        dist2 = 0 #Angular distance from the entities angle and the targets angle
-        if direction > self.angle: #This is an algorithm for turning in a proper direction smothly
-            if direction - self.angle > 180:
-                dist2 = 180 - (direction - 180 - self.angle)
-                self.angle-=lag*(dist2**0.7)
+        if self.aliveShow and self.allowed:
+            dist2 = 0 #Angular distance from the entities angle and the targets angle
+            if direction > self.angle: #This is an algorithm for turning in a proper direction smothly
+                if direction - self.angle > 180:
+                    dist2 = 180 - (direction - 180 - self.angle)
+                    self.angle-=lag*(dist2**0.7)
+                else:
+                    dist2 = direction - self.angle
+                    self.angle+=lag*(dist2**0.7)
             else:
-                dist2 = direction - self.angle
-                self.angle+=lag*(dist2**0.7)
-        else:
-            if self.angle - direction > 180:
-                dist2 = 180 - (self.angle - 180 - direction)
-                self.angle+=lag*(dist2**0.7)
-            else:
-                dist2 = self.angle - direction
-                self.angle-=lag*(dist2**0.7)
-        try:
-            self.angle = int(self.angle) % 360 #Make sure this entitys angle is not out of range
-        except:
-            self.angle = int(cmath.phase(self.angle)) % 360 #Do the same before but unconvert it from a complex number
+                if self.angle - direction > 180:
+                    dist2 = 180 - (self.angle - 180 - direction)
+                    self.angle+=lag*(dist2**0.7)
+                else:
+                    dist2 = self.angle - direction
+                    self.angle-=lag*(dist2**0.7)
+            try:
+                self.angle = int(self.angle) % 360 #Make sure this entitys angle is not out of range
+            except:
+                self.angle = int(cmath.phase(self.angle)) % 360 #Do the same before but unconvert it from a complex number
     def turn(self,DIR): #Turn the drone is a specific direction
         if self.aliveShow and self.allowed and time.time()>self.pause: #Drone is alive
             self.angle += DIR
@@ -416,8 +431,12 @@ class Main(base.Main):
         if self.aliveShow and self.allowed and time.time()>self.pause: #Drone is alive
             bpos = [self.pos[0]+0,self.pos[1]+0] #Before position
             self.overide = True
-            self.pos[0]+=math.sin(self.angle/180*math.pi)*DIR*self.speed*-1
-            self.pos[1]+=math.cos(self.angle/180*math.pi)*DIR*self.speed*-1
+            if type(DIR)==list:
+                self.pos[0]+=DIR[0]*self.speed
+                self.pos[1]+=DIR[1]*self.speed
+            else:
+                self.pos[0]+=math.sin(self.angle/180*math.pi)*DIR*self.speed*-1
+                self.pos[1]+=math.cos(self.angle/180*math.pi)*DIR*self.speed*-1
             pS = [self.pos[0]+0,self.pos[1]+0]
             self.applyPhysics() #Apply hit-box detection
             self.colision = pS!=self.pos #Tell anything outside this drone that it has colided with something (used in stealth upgrade)
@@ -636,6 +655,8 @@ class Main(base.Main):
             col = (255,255,255)
         else: #Disabled
             col = (255,255,0)
+        if isActive:
+            col = (col[0]*0.25,col[1]*0.25,col[2]*0.25)
         if self.__model!=3: #Drone model is not 3
             self.__rModel.render(PS[0],PS[1],self.angle-90,scale/1.75,surf,col,Rang2,eAng2,arcSiz)
         else: #Drone model is 3
@@ -643,4 +664,13 @@ class Main(base.Main):
             self.__rModel2.render(PS[0],PS[1],self.angle-90,scale/1.75,surf,col,Rang2,eAng2,arcSiz)
         for a in self.__airParts: #Render all air particles
             a.render(x-((self.pos[0]-a.pos[0])*scale),y-((self.pos[1]-a.pos[1])*scale),scale,Rang,eAng,surf)
+        if self.ID <= -1 and self.aliveShow: # Is a player drone
+            tex = self.LINK["font42"].render(str(self.number),12,(200,200,200))
+            sx,sy = tex.get_size()
+            tex = pygame.transform.scale(tex,(int(sx*scale*0.8),int(sy*scale*0.8)))
+            sx,sy = tex.get_size()
+            if isActive:
+                surf.blit(tex,(x+((self.size[0]/2)*scale)-(sx/3),y+((self.size[1]/2)*scale)-(sy/2)))
+            else:
+                surf.blit(tex,(x+((self.size[0]/2)*scale)-(sx/3),y+((self.size[1]/2)*scale)-(sy*1.5)))
 

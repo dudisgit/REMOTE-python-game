@@ -1,6 +1,6 @@
 import pygame, random, math, time, mapGenerator
 
-OVERLAY_OPASITY = 30 #Opasity of the overlay (0-255)
+OVERLAY_OPASITY = 50 #Opasity of the overlay (0-255)
 PRICE = {"gather":8,"generator":8,"interface":12,"lure":16,"motion":12,"overload":8,"pry":12,"remote power":12,"sensor":16,"stealth":12,"surveyor":8,"tow":8}
 
 class Main:
@@ -485,6 +485,51 @@ class Main:
                 self.__scrapCollected = self.__LINK["cli"].SYNC["S"]
                 self.__LINK["shipData"]["scrap"] = self.__scrapCollected
                 self.__upgrades = self.__LINK["cli"].SYNC["UC"]
+        if not self.__LINK["controller"] is None:
+            if self.__LINK["controller"].getMenuUpChange():
+                if self.__LINK["controller"].getMenuUp():
+                    pygame.event.post(pygame.event.Event(pygame.KEYDOWN,{"key":pygame.K_UP}))
+                else:
+                    pygame.event.post(pygame.event.Event(pygame.KEYUP,{"key":pygame.K_UP}))
+            if self.__LINK["controller"].getMenuDownChange():
+                if self.__LINK["controller"].getMenuDown():
+                    pygame.event.post(pygame.event.Event(pygame.KEYDOWN,{"key":pygame.K_DOWN}))
+                else:
+                    pygame.event.post(pygame.event.Event(pygame.KEYUP,{"key":pygame.K_DOWN}))
+            if self.__LINK["controller"].getMenuLeftChange():
+                if self.__LINK["controller"].getMenuLeft():
+                    pygame.event.post(pygame.event.Event(pygame.KEYDOWN,{"key":pygame.K_LEFT}))
+                else:
+                    pygame.event.post(pygame.event.Event(pygame.KEYUP,{"key":pygame.K_LEFT}))
+            if self.__LINK["controller"].getMenuRightChange():
+                if self.__LINK["controller"].getMenuRight():
+                    pygame.event.post(pygame.event.Event(pygame.KEYDOWN,{"key":pygame.K_RIGHT}))
+                else:
+                    pygame.event.post(pygame.event.Event(pygame.KEYUP,{"key":pygame.K_RIGHT}))
+            if self.__LINK["controller"].selectChange():
+                if self.__LINK["controller"].select():
+                    pygame.event.post(pygame.event.Event(pygame.KEYDOWN,{"key":pygame.K_RETURN}))
+                else:
+                    pygame.event.post(pygame.event.Event(pygame.KEYUP,{"key":pygame.K_RETURN}))
+            if self.__LINK["controller"].quickOpenChange():
+                if self.__LINK["controller"].quickOpen():
+                    pygame.event.post(pygame.event.Event(pygame.KEYDOWN,{"key":pygame.K_LCTRL}))
+                else:
+                    pygame.event.post(pygame.event.Event(pygame.KEYUP,{"key":pygame.K_LCTRL}))
+            if self.__LINK["controller"].backChange():
+                if self.__LINK["controller"].back():
+                    pygame.event.post(pygame.event.Event(pygame.KEYDOWN,{"key":pygame.K_d}))
+                else:
+                    pygame.event.post(pygame.event.Event(pygame.KEYUP,{"key":pygame.K_d}))
+            if self.__LINK["controller"].enterScematicViewChange():
+                if self.__LINK["controller"].enterScematicView():
+                    pygame.event.post(pygame.event.Event(pygame.KEYDOWN,{"key":pygame.K_f}))
+                else:
+                    pygame.event.post(pygame.event.Event(pygame.KEYUP,{"key":pygame.K_f}))
+            if self.__LINK["controller"].beforeDrone():
+                self.__tab = False
+            if self.__LINK["controller"].nextDrone():
+                self.__tab = True
         if self.__displayInfo[0]: #Game is in info display menu
             for event in kBuf: #Loop for return button pressed
                 if event.type == pygame.KEYDOWN:
@@ -657,8 +702,9 @@ class Main:
                             self.__sels[2] += 1
                             if self.__sels[2]>=self.__LINK["shipData"]["maxInvent"]: #Hit the end of the screen, make sure user cannot select past.
                                 self.__sels[2] = self.__LINK["shipData"]["maxInvent"]-1
-                elif event.key == pygame.K_d and not self.__dialog[0] and self.__tab:
-                    if self.__sels[0]==0 and self.__sels[-1]==1:
+                elif event.key == pygame.K_d:
+                    self.__dialog[0] = False
+                    if self.__sels[0]==0 and self.__sels[-1]==1 and self.__tab:
                         UPG = None
                         MX,MXR,Nlink = self.__getShipInfo()
                         if self.__LINK["multi"]==1:
@@ -677,7 +723,7 @@ class Main:
                             self.__dialog[0] = True
                             self.__dialog[1] = "Dismantle '"+UPG[0]+"'? ("+str(int(PRICE[UPG[0]]/(UPG[1]+1)))+")"
                             self.__dialog[2] = self.__dismantleShipUpgrade
-                    elif self.__sels[0]==2: #Inventory config area
+                    elif self.__sels[0]==2 and self.__tab: #Inventory config area
                         self.__dialog[2] = self.__dismantleDroneOrUpgrade
                         if self.__sels[-1]==1: #Dismantle a drone
                             DRONE = None
@@ -826,7 +872,12 @@ class Main:
                                     self.__LINK["shipData"]["reserveUpgs"].append(self.__LINK["shipData"]["shipUpgs"].pop(self.__sels[1]))
                         elif self.__sels[0]==1 and self.__sels[-1]==1: #Buying an upgrade
                             UPG = ["generator","gather","interface","tow"][self.__sels[1]]
-                            if self.__LINK["shipData"]["scrap"]>=PRICE[UPG]:
+                            MX = 0
+                            if self.__LINK["multi"]==1: #Game is running as a client
+                                MX,Nlink = self.__getInventInfo()
+                            else:
+                                MX = len(self.__LINK["shipData"]["invent"])
+                            if self.__LINK["shipData"]["scrap"]>=PRICE[UPG] and MX<self.__LINK["shipData"]["maxInvent"]:
                                 self.__dialog[0] = True
                                 self.__dialog[1] = "Are you sure you want to spend "+str(PRICE[UPG])+" scrap?"
                                 self.__dialog[2] = self.__buyUpgrade
@@ -874,7 +925,7 @@ class Main:
                                             MX,Nlink = self.__getInventInfo()
                                             if MX<self.__LINK["shipData"]["maxInvent"]:
                                                 self.__LINK["cli"].sendTrigger("mufd",self.__sels[1],self.__sels[2])
-                                    elif self.__sels[2]<len(DRONE.upgrades): #Game is running in single player
+                                    elif self.__sels[2]<len(DRONE.upgrades) and len(self.__LINK["shipData"]["invent"])<self.__LINK["shipData"]["maxInvent"]: #Game is running in single player
                                         DRONE.unloadUpgrades()
                                         self.__LINK["shipData"]["invent"].append(DRONE.settings["upgrades"][self.__sels[2]].copy())
                                         DRONE.upgrades.pop(self.__sels[2])
@@ -1187,7 +1238,12 @@ class Main:
         smult = (abs(math.cos(time.time()*3))/2)+0.5 #Box flashing
         sx,sy = surf.get_size()
         if self.__LINK["hints"]:
-            surf.blit(self.__LINK["font16"].render("Press TAB to switch between tabs",16,(0,255*smult,255*smult)),[sx-770,15])
+            if self.__LINK["controller"] is None:
+                surf.blit(self.__LINK["font16"].render("Press TAB to switch between tabs",16,(0,255*smult,255*smult)),[sx-770,15])
+            else:
+                LT = self.__LINK["controller"].keyName["bfDrone"]
+                RT = self.__LINK["controller"].keyName["nxDrone"]
+                surf.blit(self.__LINK["font16"].render("Press "+LT+" or "+RT+" to switch between tabs",16,(0,255*smult,255*smult)),[sx-770,15])
         if self.__tab: #In inventory tab
             self.__renderInventory(surf)
         else: #In ship selecting tab
@@ -1204,7 +1260,11 @@ class Main:
                 pygame.draw.rect(surf,(200,200,200),[(sx/2)+148,(sy/2)+10,47,35],1)
                 pygame.draw.rect(surf,(0,200,0),[(sx/2)-195,(sy/2)+10,65,35],4)
             surf.blit(self.__LINK["font42"].render("NO",16,(255,255,255)),[(sx/2)+153,(sy/2)+10])
-            surf.blit(self.__LINK["font24"].render("Presss enter to select",16,(255,255,255)),[(sx/2)-110,(sy/2)+15])
+            if self.__LINK["controller"] is None:
+                surf.blit(self.__LINK["font24"].render("Presss enter to select",16,(255,255,255)),[(sx/2)-110,(sy/2)+15])
+            else:
+                A = self.__LINK["controller"].keyName["select"]
+                surf.blit(self.__LINK["font24"].render("Presss "+A+" to select",16,(255,255,255)),[(sx/2)-110,(sy/2)+15])
         #Overlay
         if self.__LINK["backgroundStatic"]:
             self.__cols[self.__changeEffect[0]].set_alpha(OVERLAY_OPASITY-self.__changeEffect[1])
@@ -1226,7 +1286,7 @@ class Main:
         surf.blit(self.__LINK["font42"].render("UPGRADES: "+str(self.__upgrades)+"/"+str(self.__maxUpgrades),16,(0,255,255)),(sx-550,50))
         surf.blit(self.__LINK["font42"].render("MAX SCRAP: "+str(self.__scrapCopasity),16,(0,255,255)),(sx-550,80))
         surf.blit(self.__LINK["font42"].render("FUEL: "+str(self.__fuelLeft),16,(0,0,255)),(20,60))
-        surf.blit(self.__LINK["font42"].render("SCRAP: "+str(self.__scrapCollected),16,(0,0,255)),(20,90))
+        surf.blit(self.__LINK["font42"].render("SCRAP: "+str(int(self.__scrapCollected)),16,(0,0,255)),(20,90))
         #Upgrade managment
         if self.__sels[0]==0: #Ship upgrades menu
             self.__renderShipUpgrades(surf,True)
@@ -1248,7 +1308,11 @@ class Main:
         sx,sy = surf.get_size()
         smult = (abs(math.cos(time.time()*3))/2)+0.5 #Box flashing
         if self.__LINK["hints"] and active:
-            surf.blit(self.__LINK["font16"].render("Press Return to create selected upgrade",16,(0,255*smult,255*smult)),[180,70])
+            if self.__LINK["controller"] is None:
+                surf.blit(self.__LINK["font16"].render("Press Return to create selected upgrade",16,(0,255*smult,255*smult)),[180,70])
+            else:
+                A = self.__LINK["controller"].keyName["select"]
+                surf.blit(self.__LINK["font16"].render("Press "+A+" to create selected upgrade",16,(0,255*smult,255*smult)),[180,70])
         pygame.draw.rect(surf,(0,255*mult,0),[320,140,300,sy-150],5)
         surf.blit(self.__LINK["font42"].render("ASSEMBLY",16,(255*mult,255*mult,255*mult)),[380,150])
         pygame.draw.line(surf,(0,255*mult,0),[320,190],[620,190],5)
@@ -1279,10 +1343,20 @@ class Main:
         sx,sy = surf.get_size()
         smult = (abs(math.cos(time.time()*3))/2)+0.5 #Box flashing
         if self.__LINK["hints"] and active:
-            surf.blit(self.__LINK["font16"].render("Press F to fix selected upgrade/drone",16,(0,255*smult,255*smult)),[180,70])
-            surf.blit(self.__LINK["font16"].render("Press D to dismantle selected upgrade/drone",16,(0,255*smult,255*smult)),[180,80])
-            surf.blit(self.__LINK["font16"].render("Press Return to move selected upgrade/drone to and from reserve area",16,(0,255*smult,255*smult)),[180,90])
-            surf.blit(self.__LINK["font16"].render("Hold Left CNTRL + arrow keys to move drone left or right",16,(0,255*smult,255*smult)),[180,100])
+            if self.__LINK["controller"] is None:
+                surf.blit(self.__LINK["font16"].render("Press F to fix selected upgrade/drone",16,(0,255*smult,255*smult)),[180,70])
+                surf.blit(self.__LINK["font16"].render("Press D to dismantle selected upgrade/drone",16,(0,255*smult,255*smult)),[180,80])
+                surf.blit(self.__LINK["font16"].render("Press Return to move selected upgrade/drone to and from reserve area",16,(0,255*smult,255*smult)),[180,90])
+                surf.blit(self.__LINK["font16"].render("Hold Left CNTRL + arrow keys to move drone left or right",16,(0,255*smult,255*smult)),[180,100])
+            else:
+                F = self.__LINK["controller"].keyName["scem"]
+                D = self.__LINK["controller"].keyName["back"]
+                A = self.__LINK["controller"].keyName["select"]
+                M = self.__LINK["controller"].keyName["qOpen"]
+                surf.blit(self.__LINK["font16"].render("Press "+F+" to fix selected upgrade/drone",16,(0,255*smult,255*smult)),[180,70])
+                surf.blit(self.__LINK["font16"].render("Press "+D+" to dismantle selected upgrade/drone",16,(0,255*smult,255*smult)),[180,80])
+                surf.blit(self.__LINK["font16"].render("Press "+A+" to move selected upgrade/drone to and from reserve area",16,(0,255*smult,255*smult)),[180,90])
+                surf.blit(self.__LINK["font16"].render("Hold "+A+" + arrow keys to move drone left or right",16,(0,255*smult,255*smult)),[180,100])
         if active and self.__sels[-1]==0:
             pygame.draw.rect(surf,(255*smult,0,255*smult),[630,140,sx-640,sy-150],5)
             pygame.draw.line(surf,(255*smult,0,255*smult),[630,400],[sx-10,400],5)
@@ -1449,9 +1523,17 @@ class Main:
         smult = (abs(math.cos(time.time()*3))/2)+0.5 #Box flashing
         sx,sy = surf.get_size()
         if self.__LINK["hints"] and active:
-            surf.blit(self.__LINK["font16"].render("Press F to fix selected upgrade",16,(0,255*smult,255*smult)),[180,70])
-            surf.blit(self.__LINK["font16"].render("Press D to dismantle selected upgrade",16,(0,255*smult,255*smult)),[180,80])
-            surf.blit(self.__LINK["font16"].render("Press Return to move selected upgrade to and from reserve area",16,(0,255*smult,255*smult)),[180,90])
+            if self.__LINK["controller"] is None:
+                surf.blit(self.__LINK["font16"].render("Press F to fix selected upgrade",16,(0,255*smult,255*smult)),[180,70])
+                surf.blit(self.__LINK["font16"].render("Press D to dismantle selected upgrade",16,(0,255*smult,255*smult)),[180,80])
+                surf.blit(self.__LINK["font16"].render("Press Return to move selected upgrade to and from reserve area",16,(0,255*smult,255*smult)),[180,90])
+            else:
+                F = self.__LINK["controller"].keyName["scem"]
+                D = self.__LINK["controller"].keyName["back"]
+                A = self.__LINK["controller"].keyName["select"]
+                surf.blit(self.__LINK["font16"].render("Press "+F+" to fix selected upgrade",16,(0,255*smult,255*smult)),[180,70])
+                surf.blit(self.__LINK["font16"].render("Press "+D+" to dismantle selected upgrade",16,(0,255*smult,255*smult)),[180,80])
+                surf.blit(self.__LINK["font16"].render("Press "+A+" to move selected upgrade to and from reserve area",16,(0,255*smult,255*smult)),[180,90])
         pygame.draw.rect(surf,(0,255*mult,0),[10,140,300,sy-150],5)
         surf.blit(self.__LINK["font42"].render("SHIP UPGRADES",16,(255*mult,255*mult,255*mult)),[35,150])
         pygame.draw.line(surf,(0,255*mult,0),[10,190],[310,190],5)
@@ -1504,7 +1586,7 @@ class Main:
                 if self.__LINK["multi"]==1: #Game is running as a client
                     UPG = [self.__LINK["cli"].SYNC["G"+str(Nlink[i+self.__LINK["shipData"]["maxShipUpgs"]])]["N"],self.__LINK["cli"].SYNC["G"+str(Nlink[i+self.__LINK["shipData"]["maxShipUpgs"]])]["D"]]
                 else:
-                    UPG = self.__LINK["shipData"]["shipUpgs"][i]
+                    UPG = self.__LINK["shipData"]["reserveUpgs"][i]
                 tex = UPG[0]
                 if UPG[1]==1:
                     tcol = (255*mult,255*mult,0)
@@ -1553,12 +1635,18 @@ class Main:
         surf.blit(self.__LINK["font42"].render("UPGRADES: "+str(self.__upgrades)+"/"+str(self.__maxUpgrades),16,(0,255,255)),(sx-550,50))
         surf.blit(self.__LINK["font42"].render("MAX SCRAP: "+str(self.__scrapCopasity),16,(0,255,255)),(sx-550,80))
         surf.blit(self.__LINK["font42"].render("FUEL: "+str(self.__fuelLeft),16,(0,0,255)),(20,60))
-        surf.blit(self.__LINK["font42"].render("SCRAP: "+str(self.__scrapCollected),16,(0,0,255)),(20,90))
+        surf.blit(self.__LINK["font42"].render("SCRAP: "+str(int(self.__scrapCollected)),16,(0,0,255)),(20,90))
         if self.__LINK["hints"]:
             smult = (abs(math.cos(time.time()*3))/2)+0.5 #Box flashing
-            surf.blit(self.__LINK["font16"].render("Use left and right arrow keys to select ship",16,(0,255*smult,255*smult)),[20,140])
-            surf.blit(self.__LINK["font16"].render("Press return to select ship and open dialog",16,(0,255*smult,255*smult)),[20,150])
-            surf.blit(self.__LINK["font16"].render("Use left and right arrow keys to select dialog option",16,(0,255*smult,255*smult)),[20,160])
+            if self.__LINK["controller"] is None:
+                surf.blit(self.__LINK["font16"].render("Use left and right arrow keys to select ship",16,(0,255*smult,255*smult)),[20,140])
+                surf.blit(self.__LINK["font16"].render("Press return to select ship and open dialog",16,(0,255*smult,255*smult)),[20,150])
+                surf.blit(self.__LINK["font16"].render("Use left and right arrow keys to select dialog option",16,(0,255*smult,255*smult)),[20,160])
+            else:
+                A = self.__LINK["controller"].keyName["select"]
+                surf.blit(self.__LINK["font16"].render("Use left and right arrow keys to select ship",16,(0,255*smult,255*smult)),[20,140])
+                surf.blit(self.__LINK["font16"].render("Press "+A+" to select ship and open dialog",16,(0,255*smult,255*smult)),[20,150])
+                surf.blit(self.__LINK["font16"].render("Use left and right arrow keys to select dialog option",16,(0,255*smult,255*smult)),[20,160])
         #Ship selecting
         pygame.draw.rect(surf,(0,255,255),[(sx/2)-25,sy-60,50,50],2)
         pygame.draw.polygon(surf,(0,255,255),[((sx/2)-20,sy-15),(sx/2,sy-55),((sx/2)+20,sy-15)],2)
@@ -1578,7 +1666,7 @@ class Main:
                 pygame.draw.rect(surf,(0,255,0),[bx,by,120,120],2)
             pygame.draw.polygon(surf,(0,255,0),[(bx+60,by),(bx+50,by+60),(bx,by+120),(bx+60,by+70),(bx+120,by+120),(bx+70,by+60)])
             surf.blit(self.__LINK["font24"].render(a[3],16,(255,255,255)),(bx+10,by+130))
-            surf.blit(self.__LINK["font24"].render("SCRAP CAPASITY: "+str(a[1]),16,(255,255,255)),(bx+10,by+150))
+            surf.blit(self.__LINK["font24"].render("SCRAP CAPACITY: "+str(a[1]),16,(255,255,255)),(bx+10,by+150))
             surf.blit(self.__LINK["font24"].render("THREAT TYPES: "+str(a[4]),16,(255,255,255)),(bx+10,by+170))
             surf.blit(self.__LINK["font24"].render("FUEL: "+str(a[5]),16,(255,255,255)),(bx+10,by+190))
             surf.blit(self.__LINK["font24"].render("AGE: "+a[2],16,(255,255,255)),(bx+10,by+210))

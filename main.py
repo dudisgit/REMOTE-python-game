@@ -1,22 +1,267 @@
 name = __name__ == "__main__"
 if name:
     print("Importing modules")
-import pygame,client,time,screenLib,math,os,sys,render,importlib,traceback,mapGenerator
+import pygame,client,time,screenLib,math,os,sys,render,importlib,traceback,mapGenerator,ctypes
+
+ControllerMoveRate = 0.1 #Times a second to move pointer when controller button is held
+class ControllerBase:
+    def init(self):
+        self.__hold = {} #Used to track controller holding
+        self.__change = {"Up":False,"Dw":False,"L":False,"R":False,"BD":False,"ND":False,"QO":False,"S":False,"B":False,"E":False}
+        self.keyName = {} #Used for command hints
+        self.keyName["menuUp"] = "Up arrow"
+        self.keyName["menuDown"] = "Down arrow"
+        self.keyName["menuLeft"] = "Left arrow"
+        self.keyName["menuRight"] = "Right arrow"
+        self.keyName["bfDrone"] = "Left trigger"
+        self.keyName["nxDrone"] = "Right trigger"
+        self.keyName["qOpen"] = "Quick open"
+        self.keyName["select"] = "Select"
+        self.keyName["back"] = "Back"
+        self.keyName["scem"] = "Scematic view"
+        self.keyName["mov"] = "Left trackball"
+        self.keyName["aim"] = "Right trackball"
+        self.cont.init()
+        for a in self.__change:
+            self.__hold[a] = -1
+    def __holding(self,key):
+        if self.__hold[key]!=-1 and self.__change[key]: #Holding and key is down
+            if time.time()>self.__hold[key]:
+                self.__hold[key] = time.time()+ControllerMoveRate
+                return True
+        elif self.__hold[key]!=-1: #Still holding
+            self.__hold[key] = -1
+        if self.__change[key] and self.__hold[key]==-1:
+            self.__hold[key] = time.time()+0.4
+        return False
+    def vibrate(self,duration,perc): #Vibrate the controller
+        pass
+    def loop(self):
+        pass
+    def getMenuUpChange(self):
+        if self.__change["Up"]!=self.getMenuUp():
+            self.__change["Up"] = self.getMenuUp()
+            return True
+        return self.__holding("Up")
+    def getMenuDownChange(self):
+        if self.__change["Dw"]!=self.getMenuDown():
+            self.__change["Dw"] = self.getMenuDown()
+            return True
+        return self.__holding("Dw")
+    def getMenuLeftChange(self):
+        if self.__change["L"]!=self.getMenuLeft():
+            self.__change["L"] = self.getMenuLeft()
+            return True
+        return self.__holding("L")
+    def getMenuRightChange(self):
+        if self.__change["R"]!=self.getMenuRight():
+            self.__change["R"] = self.getMenuRight()
+            return True
+        return self.__holding("R")
+    def beforeDroneChange(self):
+        if self.__change["BD"]!=self.beforeDrone():
+            self.__change["BD"] = self.beforeDrone()
+            return True
+        return self.__holding("BD")
+    def nextDroneChange(self):
+        if self.__change["ND"]!=self.nextDrone():
+            self.__change["ND"] = self.nextDrone()
+            return True
+        return self.__holding("ND")
+    def quickOpenChange(self):
+        if self.__change["QO"]!=self.quickOpen():
+            self.__change["QO"] = self.quickOpen()
+            return True
+        return self.__holding("QO")
+    def selectChange(self):
+        if self.__change["S"]!=self.select():
+            self.__change["S"] = self.select()
+            return True
+        return self.__holding("S")
+    def backChange(self):
+        if self.__change["B"]!=self.back():
+            self.__change["B"] = self.back()
+            return True
+        return self.__holding("B")
+    def enterScematicViewChange(self):
+        if self.__change["E"]!=self.enterScematicView():
+            self.__change["E"] = self.enterScematicView()
+            return True
+        return self.__holding("E")
+class XINPUT_VIBRATION(ctypes.Structure):
+    _fields_ = [("wLeftMotorSpeed", ctypes.c_ushort),
+                ("wRightMotorSpeed", ctypes.c_ushort)]
+class XBoxController(ControllerBase):
+        def __init__(self,cont):
+            self.cont = cont
+            self.init()
+            ####### This is not my code but will setup vibration #######
+            xinput = ctypes.windll.xinput1_1
+            self.__XInputSetState = xinput.XInputSetState
+            self.__XInputSetState.argtypes = [ctypes.c_uint, ctypes.POINTER(XINPUT_VIBRATION)]
+            self.__XInputSetState.restype = ctypes.c_uint
+            #Source = https://stackoverflow.com/questions/20499946/xbox-360-vibrate-rumble
+            self.__vibStart = -1
+            self.keyName["qOpen"] = "Y"
+            self.keyName["select"] = "A"
+            self.keyName["back"] = "B"
+            self.keyName["scem"] = "X"
+        def vibrate(self,duration,perc): #Vibrate the controller
+            vibration = XINPUT_VIBRATION(int(65535*perc), int(32768*perc))
+            self.__XInputSetState(0, ctypes.byref(vibration))
+            self.__vibStart = time.time()+duration
+        def loop(self):
+            if time.time()>self.__vibStart and self.__vibStart!=-1:
+                self.vibrate(0,0)
+                self.__vibStart = -1
+        def test(self): #Test if controller has all its buttons
+            return self.cont.get_numbuttons()==10 and self.cont.get_numhats()==1 and self.cont.get_numaxes()==5
+        def getMovement(self,inMenu=False):
+            return [self.cont.get_axis(0),self.cont.get_axis(1)]
+        def getAim(self,inMenu=False):
+            #Either return a list for x and y or a rotation movement
+            return [self.cont.get_axis(4),self.cont.get_axis(3)]
+        def getMenuUp(self):
+            x,y = self.cont.get_hat(0)
+            return y>0.5 and abs(x)<0.5
+        def getMenuDown(self):
+            x,y = self.cont.get_hat(0)
+            return y<-0.5 and abs(x)<0.5
+        def getMenuLeft(self):
+            x,y = self.cont.get_hat(0)
+            return x<-0.5 and abs(y)<0.5
+        def getMenuRight(self):
+            x,y = self.cont.get_hat(0)
+            return x>0.5 and abs(y)<0.5
+        def beforeDrone(self):
+            return self.cont.get_axis(2)>0.5
+        def nextDrone(self):
+            return self.cont.get_axis(2)<-0.5
+        def quickOpen(self):
+            return self.cont.get_button(3)
+        def select(self):
+            return self.cont.get_button(0)
+        def back(self):
+            return self.cont.get_button(1)
+        def enterScematicView(self):
+            return self.cont.get_button(2)
+class N64Controller(ControllerBase):
+    def __init__(self,cont):
+        self.cont = cont
+        self.init()
+        self.keyName["qOpen"] = "A"
+        self.keyName["select"] = "X"
+        self.keyName["back"] = "B"
+        self.keyName["scem"] = "Y"
+        self.keyName["mov"] = "Arrow keys"
+        self.keyName["aim"] = "Arrow keys"
+    def test(self):
+        return self.cont.get_numbuttons()==10 and self.cont.get_numaxes()==2
+    def getMovement(self,inMenu=False):
+        if inMenu:
+            return 0
+        else:
+            return self.cont.get_axis(1)
+    def getAim(self,inMenu=False):
+        if inMenu:
+            return 0
+        else:
+            return self.cont.get_axis(0)
+    def getMenuUp(self):
+        return self.cont.get_axis(1)<-0.5
+    def getMenuDown(self):
+        return self.cont.get_axis(1)>0.5
+    def getMenuLeft(self):
+        return self.cont.get_axis(0)<-0.5
+    def getMenuRight(self):
+        return self.cont.get_axis(0)>0.5
+    def beforeDrone(self):
+        return self.cont.get_button(4)
+    def nextDrone(self):
+        return self.cont.get_button(5)
+    def quickOpen(self):
+        return self.cont.get_button(3)
+    def select(self):
+        return self.cont.get_button(0)
+    def back(self):
+        return self.cont.get_button(2)
+    def enterScematicView(self):
+        return self.cont.get_button(1)
+class PS3Controller(ControllerBase):
+    def __init__(self,cont):
+        self.cont = cont
+        self.init()
+        self.keyName["qOpen"] = "Triangle"
+        self.keyName["select"] = "X"
+        self.keyName["back"] = "O"
+        self.keyName["scem"] = "Square"
+    def test(self):
+        return self.cont.get_numbuttons()==15 and self.cont.get_numhats()==1 and self.cont.get_numaxes()==4
+    def getMovement(self,inMenu=False):
+        return [self.cont.get_axis(0),self.cont.get_axis(1)]
+    def getAim(self,inMenu=False):
+        return [self.cont.get_axis(2),self.cont.get_axis(3)]
+    def getMenuUp(self):
+        x,y = self.cont.get_hat(0)
+        return y>0.5
+    def getMenuDown(self):
+        x,y = self.cont.get_hat(0)
+        return y<-0.5
+    def getMenuLeft(self):
+        x,y = self.cont.get_hat(0)
+        return x<-0.5
+    def getMenuRight(self):
+        x,y = self.cont.get_hat(0)
+        return x>0.5
+    def beforeDrone(self):
+        return self.cont.get_button(6) or self.cont.get_button(8)
+    def nextDrone(self):
+        return self.cont.get_button(7) or self.cont.get_button(9)
+    def quickOpen(self):
+        return self.cont.get_button(4)
+    def select(self):
+        return self.cont.get_button(0)
+    def back(self):
+        return self.cont.get_button(1)
+    def enterScematicView(self):
+        return self.cont.get_button(3)
+
+CONTROLLERS = {}
+CONTROLLERS["Controller (XBOX 360 For Windows)"] = XBoxController
+CONTROLLERS["usb gamepad           "] = N64Controller
+CONTROLLERS["HJD-X"] = PS3Controller
+
+def reloadControllers(LINK):
+    pygame.joystick.init()
+    conts = pygame.joystick.get_count()
+    LINK["controller"] = None
+    if conts!=0:
+        controllers = []
+        for i in range(conts): #Find a compatable controller
+            controller = pygame.joystick.Joystick(i)
+            if controller.get_name() in CONTROLLERS:
+                controllers.append( pygame.joystick.Joystick(i))
+        if len(controllers)!=0:
+            LINK["controller"] = CONTROLLERS[controllers[0].get_name()](controllers[0])
+            if len(controllers)!=1: #More than 1 controller plugged in
+                LINK["controller2"] = CONTROLLERS[controllers[1].get_name()](controllers[1])
 if name: #Is the main thread
     print("Loading pygame")
     pygame.init()
+
     print("Building varaibles")
     FPS = 60 #Default FPS
     RESLUTION = [1200,700]
 
     def ERROR(*info): #This function is called whenever an unexspected error occures. It is mainly so it can be displayed on the screen without the game crashing
         print("Err: ",info) #Tempory
+        traceback.print_exc()
         if LINK["DEV"]: #If in development mode then exit the game
             pygame.quit()
-            traceback.print_exc()
             sys.exit(1)
     def ADDLOG(mes): #Used to show logs (used for console)
-        print(mes)
+        #print(mes)
+        pass #Tempory because of a windows 10 bug with printing
     def loadScreen(name,*args): #Loads a screen
         global currentScreen
         if name in LINK["screens"]: #Screen exists
@@ -29,6 +274,7 @@ if name: #Is the main thread
     LINK = {} #This is a global variable for allowing controll over the whole program through one variable. Every class in this program should have a link to this!
     LINK["errorDisplay"] = ERROR #Used to show errors
     LINK["reslution"] = RESLUTION #Reslution of the game
+    LINK["befRes"] = None #Before reslution
     LINK["DEV"] = False  #Development mode, this will stop the game when errors occur.
     LINK["loadScreen"] = loadScreen #Used so other scripts can load the map
     LINK["render"] = render #Used so other scripts can use its tools for rendering
@@ -41,16 +287,14 @@ if name: #Is the main thread
     LINK["particles"] = True #Enable/disable particle effects
     LINK["showRooms"] = False #Used by survayor upgade to show rooms and doors
     LINK["popView"] = False #Cause rooms to pop into view (reduced CPU load but ajasent rooms arn't rendered)
+    LINK["splitScreen"] = False #Is the game running in split screen?
     LINK["client"] = client
     LINK["hintDone"] = [] #List of hints that are shown
 
     pygame.joystick.init()
     LINK["controller"] = None
-    if pygame.joystick.get_count()!=0:
-        LINK["controller"] = pygame.joystick.Joystick(0)
-        LINK["controller"].init()
-        if LINK["controller"].get_numaxes()!=2:
-            LINK["controller"] = None
+    LINK["controller2"] = None #Player 2 (if two controllers are plugged in)
+    reloadControllers(LINK)
     main = pygame.display.set_mode(RESLUTION)
     pygame.display.set_caption("REMOTE")
     clock = pygame.time.Clock()
@@ -75,7 +319,7 @@ if name: #Is the main thread
     LINK["upgradeIDCount"] = 0 #ID count for upgrades
     LINK["scrapCollected"] = 0 #Amount of scrap colected
     LINK["fuelCollected"] = 0 #Amount of fuel colected
-    LINK["shipData"] = {"fuel":5,"scrap":5,"shipUpgs":[],"maxShipUpgs":2,"reserveUpgs":[],"reserveMax":8,"invent":[],
+    LINK["shipData"] = {"fuel":5,"scrap":50,"shipUpgs":[],"maxShipUpgs":2,"reserveUpgs":[],"reserveMax":8,"invent":[],
         "beforeMap":-1,"mapSaves":[],"maxScore":0,"reserve":[],"maxDrones":4,"maxReserve":2,"maxInvent":70} #Data about the players ship
     #Reference:
     #'fuel' - Amount of fuel inside the ship
@@ -196,6 +440,7 @@ if name: #Is the main thread
     loadScreen("mainMenu") #Load the main game screen
     #currentScreen.open("ServGen.map")
     print("Going into event loop")
+    
     run = True
     lastTime = time.time()-0.1
     while run:
@@ -222,6 +467,10 @@ if name: #Is the main thread
                 if LINK["DEV"]:
                     raise
                 ERROR("Error inside screen event loop",sys.exc_info())
+        if not LINK["controller"] is None:
+            LINK["controller"].loop()
+        if not LINK["controller2"] is None:
+            LINK["controller2"].loop()
         main.fill((0,0,0))
         if not currentScreen is None:
             try:

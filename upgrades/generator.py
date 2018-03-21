@@ -18,7 +18,7 @@ class Main(base.Main):
         elif type(Droom)!=self.getEnt("room"): #Drone is not inside a room
             return "Drone is not inside a room."
         elif not self.__activeGenerator is None: #Upgrade is allredey being used
-            return "Allredey powering a generator"
+            return "Already powering a generator"
         else: #Check if there are any generators in the room
             Ents = Droom.EntitiesInside()
             GeneratorObject = self.getEnt("generator")
@@ -26,7 +26,7 @@ class Main(base.Main):
                 if type(a)==GeneratorObject:
                     if a.alive:
                         if a.active:
-                            return "Power inlet allredey powered"
+                            return "Power inlet already powered"
                         else:
                             return True #Upgrade is valid
                     return "Power inlet is destroyed"
