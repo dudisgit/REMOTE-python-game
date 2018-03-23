@@ -295,7 +295,7 @@ if name: #Is the main thread
     LINK["controller"] = None
     LINK["controller2"] = None #Player 2 (if two controllers are plugged in)
     reloadControllers(LINK)
-    main = pygame.display.set_mode(RESLUTION)
+    main = pygame.display.set_mode(RESLUTION,pygame.RESIZABLE)
     pygame.display.set_caption("REMOTE")
     clock = pygame.time.Clock()
     currentScreen = None #The currently open screen
@@ -320,7 +320,7 @@ if name: #Is the main thread
     LINK["scrapCollected"] = 0 #Amount of scrap colected
     LINK["fuelCollected"] = 0 #Amount of fuel colected
     LINK["shipData"] = {"fuel":5,"scrap":50,"shipUpgs":[],"maxShipUpgs":2,"reserveUpgs":[],"reserveMax":8,"invent":[],
-        "beforeMap":-1,"mapSaves":[],"maxScore":0,"reserve":[],"maxDrones":4,"maxReserve":2,"maxInvent":70} #Data about the players ship
+        "beforeMap":-1,"mapSaves":[],"maxScore":0,"reserve":[],"maxDrones":4,"maxReserve":2,"maxInvent":70,"doneMaps":[]} #Data about the players ship
     #Reference:
     #'fuel' - Amount of fuel inside the ship
     #'scrap' - Amount of scrap insdie the ship
@@ -335,17 +335,21 @@ if name: #Is the main thread
     #'reserve' - Drones in reserve
     #'maxDrones' - Maximum number of drones the ship can take on a mission
     #'maxReserve' - Maximum number of reserve drones
+    #'doneMaps' - List of maps that have been completed
     LINK["allPower"] = False #Enable global power, a cheat for development
     LINK["absoluteDoorSync"] = False #Send packets randomly to make doors in SYNC perfectly (bigger the map the more packets)
     LINK["simpleModels"] = False #Enable/disable simple models
-    LINK["hints"] = True #Enable game hints or not
+    LINK["hints"] = False #Enable game hints or not
     LINK["threading"] = False #Enable/disable cleint-side socket threading
     LINK["backgroundStatic"] = False #Enable/disable background static
     LINK["viewDistort"] = True #Drone view distortion
     LINK["names"] = ["Jeff","Tom","Nathon","Harry","Ben","Fred","Timmy","Potter","Stranger"] #Drone names
     LINK["shipNames"] = ["Franks","Daron","Hassle","SETT","BENZYA"] #Ship names
+    LINK["backToMapEdit"] = "" #Play testing is over, go back to map editor
     LINK["simpleMovement"] = False #Simplified movement
     LINK["commandSelect"] = True #Command selecting window
+    LINK["IPADD"] = "" #IP address
+    LINK["serverObj"] = None #This will be set up when the game is running as a server and a client
     LINK["multi"] = 0 #Is the game currently multiplayer, -1 = Map editor, 0 = Single player, 1 = Client, 2 = Server
 
     print("Loading content")
@@ -438,9 +442,8 @@ if name: #Is the main thread
         CLI = client.Client("127.0.0.1",3746,LINK["threading"])
         LINK["cli"] = CLI
     loadScreen("mainMenu") #Load the main game screen
-    #currentScreen.open("ServGen.map")
+    #currentScreen.open("level2.map")
     print("Going into event loop")
-    
     run = True
     lastTime = time.time()-0.1
     while run:
@@ -456,10 +459,20 @@ if name: #Is the main thread
                 KeyEvent.append(event)
             if event.type == 6: #Mouse wheel
                 KeyEvent.append(event)
+            if event.type==pygame.VIDEORESIZE:
+                if LINK["splitScreen"]:
+                    LINK["reslution"] = [event.dict['size'][0],int(event.dict['size'][1]/2)]
+                else:
+                    LINK["reslution"] = list(event.dict['size'])
+                LINK["main"] = pygame.display.set_mode(event.dict['size'],pygame.RESIZABLE) #Remake the pygame window
+                if not currentScreen is None:
+                    currentScreen.resized()
         mouseRaw = pygame.mouse.get_pressed()
         mouse = [mouseRaw[0]]+list(pygame.mouse.get_pos())+[mouseRaw[1],mouseRaw[2]]
         if LINK["multi"]==1:
             LINK["cli"].loop()
+        if not LINK["serverObj"] is None:
+            LINK["serverObj"].value = int(time.time()+2)
         if not currentScreen is None:
             try:
                 currentScreen.loop(mouse,KeyEvent,lag)

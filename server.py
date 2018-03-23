@@ -549,7 +549,7 @@ def loadLINK(serv): #Loads all content
     LINK["names"] = ["Jeff","Tom","Nathan","Harry","Ben","Fred","Timmy","Potter","Stranger"] #Drone names
     LINK["shipNames"] = ["Franks","Daron","Hassle","SETT","BENZYA"] #Ship names
     LINK["shipData"] = {"fuel":5,"scrap":5,"shipUpgs":[],"maxShipUpgs":2,"reserveUpgs":[],"reserveMax":8,"invent":[],
-        "beforeMap":-1,"mapSaves":[],"maxScore":0,"reserve":[],"maxDrones":4,"maxReserve":2,"maxInvent":70} #Data about the players ship
+        "beforeMap":-1,"mapSaves":[],"maxScore":0,"reserve":[],"maxDrones":4,"maxReserve":2,"maxInvent":70,"doneMaps":[]} #Data about the players ship
     LINK["multi"] = 2 #Running as server
     #Screens
     files = os.listdir("screens")
@@ -557,6 +557,7 @@ def loadLINK(serv): #Loads all content
     for a in files:
         if a[-3:]==".py":
             LINK["screens"][a[:-3]] = importlib.import_module("screens."+a[:-3])
+    LINK["maps"] = os.listdir("maps")
     #Entities
     files = os.listdir("entities")
     LINK["ents"] = {}
@@ -590,7 +591,7 @@ def loadLINK(serv): #Loads all content
     LINK["drones"][2].loadUpgrades() #Tempory
     
     LINK["shipEnt"] = LINK["ents"]["ship"].Main(0,0,LINK,-1)
-    LINK["shipEnt"].settings["upgrades"][0] = ["remote power",0,-1]
+    #LINK["shipEnt"].settings["upgrades"][0] = ["remote power",0,-1]
     #LINK["shipEnt"].settings["upgrades"][1] = ["surveyor",1,-1]
     LINK["shipEnt"].loadUpgrades()
     return LINK
@@ -631,9 +632,9 @@ class GameServer:
         print("Done, entering event loop")
     def __selectShip(self,sock,ship): #Select a ship in the ship selecting screen
         if self.shipSelect:
-            self.world.selectShip(ship)
+            mn = self.world.selectShip(ship)
             self.resetSync()
-            self.startNewGame("ShipSelect"+str(ship))
+            self.startNewGame(mn)
     def __moveUpgrade(self,sock,drone1ID,drone2ID,index):
         #Index 0 should allways be a "swap.py" upgrade
         #Move the upgrade server-side
@@ -871,6 +872,12 @@ class GameServer:
     def downloadMap(self,UserSock): #Sends the current map to the specific user
         if not UserSock.getpeername()[0] in self.__MAP_DOWNLOAD: #Checking if the user isn't trying to request the map more than once
             self.__MAP_DOWNLOAD[UserSock.getpeername()[0]] = 0 #Begin sending the map
+
+def serverBackgroundTask(servIP,active): #Thread that is ran by a client when hosting a game
+    serv = GameServer(servIP)
+    while active.value>time.time():
+        serv.loop()
+    print("Time exceed, stopping server")
 
 if __name__=="__main__": #If not imported the run as a server without a game running in the background.
     ERROR = enError

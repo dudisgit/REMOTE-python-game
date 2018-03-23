@@ -18,6 +18,11 @@ class Main:
                     LINK["shipData"]["shipUpgs"].append(a.copy())
             for a in LINK["drones"]:
                 a.unloadUpgrades()
+            self.__gamMaps = []
+            for a in LINK["maps"]:
+                if len(a)!="": #Is not empty
+                    if a[0]=="l" and not "." in a and not a in LINK["shipData"]["doneMaps"]: #Is a game map
+                        self.__gamMaps.append(a)
         if LINK["multi"]==2: #Being ran as a server
             LINK["serv"].SYNC["F"] = LINK["shipData"]["fuel"]
             LINK["serv"].SYNC["S"] = LINK["shipData"]["scrap"]
@@ -49,6 +54,7 @@ class Main:
         #3: Ship name
         #4: Threat types
         #5: Fuel/distance
+        #6: Is a pre-made map, if not string is empty
         self.__HoldKeys = {} #Keys being held down
         if LINK["multi"]!=2: #Is not a server
             blackImage = pygame.Surface((120,120))
@@ -95,6 +101,8 @@ class Main:
             self.__LINK["cli"].finishLoading = self.__FinishLoading
             self.__LINK["cli"].TRIGGER["sss"] = self.servInit
             self.__LINK["cli"].TRIGGER["dinf"] = self.displayInfo #Called when the server wants to display info.
+    def resized(self): #Game was resized
+        pass
     def __swapShipUpgrade(self,sock,upg): #Swap a ship upgrade between reserve and active
         if upg>=self.__LINK["shipData"]["maxShipUpgs"]: #Move upgrade from reserve into the active
             self.__LINK["shipData"]["shipUpgs"].append(self.__LINK["shipData"]["reserveUpgs"].pop(upg-self.__LINK["shipData"]["maxShipUpgs"]))
@@ -294,9 +302,16 @@ class Main:
             for i in range(0,5):
                 self.__LINK["shipData"]["mapSaves"].append(["Madamada",0])
         for i in range(0,5): #Create 5 maps
+            PREV_GEN = False
+            PRE_GEN = ""
             if random.randint(0,1)==1 or i==self.__LINK["shipData"]["beforeMap"] or FIR: #50 Percent chance the map will be generated
-                MP = mapGenerator.MapGenerator(self.__LINK,random.randint(5,8),"ShipSelect"+str(i))
+                if len(self.__gamMaps)!=0 and random.randint(0,1)==1: #50% chance of it being a user made map
+                    PRE_GEN = self.__gamMaps[random.randint(0,len(self.__gamMaps)-1)]
+                    MP = mapGenerator.FakeMapGenerator(self.__LINK,PRE_GEN)
+                else:
+                    MP = mapGenerator.MapGenerator(self.__LINK,random.randint(5,8),"ShipSelect"+str(i))
             else:
+                PREV_GEN = True
                 MP = mapGenerator.FakeMapGenerator(self.__LINK,"ShipSelect"+str(i))
             Scrap = 0 #Scrap in the map
             ScrapReferenceObject = self.getEnt("scrap")
@@ -329,11 +344,11 @@ class Main:
                 Fuel += random.randint(2,4)
             if Scrap>20:
                 Fuel += 1
-            if type(MP)==mapGenerator.FakeMapGenerator: #Map is a previously generated one
-                self.maps.append([MP,CAP,msg,self.__LINK["shipData"]["mapSaves"][i][0],len(Threats),self.__LINK["shipData"]["mapSaves"][i][1]])
+            if PREV_GEN: #Map is a previously generated one
+                self.maps.append([MP,CAP,msg,self.__LINK["shipData"]["mapSaves"][i][0],len(Threats),self.__LINK["shipData"]["mapSaves"][i][1],self.__LINK["shipData"]["mapSaves"][i][2]])
             else:
-                self.maps.append([MP,CAP,msg,self.__LINK["shipNames"][random.randint(0,len(self.__LINK["shipNames"])-1)],len(Threats),Fuel])
-                self.__LINK["shipData"]["mapSaves"][i] = [self.maps[-1][3],Fuel]
+                self.maps.append([MP,CAP,msg,self.__LINK["shipNames"][random.randint(0,len(self.__LINK["shipNames"])-1)],len(Threats),Fuel,PRE_GEN])
+                self.__LINK["shipData"]["mapSaves"][i] = [self.maps[-1][3],Fuel,PRE_GEN]
             if self.__LINK["multi"]!=2: #Is not the server
                 self.__loading[3] = i/5
                 self.__updateScreen()
@@ -535,6 +550,8 @@ class Main:
                 if event.type == pygame.KEYDOWN:
                     if event.key == pygame.K_RETURN:
                         self.__displayInfo[0] = False
+            return 0
+        if self.__loading[0]: #Make sure user cannot do ANYTHING while the screen is loading
             return 0
         for event in kBuf: #Keyboard event
             if event.type == pygame.KEYUP:
@@ -1231,7 +1248,14 @@ class Main:
             self.__LINK["shipEnt"].loadUpgrades()
             if self.__LINK["multi"]!=2: #Is not the server
                 self.__LINK["loadScreen"]("game")
-                self.__LINK["currentScreen"].open("ShipSelect"+str(self.__sel))
+                if self.maps[self.__sel][6]!="":
+                    self.__LINK["currentScreen"].open(self.maps[self.__sel][6])
+                else:
+                    self.__LINK["currentScreen"].open("ShipSelect"+str(self.__sel))
+            if self.maps[self.__sel][6]=="":
+                return "ShipSelect"+str(self.__sel)
+            self.__LINK["shipData"]["doneMaps"].append(self.maps[self.__sel][6])
+            return self.maps[self.__sel][6]
     def render(self,surf=None): #Render the screen
         if surf is None:
             surf = self.__LINK["main"]
@@ -1265,6 +1289,32 @@ class Main:
             else:
                 A = self.__LINK["controller"].keyName["select"]
                 surf.blit(self.__LINK["font24"].render("Presss "+A+" to select",16,(255,255,255)),[(sx/2)-110,(sy/2)+15])
+        if self.__loading[0]: #Loading screen
+            surf.blit(self.__loading[1],(self.__loading[2],0))
+            pygame.draw.rect(surf,(0,0,0),[50,int(self.__loading[5][1]*0.8),self.__loading[5][0]-100,40],4)
+            pygame.draw.rect(surf,(0,0,0),[50,int(self.__loading[5][1]*0.8),self.__loading[5][0]-100,40])
+            pygame.draw.rect(surf,(255,255,0),[49,int(self.__loading[5][1]*0.8)-1,self.__loading[5][0]-99,41],2)
+            pygame.draw.rect(surf,(0,255,0),[50,int(self.__loading[5][1]*0.8),(self.__loading[5][0]-100)*self.__loading[3],40])
+            fren = self.__LINK["font42"].render(self.__loading[4],16,(255,255,255))
+            sx,sy = fren.get_size()
+            surf.blit(fren,(int(self.__loading[5][0]/2)-int(sx/2),int(self.__loading[5][1]*0.8)+50))
+        if self.__displayInfo[0]: #Display info
+            surf.blit(self.__displayInfo[1],(self.__displayInfo[2],0))
+            #Title
+            fren = self.__LINK["font42"].render(self.__displayInfo[4],16,(0,255,0))
+            sx,sy = fren.get_size()
+            pygame.draw.rect(surf,(0,0,0),[int(self.__displayInfo[3][0]/2)-int(sx/2)-5,int(self.__displayInfo[3][1]/2)-5,sx+10,sy+10])
+            pygame.draw.rect(surf,(0,255,0),[int(self.__displayInfo[3][0]/2)-int(sx/2)-5,int(self.__displayInfo[3][1]/2)-5,sx+10,sy+10],2)
+            surf.blit(fren,(int(self.__displayInfo[3][0]/2)-int(sx/2),int(self.__displayInfo[3][1]/2)))
+            #'Press return to continue' sign at the bottom of the screen
+            fren = self.__LINK["font42"].render("Press return to continue",16,(255,255,0))
+            sx,sy = fren.get_size()
+            pygame.draw.rect(surf,(0,0,0),[int(self.__displayInfo[3][0]/2)-int(sx/2)-5,int(self.__displayInfo[3][1]*0.8)-5,sx+10,sy+10])
+            pygame.draw.rect(surf,(0,255,0),[int(self.__displayInfo[3][0]/2)-int(sx/2)-5,int(self.__displayInfo[3][1]*0.8)-5,sx+10,sy+10],2)
+            surf.blit(fren,(int(self.__displayInfo[3][0]/2)-int(sx/2),int(self.__displayInfo[3][1]*0.8)))
+            for i,a in enumerate(self.__extrInfo):
+                surf.blit(self.__LINK["font24"].render(a[0],16,a[1]),[self.__displayInfo[3][0]/8,(self.__displayInfo[3][1]/8)+(i*30)])
+            return 0
         #Overlay
         if self.__LINK["backgroundStatic"]:
             self.__cols[self.__changeEffect[0]].set_alpha(OVERLAY_OPASITY-self.__changeEffect[1])
@@ -1605,23 +1655,6 @@ class Main:
             pygame.draw.line(surf,(255*smult,0,255*smult),[10,190+add],[310,190+add],5)
     def __renderShips(self,surf): #Render screen
         sx,sy = surf.get_size()
-        if self.__displayInfo[0]: #Display info
-            surf.blit(self.__displayInfo[1],(self.__displayInfo[2],0))
-            #Title
-            fren = self.__LINK["font42"].render(self.__displayInfo[4],16,(0,255,0))
-            sx,sy = fren.get_size()
-            pygame.draw.rect(surf,(0,0,0),[int(self.__displayInfo[3][0]/2)-int(sx/2)-5,int(self.__displayInfo[3][1]/2)-5,sx+10,sy+10])
-            pygame.draw.rect(surf,(0,255,0),[int(self.__displayInfo[3][0]/2)-int(sx/2)-5,int(self.__displayInfo[3][1]/2)-5,sx+10,sy+10],2)
-            surf.blit(fren,(int(self.__displayInfo[3][0]/2)-int(sx/2),int(self.__displayInfo[3][1]/2)))
-            #'Press return to continue' sign at the bottom of the screen
-            fren = self.__LINK["font42"].render("Press return to continue",16,(255,255,0))
-            sx,sy = fren.get_size()
-            pygame.draw.rect(surf,(0,0,0),[int(self.__displayInfo[3][0]/2)-int(sx/2)-5,int(self.__displayInfo[3][1]*0.8)-5,sx+10,sy+10])
-            pygame.draw.rect(surf,(0,255,0),[int(self.__displayInfo[3][0]/2)-int(sx/2)-5,int(self.__displayInfo[3][1]*0.8)-5,sx+10,sy+10],2)
-            surf.blit(fren,(int(self.__displayInfo[3][0]/2)-int(sx/2),int(self.__displayInfo[3][1]*0.8)))
-            for i,a in enumerate(self.__extrInfo):
-                surf.blit(self.__LINK["font24"].render(a[0],16,a[1]),[self.__displayInfo[3][0]/8,(self.__displayInfo[3][1]/8)+(i*30)])
-            return 0
         #Upper bar
         pygame.draw.rect(surf,(0,255,0),[10,10,sx-20,120],2)
         pygame.draw.line(surf,(0,255,0),[sx-310,10],[sx-310,130],2)
@@ -1673,12 +1706,3 @@ class Main:
 
             
 
-        if self.__loading[0]: #Loading screen
-            surf.blit(self.__loading[1],(self.__loading[2],0))
-            pygame.draw.rect(surf,(0,0,0),[50,int(self.__loading[5][1]*0.8),self.__loading[5][0]-100,40],4)
-            pygame.draw.rect(surf,(0,0,0),[50,int(self.__loading[5][1]*0.8),self.__loading[5][0]-100,40])
-            pygame.draw.rect(surf,(255,255,0),[49,int(self.__loading[5][1]*0.8)-1,self.__loading[5][0]-99,41],2)
-            pygame.draw.rect(surf,(0,255,0),[50,int(self.__loading[5][1]*0.8),(self.__loading[5][0]-100)*self.__loading[3],40])
-            fren = self.__LINK["font42"].render(self.__loading[4],16,(255,255,255))
-            sx,sy = fren.get_size()
-            surf.blit(fren,(int(self.__loading[5][0]/2)-int(sx/2),int(self.__loading[5][1]*0.8)+50))

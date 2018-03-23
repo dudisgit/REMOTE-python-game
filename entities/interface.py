@@ -205,11 +205,11 @@ class Main(base.Main):
             if self.HINT:
                 self.renderHint(surf,self.gameHint,[x+(25*scale),y+(25*scale)])
         elif self.__wallAngle==0: #Left
-            self.__interfaceWall.render(x+(12*scale),y+(12.5*scale),90,scale/1.6,surf,INTERFACE_COL,ang,eAng,arcSiz)
+            self.__interfaceWall.render(x+(12*scale),y+(25*scale),90,scale/1.6,surf,INTERFACE_COL,ang,eAng,arcSiz)
             if self.HINT:
                 self.renderHint(surf,self.gameHint,[x,y+(25*scale)])
         elif self.__wallAngle==1: #Right
-            self.__interfaceWall.render(x+(40*scale),y+(12.5*scale),270,scale/1.6,surf,INTERFACE_COL,ang,eAng,arcSiz)
+            self.__interfaceWall.render(x+(40*scale),y+(25*scale),270,scale/1.6,surf,INTERFACE_COL,ang,eAng,arcSiz)
             if self.HINT:
                 self.renderHint(surf,self.gameHint,[x+(50*scale),y+(25*scale)])
         elif self.__wallAngle==2: #Up

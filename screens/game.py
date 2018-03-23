@@ -5,7 +5,8 @@ import math #tempory
 VERSION = 0.3
 
 SCROLL_SPEED = 4 #Scematic scroll speed
-CONSOLE_SIZE = [440,205] #Size of the console
+CONSOLE_SIZE_DEFAULT = [440,205] #Size of the console
+CONSOLE_SIZE = [440,205] #Size of the console (changed by reslution)
 DRONE_VIEW_SCALE = 3 #Drone view zoom in
 DEF_RES = [1000,700] #Default reslution, this will be used to scale up the screen if required
 MESH_BLOCK_SIZE = 125 #Size of a single mesh block
@@ -732,6 +733,18 @@ class Main: #Used as the screen object for rendering and interaction
                     if self.__LINK["multi"]==1:
                         self.__LINK["cli"].loop()
             print("Done")
+    def resized(self): #Game was resized
+        if self.__LINK["splitScreen"]:
+            self.__top = pygame.Surface(self.__LINK["reslution"])
+            self.__bottom = pygame.Surface(self.__LINK["reslution"])
+        if CONSOLE_SIZE_DEFAULT[0]>self.__LINK["reslution"][0]/2:
+            CONSOLE_SIZE[0] = int(self.__LINK["reslution"][0]/3)
+        else:
+            CONSOLE_SIZE[0] = CONSOLE_SIZE_DEFAULT[0]+0
+        if CONSOLE_SIZE_DEFAULT[1]>self.__LINK["reslution"][1]/3:
+            CONSOLE_SIZE[1] = int(self.__LINK["reslution"][1]/4)
+        else:
+            CONSOLE_SIZE[1] = CONSOLE_SIZE_DEFAULT[1]+0
     def __disconnect(self,reason):
         self.__fail[0] = True
         self.__fail[4] = "Disconnected: "+reason
@@ -1126,12 +1139,12 @@ class Main: #Used as the screen object for rendering and interaction
             T = "Type 'gather all' and hit return"
         elif self.tpart[0]==8: #Go into scematic view
             if self.__LINK["controller"] is None:
-                tex = "There are no more rooms to explore, let's head into scematic view to have a better view of the ship. \nYou can access the scematic view by pressing space"
-                T = "Press space to go into scematic view"
+                tex = "There are no more rooms to explore, let's head into schematic view to have a better view of the ship. \nYou can access the scematic view by pressing space"
+                T = "Press space to go into schematic view"
             else:
                 S = self.__LINK["controller"].keyName["scem"]
-                tex = "There are no more rooms to explore, let's head into scematic view to have a better view of the ship. \nYou can access the scematic view by pressing "+S
-                T = "Press "+S+" to go into scematic view"
+                tex = "There are no more rooms to explore, let's head into schematic view to have a better view of the ship. \nYou can access the scematic view by pressing "+S
+                T = "Press "+S+" to go into schematic view"
             ps = [10,sy-10]
         elif self.tpart[0]==9: #Navigation command
             if self.__LINK["controller"] is None:
@@ -1696,8 +1709,8 @@ class Main: #Used as the screen object for rendering and interaction
                 scemp[1] += mov*lag*SCROLL_SPEED
         if scemp[1]<self.__Event.mapSize[1]-400: #Hit limit on top side of screen
             scemp[1] = self.__Event.mapSize[1]-400
-        if scemp[1]>self.__Event.mapSize[2]-sy+400: #Hit limit on bottom side of screen
-            scemp[1] = self.__Event.mapSize[2]-sy+400
+        if scemp[1]>self.__Event.mapSize[2]-sy+600: #Hit limit on bottom side of screen
+            scemp[1] = self.__Event.mapSize[2]-sy+600
         if scemp[0]<self.__Event.mapSize[0]-400: #Hit limit on left side of screen
             scemp[0] = self.__Event.mapSize[0]-400
         if scemp[0]>self.__Event.mapSize[2]-sx+600: #Hit limit on right side of screen
@@ -1750,14 +1763,21 @@ class Main: #Used as the screen object for rendering and interaction
             for event in kBuf: #Loop for return button pressed
                 if event.type == pygame.KEYDOWN:
                     if event.key == pygame.K_RETURN:
-                        if self.__Event.exit and not self.tutorial:
+                        if self.__LINK["backToMapEdit"]!="":
+                            SAV = self.__LINK["backToMapEdit"]+""
+                            self.__LINK["loadScreen"]("mapEdit")
+                            self.__LINK["currentScreen"].openAs(SAV)
+                        elif self.__Event.exit and not self.tutorial:
                             self.__LINK["loadScreen"]("shipSelect")
                         else:
                             self.__LINK["loadScreen"]("mainMenu")
             if not self.__LINK["controller"] is None:
                 if self.__LINK["controller"].selectChange():
                     if self.__LINK["controller"].select():
-                        if self.__Event.exit and not self.tutorial:
+                        if self.__LINK["backToMapEdit"]!="":
+                            self.__LINK["loadScreen"]("shipSelect")
+                            self.__LINK["currentScreen"].openAs(self.__LINK["backToMapEdit"])
+                        elif self.__Event.exit and not self.tutorial:
                             self.__LINK["loadScreen"]("shipSelect")
                         else:
                             self.__LINK["loadScreen"]("mainMenu")
@@ -1879,8 +1899,8 @@ class Main: #Used as the screen object for rendering and interaction
                     self.__scemPos[1] = self.__Event.mapSize[1]-400
                 if self.__isKeyDown(self.__LINK["controll"]["down"]):
                     self.__scemPos[1] += SCROLL_SPEED*lag
-                if self.__scemPos[1]>self.__Event.mapSize[2]-sy+400: #Hit limit on bottom side of screen
-                    self.__scemPos[1] = self.__Event.mapSize[2]-sy+400
+                if self.__scemPos[1]>self.__Event.mapSize[2]-sy+600: #Hit limit on bottom side of screen
+                    self.__scemPos[1] = self.__Event.mapSize[2]-sy+600
                 if self.__isKeyDown(self.__LINK["controll"]["left"]):
                     self.__scemPos[0] -= SCROLL_SPEED*lag
                 if self.__scemPos[0]<self.__Event.mapSize[0]-400: #Hit limit on left side of screen
@@ -1904,7 +1924,7 @@ class Main: #Used as the screen object for rendering and interaction
                         self.controllerMove(self.__LINK["controller"],self.currentDrone,lag)
                 else:
                     self.controllerMove(self.__LINK["controller"],self.currentDrone,lag)
-            if not self.__isKeyDown(pygame.K_LCTRL) and len(self.force)==0 and not self.__LINK["simpleMovement"]:
+            if not self.__isKeyDown(pygame.K_LCTRL) and len(self.force)==0 and not self.__LINK["simpleMovement"] and not self.currentDrone is None:
                 if not self.currentDrone.allowed: #Attempt to take controll as soon as the person using this drone stops controlling it.
                     self.currentDrone.selectControll(True,self.name)
                 if self.__isKeyDown(self.__LINK["controll"]["up"]):

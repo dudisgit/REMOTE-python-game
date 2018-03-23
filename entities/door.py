@@ -108,14 +108,20 @@ class Main(base.Main):
                 self.room2 = self.findPosition([self.pos[0]+75,self.pos[1]+25],[1,1])
             if self.room1 == -1:
                 self.room1 = None
-            else:
+            elif type(self.room1)==self.getEnt("room"):
                 self.room1.doors.append(self)
+            else:
+                self.room1 = None
             if self.room2 == -1:
                 self.room2 = None
-            else:
+            elif type(self.room2)==self.getEnt("room"):
                 self.room2.doors.append(self)
-            self.__roomAddDirection(self.room1)
-            self.__roomAddDirection(self.room2)
+            else:
+                self.room2 = None
+            if not self.room1 is None:
+                self.__roomAddDirection(self.room1)
+            if not self.room2 is None:
+                self.__roomAddDirection(self.room2)
     def SyncData(self,data): #Syncs the data with this drone
         self.settings["open"] = data["O"]
         self.trying = data["T"]
@@ -317,16 +323,27 @@ class Main(base.Main):
         self.__but2 = None
         self.__but3 = None
         self.__check3 = None
-    def editMove(self,ents): #Room is being moved
-        self.__inRoom = type(self.insideRoom(ents)) != bool
-        if type(self.insideRoom(ents,[self.pos[0]+25,self.pos[1]-25],[0,0])) != bool:
-            self.settings["lr"] = False
-        elif type(self.insideRoom(ents,[self.pos[0]+25,self.pos[1]+75],[0,0])) != bool:
-            self.settings["lr"] = False
-        elif type(self.insideRoom(ents,[self.pos[0]-25,self.pos[1]+25],[0,0])) != bool:
-            self.settings["lr"] = True
-        elif type(self.insideRoom(ents,[self.pos[0]+75,self.pos[1]+25],[0,0])) != bool:
-            self.settings["lr"] = True
+    def editMove(self,ents,useMesh=False): #Room is being moved
+        if useMesh: #Map is being made in map generator
+            self.__inRoom = self.findPosition()!=-1
+            if self.findPosition([self.pos[0]+25,self.pos[1]-25],[2,2]) != -1:
+                self.settings["lr"] = False
+            elif self.findPosition([self.pos[0]+25,self.pos[1]+75],[2,2]) != -1:
+                self.settings["lr"] = False
+            elif self.findPosition([self.pos[0]-25,self.pos[1]+25],[2,2]) != -1:
+                self.settings["lr"] = True
+            elif self.findPosition([self.pos[0]+75,self.pos[1]+25],[2,2]) != -1:
+                self.settings["lr"] = True
+        else:
+            self.__inRoom = type(self.insideRoom(ents)) != bool
+            if type(self.insideRoom(ents,[self.pos[0]+25,self.pos[1]-25],[0,0])) != bool:
+                self.settings["lr"] = False
+            elif type(self.insideRoom(ents,[self.pos[0]+25,self.pos[1]+75],[0,0])) != bool:
+                self.settings["lr"] = False
+            elif type(self.insideRoom(ents,[self.pos[0]-25,self.pos[1]+25],[0,0])) != bool:
+                self.settings["lr"] = True
+            elif type(self.insideRoom(ents,[self.pos[0]+75,self.pos[1]+25],[0,0])) != bool:
+                self.settings["lr"] = True
     def giveError(self,ents): #Scans and gives an error out
         if type(self.insideRoom(ents)) != bool: #Check if inside a room
             return "Inside room (door)"

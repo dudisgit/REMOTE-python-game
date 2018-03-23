@@ -1,4 +1,4 @@
-import pygame, random, math, time, mapGenerator
+import pygame, random, math, time, mapGenerator, server, socket, pygame
 import multiprocessing as mp
 
 SERVERS = ["127.0.1.1"]#,"REserver_1","REserver_2","REserver_3","REserver_4","REserver_5","REserver_6"]#,"REserver_3","REserver_4","REserver_5","REserver_6","REserver_7","REserver_8","REserver_9","REserver_10"]
@@ -19,6 +19,10 @@ class Main:
         self.__mapRend = LINK["render"].Scematic(LINK,False) #Class to use for rendering the map
         LINK["showRooms"] = True #Show all rooms
         LINK["allPower"] = True #Enable power for all rooms
+        if not LINK["serverObj"] is None: #Game is still running as server
+            LINK["serverObj"] = None #Destroy the server object (should disconnect all users)
+            print("Destroyed server")
+        pygame.display.set_caption("REMOTE")
         self.__proc = mp.Process(target=mapGenerator.MapGenerator,args=(self.__LINK,7,"screenMap.map",True)) #Process for generating new maps
         self.__maps = [0,0,random.randint(0,360),0] #Map position, angle and time storage
         self.__mapSim = None
@@ -28,7 +32,6 @@ class Main:
         #0: Main screen
         #1: Server select
         #2: Options
-        #3: Reslution changing
         #4: IP address entering screen
         #5: Game type selection
         self.__sel = 0
@@ -39,6 +42,8 @@ class Main:
         #sy = 700
         sx2 = sy*1.777
         self.__loading = [pygame.transform.scale(LINK["content"]["loading"],(int(sx2),int(sy))),(sx2-sx)/-2,0,[sx,sy]]
+    def resized(self): #Game was resized
+        self.__backSurf = pygame.Surface(self.__LINK["main"].get_size())
     def displayLoadingScreen(self): #Display a loading screen
         surf = self.__LINK["main"]
         surf.blit(self.__loading[0],(self.__loading[1],0))
@@ -51,7 +56,7 @@ class Main:
         pygame.display.flip()
     def __makeNewMap(self):
         if not self.__proc.is_alive(): #Process has finished making a map
-            self.__proc = mp.Process(target=mapGenerator.MapGenerator,args=(None,7,"screenMap.map",True,)) #Create a process for generating a random map
+            self.__proc = mp.Process(target=mapGenerator.MapGenerator,args=(None,8,"screenMap.map",True,)) #Create a process for generating a random map
             self.__proc.start() #Start the process simutaniulsy with the game
         else: #Process is still making a map
             print("Waiting for map gen to finish")
@@ -85,7 +90,7 @@ class Main:
         self.__LINK["shipEnt"] = self.__LINK["ents"]["ship"].Main(0,0,self.__LINK,-1)
         self.__LINK["shipEnt"].loadUpgrades()
         self.__LINK["shipData"] = {"fuel":5,"scrap":5,"shipUpgs":[],"maxShipUpgs":2,"reserveUpgs":[],"reserveMax":8,"invent":[],
-        "beforeMap":-1,"mapSaves":[],"maxScore":0,"reserve":[],"maxDrones":4,"maxReserve":2,"maxInvent":70} #Data about the players ship
+        "beforeMap":-1,"mapSaves":[],"maxScore":0,"reserve":[],"maxDrones":4,"maxReserve":2,"maxInvent":70,"doneMaps":[]} #Data about the players ship
     def __servInit(self): #Called when the server selecting screen is initilized
         self.__scan = 0
         self.__cli = self.__LINK["client"].Client(SERVERS[0],3746,False)
@@ -172,7 +177,7 @@ class Main:
                             self.__opts = [[self.__LINK["showFPS"],"FPS counter"],[self.__LINK["particles"],"Particles"],[self.__LINK["floorScrap"],"Floor scrap"],
                                            [self.__LINK["popView"],"pop view (make rooms pop into view, reduced CPU)"],[self.__LINK["simpleModels"],"Simplified 3D models"],
                                            [self.__LINK["backgroundStatic"],"Background static"],[self.__LINK["viewDistort"],"View distortion effects"],
-                                           [self.__LINK["hints"],"Hints"],[self.__LINK["threading"],"Multiplayer threading"],"Resolution","Back"]
+                                           [self.__LINK["hints"],"Hints"],[self.__LINK["threading"],"Multiplayer threading"],"Back"]
                         elif self.__sel==2: #Map editor
                             self.__restoreDefaults()
                             self.__LINK["loadScreen"]("mapEdit")
@@ -218,26 +223,10 @@ class Main:
                             self.__LINK["hints"] = self.__opts[7][0]==True
                         elif self.__sel==8: #Threading
                             self.__LINK["threading"] = self.__opts[8][0]==True
-                        elif self.__sel==9: #Change Reslution
-                            self.__screen=3
-                            self.__sel = 0
-                            self.__opts = ["1366x768","1920x1080","1440x900","1600x900","1280x1024","1536x864","1680x1050","1280x720","1360x768","2560x1440","1920x1200","1280x768","1024x600","1152x864","800x600","3840x2160","3440x1440","2560x1080","Back"]
-                        elif self.__sel==10: #Back
+                        elif self.__sel==9: #Back
                             self.__sel = 0
                             self.__screen = 0
                             self.__opts = ["Play","Options","Map designer","Quit"]
-                    elif self.__screen==3: #Reslution selecting screen
-                        if "x" in self.__opts[self.__sel]: #Change reslution of game
-                            spl = self.__opts[self.__sel].split("x")
-                            self.__LINK["reslution"] = [int(spl[0]),int(spl[1])]
-                            self.__LINK["main"] = pygame.display.set_mode([int(spl[0]),int(spl[1])]) #Remake the pygame window
-                        #Go back to options menu
-                        self.__screen = 2
-                        self.__sel = 0
-                        self.__opts = [[self.__LINK["showFPS"],"FPS counter"],[self.__LINK["particles"],"Particles"],[self.__LINK["floorScrap"],"Floor scrap"],
-                                        [self.__LINK["popView"],"pop view (make rooms pop into view, reduced CPU)"],[self.__LINK["simpleModels"],"Simplified 3D models"],
-                                        [self.__LINK["backgroundStatic"],"Background static"],[self.__LINK["viewDistort"],"View distortion effects"],
-                                        [self.__LINK["hints"],"Hints"],[self.__LINK["threading"],"Multiplayer threading"],"Reslution","Back"]
                     elif self.__screen==4: #IP address entering
                         if self.__sel==0: #Connect to server
                             self.__restoreDefaults()
@@ -270,7 +259,17 @@ class Main:
                             self.__opts = SERVERS.copy()+["Direct connect","Back"]
                             self.__servInit()
                         elif self.__sel==3: #Host multiplayer
-                            pass
+                            self.__restoreDefaults()
+                            self.displayLoadingScreen()
+                            self.__LINK["IPADD"] = socket.gethostbyname(socket.gethostname())
+                            pygame.display.set_caption("REMOTE, IP = "+self.__LINK["IPADD"])
+                            self.__LINK["serverObj"] = mp.Value("i",int(time.time()+5))
+                            proc = mp.Process(target=server.serverBackgroundTask,args=(self.__LINK["IPADD"],self.__LINK["serverObj"]))
+                            proc.start()
+                            self.__LINK["cli"] = self.__LINK["client"].Client(self.__LINK["IPADD"],3746,self.__LINK["threading"])
+                            self.__LINK["multi"] = 1 #Set to client mode
+                            self.__initMultiplayer()
+                            self.__LINK["loadScreen"]("shipSelect")
                         elif self.__sel==4 and len(self.__opts)==6: #Play split screen
                             self.__restoreDefaults()
                             self.__LINK["befRes"] = self.__LINK["reslution"].copy()

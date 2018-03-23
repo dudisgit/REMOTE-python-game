@@ -203,6 +203,7 @@ class Model: #An object to reprisent a model
             ang += angle/180*math.pi #Rotate vertex around center
             self.__rotModl[i] = [math.sin(ang)*dist,math.cos(ang)*dist,a[2],a[3]] #Save the vertex
     def __updateModel(self,x,y,Rang,angle2,scale,arcSiz): #Hide verticies that are not in a view arc
+        self.__DIV = math.sqrt((self.__size[0]**2)+(self.__size[1]**2))/2.5 #Divide amount
         for i,a in enumerate(self.__rotModl): #Go through all the vertices of the rotated vertices list
             MULT = 1+((a[2]*scale)/self.__DIV)
             PS = [((a[0]*scale)-((self.__size[0]/2)-x))*MULT,((a[1]*scale)-((self.__size[1]/2)-y))*MULT]
@@ -253,6 +254,7 @@ class Model: #An object to reprisent a model
         UR = self.__CheckIn([self.__modelSize[2],self.__modelSize[1]],x,y,angle,scale,Rang,angle2,arcSiz)
         DR = self.__CheckIn([self.__modelSize[0],self.__modelSize[3]],x,y,angle,scale,Rang,angle2,arcSiz)
         DL = self.__CheckIn([self.__modelSize[2],self.__modelSize[3]],x,y,angle,scale,Rang,angle2,arcSiz)
+        self.__size = self.__LINK["reslution"] #Get the size of the screen
         if self.__LINK["DEVDIS"]: #Draw model bounding box
             PS = [(self.__modelSize[0]*scale)-((self.__size[0]/2)-x),(self.__modelSize[1]*scale)-((self.__size[1]/2)-y)] #Vertex position before rendering to screen and without scaling
             PS2 = [(self.__modelSize[2]*scale)-((self.__size[0]/2)-x),(self.__modelSize[3]*scale)-((self.__size[1]/2)-y)] #Vertex position before rendering to screen and without scaling

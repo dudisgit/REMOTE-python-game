@@ -3,6 +3,7 @@ import pygame, math, time, sys, pickle
 
 ZOOM_SPEED = 1.2 #Zooming speed
 BLOCK_SIZE = 50 #Very important you don't change this.
+RESTRICT = ["playingMap.map","SERVER_MAP.map","ServGen.map","ShipSelect0","ShipSelect1","ShipSelect2","ShipSelect3","ShipSelect4","Testing map.map","tutorial.map"]
 
 class DumpButton: #Used for entity selecting buttons to have functions to call to
     def __init__(self,backLink,name):
@@ -23,10 +24,11 @@ class Main:
         self.__entSelect = LINK["screenLib"].Listbox(10,self.__reslution[1]-300,LINK,[160,290]) #Entity selecting window
         self.__buttonObjs = [] #Used to store button classes inside
         LINK["multi"] = -1 #Say to all entities that they are in a map editor
+        LINK["backToMapEdit"] = ""
         if len(LINK["ents"])==0:
             LINK["errorDisplay"]("No entities exist")
         for a in LINK["ents"]: #Fill the entity selecting window with items
-            if not a in ["base","ship","lure","sensor"]: #This entity is restricted and is not allowed to be spawned
+            if not a in ["base","ship","lure","sensor","ShipUpgrade"]: #This entity is restricted and is not allowed to be spawned
                 self.__buttonObjs.append(DumpButton(self,a+"")) #Give the button a class to call to
                 self.__entSelect.addItem(LINK["screenLib"].Button,a,self.__buttonObjs[-1].call) #Add the new button
         self.__label = LINK["screenLib"].Label(10,self.__reslution[1]-340,LINK,"Spawning menu") #Label to describe entity selecting window
@@ -55,6 +57,14 @@ class Main:
         self.__mouseSave = [0,0] #Used to save the mouse position for rendering
         self.__zoom = 1 #Zoom amount
         self.FileMenuReset() #Set the scroll to the centre of the screen
+    def resized(self): #Game was resized
+        self.__reslution = self.__LINK["reslution"]
+        self.__entSelect.pos[1] = self.__reslution[1]-300
+        self.__label.pos[1] = self.__reslution[1]-340
+        self.__fileMenu.pos[1] = self.__reslution[1]-380
+        if self.__FileMenu:
+            self.__MapSelect.bound = [self.__reslution[0]-25,self.__reslution[1]-145]
+            self.__NameInput.bound[0] = self.__reslution[0]-25
     def setMapName(self,name): #Loads map <name> into the text feild
         self.__NameInput.text = name+""
     def noDefault(self): #Makes all airlocks 'defualt' False
@@ -158,6 +168,7 @@ class Main:
             elif self.__FileMenu: #Disable looping for map selecting
                 self.__MapSelect.loop(mouse,kBuf)
                 self.__SaveButton.loop(mouse,kBuf)
+                self.__PlayTest.loop(mouse,kBuf)
                 self.__NameInput.loop(mouse,kBuf)
                 self.__LoadButton.loop(mouse,kBuf)
             return 0
@@ -338,6 +349,10 @@ class Main:
             if type(a)==self.getEnt("airlock"):
                 if a.settings["default"]:
                     hasEntrance = True
+        if name in RESTRICT:
+            self.__WarnLabel.text = "File name is restricted"
+            self.__WarnLabel.flickr()
+            return 0
         if not hasEntrance:
             errs.append("No default airlock")
         try:
@@ -357,6 +372,10 @@ class Main:
             for a in self.__ents: #Check all objects for colosions
                 a.editMove(self.__ents)
     def openAs(self,name): #Opens a file as a name
+        if name in RESTRICT:
+            self.__WarnLabel.text = "File name is restricted"
+            self.__WarnLabel.flickr()
+            return 0
         try:
             file = open("maps/"+name,"rb")
         except:
@@ -396,6 +415,7 @@ class Main:
         self.__NameInput = None
         self.__MapSelect = None
         self.__WarnLabel = None
+        self.__PlayTest = None
         self.__MapDump = []
         self.__FileMenu = False
         self.__LINK["log"]("Closed file menu")
@@ -463,6 +483,10 @@ class Main:
                     text = ""
             else:
                 text = text+".map"
+        if text in RESTRICT:
+            self.__WarnLabel.text = "File name is restricted"
+            self.__WarnLabel.flickr()
+            return 0
         if len(text)!=0:
             if not text in self.__LINK["maps"]:
                 self.__WarnLabel.text = "Map does not exist, if you dragged it in then restart the game!"
@@ -477,6 +501,59 @@ class Main:
                 except:
                     self.__LINK["errorDisplay"]("Failed to run open function",sys.exc_info())
                 self.FileMenuEnd()
+    def PlayTestButton(self,*args):
+        text = self.__NameInput.text
+        if "\\" in text or "/" in text:
+            self.__WarnLabel.text = "File name contains invalid characters!"
+            self.__WarnLabel.flickr()
+            text = ""
+        else:
+            if "." in text:
+                if text.count(".")!=1:
+                    self.__WarnLabel.text = "Invalid number of dots ('.')"
+                    self.__WarnLabel.flickr()
+                    text = ""
+            else:
+                text = text+".map"
+        if text in RESTRICT:
+            self.__WarnLabel.text = "File name is restricted"
+            self.__WarnLabel.flickr()
+            return 0
+        if len(text)!=0:
+            if not text in self.__LINK["maps"]:
+                self.__WarnLabel.text = "Map does not exist, if you dragged it in then restart the game!"
+                self.__WarnLabel.flickr()
+                text=""
+        if len(text)!=0:
+            try:
+                file = open("maps/"+text,"rb")
+                file.close()
+            except:
+                self.__LINK["errorDisplay"]("Failed to open file!",sys.exc_info())
+            else:
+                self.__LINK["multi"] = 0
+                self.__LINK["drones"] = [] #Drone list of the players drones
+                for i in range(0,3):
+                    self.__LINK["drones"].append(self.__LINK["ents"]["drone"].Main(i*60,0,self.__LINK,-2-i,i+1))
+                self.__LINK["drones"][0].settings["upgrades"][0] = ["motion",0,-1]
+                self.__LINK["drones"][0].settings["upgrades"][1] = ["gather",0,-1]
+                self.__LINK["drones"][0].settings["upgrades"][2] = ["sensor",0,-1]
+                self.__LINK["drones"][1].settings["upgrades"][0] = ["generator",0,-1]
+                self.__LINK["drones"][1].settings["upgrades"][1] = ["lure",0,-1]
+                self.__LINK["drones"][1].settings["upgrades"][2] = ["stealth",0,-1]
+                self.__LINK["drones"][2].settings["upgrades"][0] = ["interface",0,-1]
+                self.__LINK["drones"][2].settings["upgrades"][1] = ["tow",0,-1]
+                self.__LINK["drones"][2].settings["upgrades"][2] = ["pry",0,-1]
+                self.__LINK["drones"][0].loadUpgrades()
+                self.__LINK["drones"][1].loadUpgrades()
+                self.__LINK["drones"][2].loadUpgrades()
+                self.__LINK["shipEnt"] = self.__LINK["ents"]["ship"].Main(0,0,self.__LINK,-1)
+                self.__LINK["shipEnt"].settings["upgrades"][0] = ["remote power",0,-1]
+                self.__LINK["shipEnt"].settings["upgrades"][1] = ["overload",0,-1]
+                self.__LINK["shipEnt"].loadUpgrades()
+                self.__LINK["backToMapEdit"] = text+""
+                self.__LINK["loadScreen"]("game")
+                self.__LINK["currentScreen"].open(text)
     def __BackToMenu(self,*ev):
         self.__LINK["loadScreen"]("mainMenu")
     def FileMenuInit(self,*args): #Initialize file menu
@@ -489,13 +566,15 @@ class Main:
         self.__ResetButton = self.__LINK["screenLib"].Button(150,10,self.__LINK,"Reset scroll position",self.FileMenuReset)
         self.__BackButton = self.__LINK["screenLib"].Button(400,10,self.__LINK,"Back to editor",self.FileMenuEnd)
         self.__MenuButton = self.__LINK["screenLib"].Button(570,10,self.__LINK,"Back to main menu",self.__BackToMenu)
+        self.__PlayTest = self.__LINK["screenLib"].Button(770,10,self.__LINK,"Play test",self.PlayTestButton)
         self.__NameInput = self.__LINK["screenLib"].TextEntry(10,50,self.__LINK,self.__reslution[0]-25,False,"File name")
         self.__MapSelect = self.__LINK["screenLib"].Listbox(10,130,self.__LINK,[self.__reslution[0]-25,self.__reslution[1]-145])
         self.__WarnLabel = self.__LINK["screenLib"].Label(10,90,self.__LINK,"File menu")
         self.__MapDump = []
         for a in self.__LINK["maps"]:
-            self.__MapDump.append(DumpButton(self,a))
-            self.__MapSelect.addItem(self.__LINK["screenLib"].Button,a,self.__MapDump[-1].call2)
+            if not a in RESTRICT and "." in a:
+                self.__MapDump.append(DumpButton(self,a))
+                self.__MapSelect.addItem(self.__LINK["screenLib"].Button,a,self.__MapDump[-1].call2)
         self.__LINK["log"]("Opened file menu")
     def renderFileMenu(self,surf): #Render the file menu
         self.__LoadButton.render(self.__LoadButton.pos[0],self.__LoadButton.pos[1],1,1,surf)
@@ -506,6 +585,7 @@ class Main:
         self.__BackButton.render(self.__BackButton.pos[0],self.__BackButton.pos[1],1,1,surf)
         self.__MenuButton.render(self.__MenuButton.pos[0],self.__MenuButton.pos[1],1,1,surf)
         self.__WarnLabel.render(self.__WarnLabel.pos[0],self.__WarnLabel.pos[1],1,1,surf)
+        self.__PlayTest.render(self.__PlayTest.pos[0],self.__PlayTest.pos[1],1,1,surf)
         if len(self.__dialog)!=0:
             self.__dialog[0].fill((50,50,50))
             for a in self.__dialog[1:]:

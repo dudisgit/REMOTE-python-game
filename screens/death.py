@@ -22,6 +22,8 @@ class Main:
         if self.__LINK["multi"]==1: #Game is running as a client
             self.__LINK["cli"].close()
             self.__LINK["multi"] = 0
+    def resized(self): #Game was resized
+        pass
     def loop(self,mouse,kBuf,lag):
         if time.time()>self.__titleTime and not self.__titleTime==-1: #Increase the text count on the title
             self.__titleAdd+=1
