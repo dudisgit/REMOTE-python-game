@@ -108,7 +108,7 @@ class Main(object):
             else:
                 Ry = random.randint(Rm.pos[1]+30,Rm.pos[1]+Rm.size[1]-30)
             return [Rx,Ry]
-        elif type(Rm)==self.getEnt("door") or self.getEnt("airlock"): #NPC is outside a room, go to first room in door
+        elif type(Rm)==self.getEnt("door") or type(Rm)==self.getEnt("airlock"): #NPC is outside a room, go to first room in door
             return [Rm.room1.pos[0]+(Rm.room1.size[0]/2),Rm.room1.pos[1]+(Rm.room2.size[1]/2)]
         else: #Entity is not inside a room
             return self.pos
@@ -269,7 +269,7 @@ class Main(object):
                 elif dist>self.NPCDist+1: #Target is far away, get into position
                     TPos = self.NPCATTACK.findPosition()
                     Spos = self.findPosition()
-                    if self.linePath(self.pos,[self.NPCATTACK.pos[0]+(self.NPCATTACK.size[0]/2),self.NPCATTACK.pos[1]+(self.NPCATTACK.size[1]/2)],[25,25]):
+                    if self.linePath(self.pos,[self.NPCATTACK.pos[0]+(self.NPCATTACK.size[0]/2),self.NPCATTACK.pos[1]+(self.NPCATTACK.size[1]/2)],[25,25]) and type(Spos)==self.getEnt("room"):
                         self.stopNavigation()
                         self.paths.append([3,[ [self.NPCATTACK.pos[0]+(self.NPCATTACK.size[0]/2),self.NPCATTACK.pos[1]+(self.NPCATTACK.size[1]/2),self.NPCATTACK] ]])
                     elif TPos!=Spos and not self.onPath(0): #Target cannot be seen, use path finding.

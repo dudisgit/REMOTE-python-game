@@ -663,8 +663,9 @@ class Main(base.Main):
         for a in self.__cacheWalls: #Render all walls in the room
             a[0].render((a[1][0]*scale)-scrpos[0],(a[1][1]*scale)-scrpos[1],a[2],scale/2,surf,ROOM_COL,ang,eAng,arcSiz)
         #Render floor scrap
-        for a in self.__scrap:
-            a[2].render((a[0]*scale)-scrpos[0],(a[1]*scale)-scrpos[1],a[3],scale*a[4],surf,(150,150,150),ang,eAng,arcSiz)
+        if self.LINK["floorScrap"]:
+            for a in self.__scrap:
+                a[2].render((a[0]*scale)-scrpos[0],(a[1]*scale)-scrpos[1],a[3],scale*a[4],surf,(150,150,150),ang,eAng,arcSiz)
         #Render floor tiles
         for X in range(0,round(self.size[0]/45)): #Loop through the X axis
             for Y in range(0,round(self.size[1]/45)): #Loop through the Y axis

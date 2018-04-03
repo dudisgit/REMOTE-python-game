@@ -30,8 +30,6 @@ class Main(base.Main):
             self.HINT = True #Show hints
     def SaveFile(self): #Give all infomation about this object ready to save to a file
         return ["lure",self.ID,self.pos,self.health]
-    def afterLoad(self):
-        print("Fully loaded",self.ID)
     def LoadFile(self,data,idRef): #Load from a file
         self.pos = data[2]
         self.health = data[3]

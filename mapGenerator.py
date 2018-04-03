@@ -64,12 +64,20 @@ class FakeMapGenerator: #Used to hold map entities
         file = open("maps/"+fileName,"rb")
         DT = pickle.loads(file.read())
         file.close()
+        hold = None
+        if "create" in LINK:
+            hold,LINK["create"] = LINK["create"],self.__fakeCreate
+        else:
+            LINK["create"] = self.__fakeCreate
         IDS = {}
         for a in DT[1:]:
             self.ents.append(self.getEnt(a[0])(a[2][0],a[2][1],LINK,a[1]+0))
             IDS[a[1]+0] = self.ents[-1]
         for i,a in enumerate(DT[1:]):
             self.ents[i].LoadFile(a,IDS)
+        LINK["create"] = hold
+    def __fakeCreate(self,*params): #If an entity creates anouther, give back a fake one
+        return self.__LINK["null"](0,0,self.__LINK,-12)
     def getEnt(self,name): #Returns the entity with the name
         if name in self.__LINK["ents"]: #Does the entity exist?
             return self.__LINK["ents"][name].Main #Return the sucsessful entity
@@ -394,6 +402,9 @@ class MapGenerator:
                 if random.randint(0,5)==1 and self.ents[-1].isNPC: #Percentage chance the NPC will attack doors
                     if type(self.ents[-1])!=self.getEnt("android"):
                         self.ents[-1].settings["attack"] = self.attackDoors
+                if type(self.ents[-1]) == self.getEnt("swarm"):
+                    if random.randint(0,3)==1 and not self.__roomFull(a) and not a in Starting: #14% chance of their being a vent
+                        self.__placeEnt(a,"vent")
                 self.addToMesh(self.ents[-1])
         if PRINT_INFO:
             print("\t\tGEN PLACEMENT")

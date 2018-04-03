@@ -300,6 +300,8 @@ class Main(base.Main):
                 surf.blit(self.getImage("turret"),(x,y))
             else:
                 surf.blit(self.getImage("turretDead"),(x,y))
+            if self.HINT:
+                self.renderHint(surf,self.hintMessage,[x,y])
         else:
             if not self.alive:
                 surf.blit(self.getImage("turretDead"),(x,y))
@@ -307,8 +309,6 @@ class Main(base.Main):
                 surf.blit(self.getImage("turretActive"),(x,y))
             else:
                 surf.blit(self.getImage("turret"),(x,y))
-        if self.HINT:
-            self.renderHint(surf,self.hintMessage,[x,y])
     def canShow(self,Dview=False): #Should the turret render in scematic view
         return not Dview
     def render(self,x,y,scale,ang,surf=None,arcSiz=-1,eAng=None,isActive=False): #Render turret in 3D
@@ -332,3 +332,5 @@ class Main(base.Main):
                 pygame.draw.line(surf,(0,255,255),[int((PS[0]*scale)-scrpos[0]),int((PS[1]*scale)-scrpos[1])],[int((PS2[0]*scale)-scrpos[0]),int((PS2[1]*scale)-scrpos[1])],int(2*scale))
         if not self.__particle is None: #Particle effects for when the android dies
             self.__particle.render(x-((self.pos[0]-self.__particle.pos[0])*scale),y-((self.pos[1]-self.__particle.pos[1])*scale),scale,ang,eAng,surf)
+        if self.HINT:
+            self.renderHint(surf,self.gameHint,[x,y])

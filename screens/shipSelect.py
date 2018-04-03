@@ -1,7 +1,8 @@
 import pygame, random, math, time, mapGenerator
 
 OVERLAY_OPASITY = 50 #Opasity of the overlay (0-255)
-PRICE = {"gather":8,"generator":8,"interface":12,"lure":16,"motion":12,"overload":8,"pry":12,"remote power":12,"sensor":16,"stealth":12,"surveyor":8,"tow":8}
+PRICE = {"gather":8,"generator":8,"interface":12,"lure":16,"motion":12,"overload":8,"pry":12,"remote power":12,"sensor":16,"stealth":12,"surveyor":8,"tow":8,"speed":12}
+MUXS = {"lure":4,"motion":50,"sensor":30}
 
 class Main:
     def __init__(self,LINK):
@@ -12,10 +13,6 @@ class Main:
             LINK["shipData"]["fuel"] += LINK["fuelCollected"]
             LINK["fuelCollected"] = 0
             LINK["showRooms"] = False
-            LINK["shipData"]["shipUpgs"] = []
-            for a in LINK["shipEnt"].settings["upgrades"]:
-                if not a[0]=="":
-                    LINK["shipData"]["shipUpgs"].append(a.copy())
             for a in LINK["drones"]:
                 a.unloadUpgrades()
             self.__gamMaps = []
@@ -36,12 +33,13 @@ class Main:
             self.__LINK["serv"].TRIGGER["fxsu"] = self.__fixShipUpgradeServer #Fixes a ship upgrade
             self.__LINK["serv"].TRIGGER["dssu"] = self.__dismantleShipUpgradeServer #Dismantles a ship upgrade
             self.__LINK["serv"].TRIGGER["buy"] = self.__buyUpgradeServer #Buy an upgrade from the buying menu
-        self.__shipName = "Your ship" #Name of the ship
+            self.__LINK["serv"].TRIGGER["rud"] = self.__refillUpgradeServer #Refill an upgrade
+        self.__shipName = LINK["shipData"]["name"]+"" #Name of the ship
         self.__maxDrones = 4 #Max drones that can be on the ship
         self.__maxUpgrades = LINK["shipData"]["maxShipUpgs"] #Maximum upgrade slots
         self.__upgrades = 0 #Upgrades installed on the ship
         self.__scrapCollected = LINK["shipData"]["scrap"] #Scrap inside the ship
-        self.__scrapCopasity = 50 #Maximum scrap allowed in the ship
+        self.__scrapCopasity = LINK["shipData"]["mxScrap"] #Maximum scrap allowed in the ship
         self.__fuelLeft = LINK["shipData"]["fuel"] #Gathered fuel
         self.failed = [False,0] #Game lost
         self.__dialog = [False,"Test question",None,0] #Dialog yes/no for menu system
@@ -70,7 +68,11 @@ class Main:
             #sx = 1000
             #sy = 700
             sx2 = sy*1.777
-            self.__displayInfo = [False,pygame.transform.scale(LINK["content"]["loading"],(int(sx2),int(sy))),(sx2-sx)/-2,[sx,sy],"Unknown error"]
+            sy2 = sy+0
+            if sx>1000:
+                sx2 = sx+0
+                sy2 = sx/1.777
+            self.__displayInfo = [False,pygame.transform.scale(LINK["content"]["loading"],(int(sx2),int(sy2))),(sx2-sx)/-2,[sx,sy],"Unknown error"]
             self.__extrInfo = []
         self.__sel = 0 #Selecting ship
         self.__sels = [0,0,0,0] #Used to select items and panels in the inventory config menu
@@ -78,12 +80,17 @@ class Main:
         if LINK["multi"]!=2: #Is not a server
             sx,sy = LINK["main"].get_size()
             sx2 = sy*1.777
-            self.__loading = [False,pygame.transform.scale(LINK["content"]["loading"],(int(sx2),int(sy))),(sx2-sx)/-2,0,"Generating maps",[sx,sy]]
+            sy2 = sy+0
+            if sx>1000:
+                sx2 = sx+0
+                sy2 = sx/1.777
+            self.__loading = [False,pygame.transform.scale(self.__LINK["content"]["loading"],(int(sx2),int(sy2))),(sx2-sx)/-2,0,"Generating maps",[sx,sy]]
             self.__changeEffect = [0,0.0]
         else:
             self.__loading = [False]
         if LINK["backgroundStatic"] and LINK["multi"]!=2: #Background static
             print("Generating overlays")
+            sx,sy = LINK["main"].get_size()
             for a in range(3):
                 self.__cols.append(pygame.Surface((sx,sy)))
                 matr = pygame.PixelArray(self.__cols[-1])
@@ -240,6 +247,10 @@ class Main:
         self.__LINK["serv"].SYNC[key]["E"] = True
         self.__LINK["serv"].SYNC[key]["N"] = UPG[0]
         self.__LINK["serv"].SYNC[key]["D"] = UPG[1]
+        if len(UPG[4])==0:
+            self.__LINK["serv"].SYNC[key]["A"] = -1
+        else:
+            self.__LINK["serv"].SYNC[key]["A"] = UPG[4][0]
         self.__LINK["serv"].SYNC[key]["P"] = -1
         if len(self.__LINK["shipData"]["invent"])!=1: #Is not the first time an item has been put in
             self.__LINK["serv"].SYNC["U"+str(refs[MX-1])]["P"] = int(key[1:])
@@ -348,7 +359,7 @@ class Main:
                 self.maps.append([MP,CAP,msg,self.__LINK["shipData"]["mapSaves"][i][0],len(Threats),self.__LINK["shipData"]["mapSaves"][i][1],self.__LINK["shipData"]["mapSaves"][i][2]])
             else:
                 self.maps.append([MP,CAP,msg,self.__LINK["shipNames"][random.randint(0,len(self.__LINK["shipNames"])-1)],len(Threats),Fuel,PRE_GEN])
-                self.__LINK["shipData"]["mapSaves"][i] = [self.maps[-1][3],Fuel,PRE_GEN]
+                self.__LINK["shipData"]["mapSaves"][i] = [self.maps[-1][3],Fuel,PRE_GEN,CAP,len(Threats)]
             if self.__LINK["multi"]!=2: #Is not the server
                 self.__loading[3] = i/5
                 self.__updateScreen()
@@ -370,7 +381,7 @@ class Main:
         if self.__LINK["multi"]==2: #Is the server
             return None
         surf = self.__LINK["main"]
-        surf.blit(self.__loading[1],(self.__loading[2],0))
+        surf.blit(self.__loading[1],(int(self.__loading[2]),0))
         #Error message
         fren = self.__LINK["font42"].render("Loading...",16,(0,255,0))
         sx,sy = fren.get_size()
@@ -418,6 +429,10 @@ class Main:
             self.__LINK["shipData"]["maxInvent"] = self.__LINK["cli"].SYNC["MI"]
             self.__LINK["shipData"]["maxShipUpgs"] = self.__LINK["cli"].SYNC["MS"]
             self.__LINK["shipData"]["reserveMax"] = self.__LINK["cli"].SYNC["MSS"]
+            self.__LINK["shipData"]["name"] = self.__LINK["cli"].SYNC["SN"]
+            self.__LINK["shipData"]["mxScrap"] = self.__LINK["cli"].SYNC["SCAP"]
+            self.__shipName = self.__LINK["cli"].SYNC["SN"]
+            self.__scrapCopasity = self.__LINK["cli"].SYNC["SCAP"]
             for i in range(0,DWN["MD"]+DWN["MR"]):
                 if DWN["D"+str(i)]["E"]: #Drone exists
                     if i >=DWN["MD"]: #Is a reserved drone
@@ -492,7 +507,10 @@ class Main:
                 self.__changeEffect[1] = 0
                 self.__changeEffect[0] = (self.__changeEffect[0]+1)%len(self.__cols)
         if self.__LINK["multi"]==1: #Running as a client
-            if self.__LINK["cli"].loading and self.__LINK["cli"].getPercent()!=0:
+            if self.__LINK["cli"].failConnect:
+                self.__displayInfo[0] = True
+                self.__displayInfo[4] = "Connection error: "+self.__LINK["cli"].errorReason
+            elif self.__LINK["cli"].loading and self.__LINK["cli"].getPercent()!=0:
                 self.__loading[4] = "Downloading variables"
                 self.__loading[3] = self.__LINK["cli"].getPercent()
             elif not self.__LINK["cli"].loading:
@@ -529,8 +547,10 @@ class Main:
             if self.__LINK["controller"].quickOpenChange():
                 if self.__LINK["controller"].quickOpen():
                     pygame.event.post(pygame.event.Event(pygame.KEYDOWN,{"key":pygame.K_LCTRL}))
+                    pygame.event.post(pygame.event.Event(pygame.KEYDOWN,{"key":pygame.K_a}))
                 else:
                     pygame.event.post(pygame.event.Event(pygame.KEYUP,{"key":pygame.K_LCTRL}))
+                    pygame.event.post(pygame.event.Event(pygame.KEYUP,{"key":pygame.K_a}))
             if self.__LINK["controller"].backChange():
                 if self.__LINK["controller"].back():
                     pygame.event.post(pygame.event.Event(pygame.KEYDOWN,{"key":pygame.K_d}))
@@ -550,6 +570,9 @@ class Main:
                 if event.type == pygame.KEYDOWN:
                     if event.key == pygame.K_RETURN:
                         self.__displayInfo[0] = False
+                        if self.__LINK["cli"].failConnect:
+                            self.__LINK["cli"].close()
+                            self.__LINK["loadScreen"]("mainMenu")
             return 0
         if self.__loading[0]: #Make sure user cannot do ANYTHING while the screen is loading
             return 0
@@ -562,10 +585,11 @@ class Main:
                     if self.__dialog[0]:
                         self.__dialog[3] = 1
                     elif self.__tab: #Is in tab view
-                        if self.__sels[-1]==0: #Is selecting a window
+                        if self.__sels[-1]==0 or self.__sels[0]==0 or self.__sels[0]==1: #Is selecting a window
                             self.__sels[0]-=1 #Go to previous window
                             if self.__sels[0]<0: #Go to last
                                 self.__sels[0]=2
+                            self.__sels[1] = 0
                         elif self.__sels[0]==2: #Selecting a drone
                             if self.__sels[-1]==1:
                                 if self.__isKeyDown(pygame.K_LCTRL): #Shift a drone to the left, swapping it with any drones to the left
@@ -586,6 +610,11 @@ class Main:
                                 self.__sels[1]-=1
                                 if self.__sels[1]<0: #Below begining, moving to the end
                                     self.__sels[1] = self.__LINK["shipData"]["maxDrones"]+self.__LINK["shipData"]["maxReserve"]-1
+                            elif self.__sels[-1]==2: #Selecting a drone upgrade
+                                self.__sels[1]-=1
+                                self.__sels[-1] = 1
+                                if self.__sels[1]<0: #Below begining, moving to the end
+                                    self.__sels[1] = self.__LINK["shipData"]["maxDrones"]+self.__LINK["shipData"]["maxReserve"]-1
                             elif self.__sels[-1]==3: #Selecting an upgrade from the reserve
                                 sx,sy = self.__LINK["main"].get_size()
                                 if self.__sels[2]>=int((sy-425)/30): #Go to previous column
@@ -598,10 +627,11 @@ class Main:
                     if self.__dialog[0]:
                         self.__dialog[3] = 0
                     elif self.__tab: #Is in tab view
-                        if self.__sels[-1]==0: #Is selecting a window
+                        if self.__sels[-1]==0 or self.__sels[0]==0 or self.__sels[0]==1: #Is selecting a window
                             self.__sels[0]+=1 #Go to next window
                             if self.__sels[0]>2: #Go to first
                                 self.__sels[0]=0
+                            self.__sels[1] = 0
                         elif self.__sels[0]==2: #In the drone config window
                             if self.__sels[-1]==1: #Selecting a drone
                                 if self.__isKeyDown(pygame.K_LCTRL): #Shift a drone to the right, swapping it with any drones to the right
@@ -620,6 +650,11 @@ class Main:
                                         self.__LINK["shipData"]["reserve"][self.__sels[1]-self.__LINK["shipData"]["maxDrones"]],self.__LINK["shipData"]["reserve"][next] = self.__LINK["shipData"]["reserve"][next],self.__LINK["shipData"]["reserve"][self.__sels[1]-self.__LINK["shipData"]["maxDrones"]]
                                         self.__recalculateDroneNumbers()
                                 self.__sels[1]+=1
+                                if self.__sels[1]>=self.__LINK["shipData"]["maxDrones"]+self.__LINK["shipData"]["maxReserve"]: #At the end, go to begining
+                                    self.__sels[1] = 0
+                            elif self.__sels[-1]==2:
+                                self.__sels[1]+=1
+                                self.__sels[-1] = 1
                                 if self.__sels[1]>=self.__LINK["shipData"]["maxDrones"]+self.__LINK["shipData"]["maxReserve"]: #At the end, go to begining
                                     self.__sels[1] = 0
                             elif self.__sels[-1]==3: #Selecting an upgrade
@@ -719,6 +754,53 @@ class Main:
                             self.__sels[2] += 1
                             if self.__sels[2]>=self.__LINK["shipData"]["maxInvent"]: #Hit the end of the screen, make sure user cannot select past.
                                 self.__sels[2] = self.__LINK["shipData"]["maxInvent"]-1
+                elif event.key == pygame.K_a:
+                    self.__dialog[0] = False
+                    if self.__sels[0]==2 and self.__tab: #Inventory config area
+                        self.__dialog[2] = self.__refillUpgrade
+                        if self.__sels[-1]==2: #Selecting an upgrade inside the drone
+                            DRONE = None
+                            if self.__LINK["multi"]==1: #Running as a client
+                                MXD,MXR,Nlink,Nl2 = self.__getDroneInfo()
+                                if self.__sels[1]<MXD or (self.__sels[1]-self.__LINK["shipData"]["maxDrones"]<MXR and self.__sels[1]-self.__LINK["shipData"]["maxDrones"]>=0):
+                                    DRONE = "D"+str(Nlink[self.__sels[1]])
+                            else:
+                                if self.__sels[1]<len(self.__LINK["drones"]) or (self.__sels[1]-self.__LINK["shipData"]["maxDrones"]<len(self.__LINK["shipData"]["reserve"]) and self.__sels[1]-self.__LINK["shipData"]["maxDrones"]>=0):
+                                    if self.__sels[1]>=self.__LINK["shipData"]["maxDrones"]: #Cursor is in reserve drones
+                                        DRONE = self.__LINK["shipData"]["reserve"][self.__sels[1]-self.__LINK["shipData"]["maxDrones"]]
+                                    else: #Move to reserve squad
+                                        DRONE = self.__LINK["drones"][self.__sels[1]]
+                            if not DRONE is None:
+                                if self.__LINK["multi"]==1: #Game is running as a client
+                                    upgC = self.__getDroneUpgradeCount(DRONE[1:])
+                                    if self.__sels[2]<upgC:
+                                        upg = self.__LINK["cli"].SYNC[DRONE]["U"+str(self.__sels[2])].split(",")
+                                        if upg[0] in MUXS:
+                                            if self.__LINK["shipData"]["scrap"]>int(PRICE[upg[0]]*(1-(int(upg[2])/MUXS[upg[0]])))+1 and upg[1]!="2" and MUXS[upg[0]]!=int(upg[2]):
+                                                self.__dialog[0] = True
+                                                self.__dialog[1] = "Refill '"+upg[0]+"'? ("+str(int(PRICE[upg[0]]*(1-(int(upg[2])/MUXS[upg[0]])))+1)+")"
+                                elif self.__sels[2]<len(DRONE.upgrades):
+                                    UPG = DRONE.settings["upgrades"][self.__sels[2]]
+                                    if UPG[0] in MUXS:
+                                        if UPG[1]!=2 and self.__LINK["shipData"]["scrap"]>int(PRICE[UPG[0]]*(1-(UPG[4][0]/MUXS[UPG[0]])))+1 and not UPG[4][0]==MUXS[UPG[0]]:
+                                            self.__dialog[0] = True
+                                            self.__dialog[1] = "Refill '"+UPG[0]+"'? ("+str(int(PRICE[UPG[0]]*(1-(UPG[4][0]/MUXS[UPG[0]])))+1)+")"
+                                            self.__dialog[2] = self.__refillUpgrade
+                        elif self.__sels[-1]==3: #Selecing an upgrade inside the inventory
+                            if self.__LINK["multi"]==1: #Game is running as a client
+                                MX,Nlink = self.__getInventInfo()
+                                if self.__sels[2]<MX:
+                                    Upg = self.__LINK["cli"].SYNC["U"+str(Nlink[self.__sels[2]])]
+                                    if self.__LINK["shipData"]["scrap"]>int(PRICE[Upg["N"]]*(1-(Upg["A"]/MUXS[Upg["N"]])))+1 and Upg["A"]!=MUXS[Upg["N"]]:
+                                        self.__dialog[0] = True
+                                        self.__dialog[1] = "Refill '"+Upg["N"]+"'? ("+str(int(PRICE[Upg["N"]]*(1-(Upg["A"]/MUXS[Upg["N"]])))+1)+")"
+                            elif self.__sels[2]<len(self.__LINK["shipData"]["invent"]):
+                                UPG = self.__LINK["shipData"]["invent"][self.__sels[2]]
+                                if UPG[0] in MUXS:
+                                    if UPG[1]!=2 and self.__LINK["shipData"]["scrap"]>int(PRICE[UPG[0]]*(1-(UPG[4][0]/MUXS[UPG[0]])))+1 and not UPG[4][0]==MUXS[UPG[0]]:
+                                        self.__dialog[0] = True
+                                        self.__dialog[1] = "Refill '"+UPG[0]+"'? ("+str(int(PRICE[UPG[0]]*(1-(UPG[4][0]/MUXS[UPG[0]])))+1)+")"
+                                        self.__dialog[2] = self.__refillUpgrade
                 elif event.key == pygame.K_d:
                     self.__dialog[0] = False
                     if self.__sels[0]==0 and self.__sels[-1]==1 and self.__tab:
@@ -1012,6 +1094,69 @@ class Main:
             return PRICE[Ent[0]]/(Ent[1]+1)
         else:
             return PRICE[Ent.name]/(Ent.damage+1)
+    def __refillUpgradeServer(self,sock,sels):
+        MX1,MX2,Nlink = self.__getDroneInfo()
+        MX,inf = self.__getInventInfo()
+        if sels[1]>=self.__LINK["shipData"]["maxDrones"]: #In reserved squad
+            for i,a in enumerate(self.__LINK["shipData"]["reserve"]):
+                if a.GID==Nlink[sels[1]]:
+                    self.__sels[1] = i+self.__LINK["shipData"]["maxDrones"]
+                    break
+        else: #Normal drone fleet
+            for i,a in enumerate(self.__LINK["drones"]):
+                if a.GID==Nlink[sels[1]]:
+                    self.__sels[1] = i+0
+                    break
+        self.__sels[2] = sels[2]+0
+        self.__sels[-1] = sels[-1]+0
+        code = self.__refillUpgrade()
+        if code==2: #Update drone upgrades
+            if self.__sels[1]>=self.__LINK["shipData"]["maxDrones"]:
+                DR = self.__LINK["shipData"]["reserve"][self.__sels[1]-self.__LINK["shipData"]["maxDrones"]]
+            else:
+                DR = self.__LINK["drones"][self.__sels[1]]
+            for i2,b in enumerate(DR.settings["upgrades"]): #Sync all the drones upgrades
+                if b[0]=="":
+                    self.__LINK["serv"].SYNC["D"+str(DR.GID)]["U"+str(i2)] = ""
+                else:
+                    if len(b)==5:
+                        if len(b[4])!=0:
+                            self.__LINK["serv"].SYNC["D"+str(DR.GID)]["U"+str(i2)] = b[0]+","+str(b[1])+","+str(b[4][0])
+                        else:
+                            self.__LINK["serv"].SYNC["D"+str(DR.GID)]["U"+str(i2)] = b[0]+","+str(b[1])
+                    else:
+                        self.__LINK["serv"].SYNC["D"+str(DR.GID)]["U"+str(i2)] = b[0]+","+str(b[1])
+        elif code==3: #Update an inventoy item
+            self.__LINK["serv"].SYNC["U"+str(inf[self.__sels[2]])]["A"] = self.__LINK["shipData"]["invent"][self.__sels[2]][4][0]+0
+    def __refillUpgrade(self):
+        if self.__LINK["multi"]==1: #Game is running as a client
+            self.__LINK["cli"].sendTrigger("rud",self.__sels)
+            return None
+        DRONE = None
+        if self.__sels[1]<len(self.__LINK["drones"]) or (self.__sels[1]-self.__LINK["shipData"]["maxDrones"]<len(self.__LINK["shipData"]["reserve"]) and self.__sels[1]-self.__LINK["shipData"]["maxDrones"]>=0):
+            if self.__sels[1]>=self.__LINK["shipData"]["maxDrones"]: #Cursor is in reserve drones
+                DRONE = self.__LINK["shipData"]["reserve"][self.__sels[1]-self.__LINK["shipData"]["maxDrones"]]
+            else: #Move to reserve squad
+                DRONE = self.__LINK["drones"][self.__sels[1]]
+        if self.__sels[-1]==2: #Fix an upgrade in a drone
+            if self.__sels[2]<len(DRONE.upgrades):
+                UPG = DRONE.settings["upgrades"][self.__sels[2]]
+                self.__gainScrap(-(int(PRICE[UPG[0]]*(1-(UPG[4][0]/MUXS[UPG[0]])))+1))
+                if UPG[0]=="motion":
+                    DRONE.upgrades[self.__sels[2]].scansLeft = MUXS[UPG[0]]+0
+                elif UPG[0]=="lure":
+                    DRONE.upgrades[self.__sels[2]].lures = MUXS[UPG[0]]+0
+                elif UPG[0]=="sensor":
+                    DRONE.upgrades[self.__sels[2]].sensors = MUXS[UPG[0]]+0
+                DRONE.unloadUpgrades()
+                DRONE.upgrades[self.__sels[2]].openData(DRONE.settings["upgrades"][self.__sels[2]][4])
+                return 2
+        elif self.__sels[-1]==3: #Fix an upgrade in reserved upgrades (inventory)
+            UPG = self.__LINK["shipData"]["invent"][self.__sels[2]]
+            self.__gainScrap(-(int(PRICE[UPG[0]]*(1-(UPG[4][0]/MUXS[UPG[0]])))+1))
+            self.__LINK["shipData"]["invent"][self.__sels[2]][4][0] = MUXS[UPG[0]]+0
+            return 3
+        self.__scrapCollected = self.__LINK["shipData"]["scrap"] #Scrap inside the ship
     def __fixDroneOrUpgradeServer(self,sock,sels): #Called by clients to fix an upgrade in server
         MX1,MX2,Nlink = self.__getDroneInfo()
         MX,inf = self.__getInventInfo()
@@ -1063,19 +1208,19 @@ class Main:
             else: #Move to reserve squad
                 DRONE = self.__LINK["drones"][self.__sels[1]]
         if not DRONE is None and self.__sels[-1]==1: #Calculate score for drone
-            self.__LINK["shipData"]["scrap"]-=round((1-(DRONE.health/DRONE.settings["maxHealth"]))*8)
+            self.__gainScrap(-round((1-(DRONE.health/DRONE.settings["maxHealth"]))*8))
             DRONE.health = DRONE.settings["maxHealth"]+0
             DRONE.alive = True
             DRONE.aliveShow = True
             return 1
         elif self.__sels[-1]==2: #Fix an upgrade in a drone
             if self.__sels[2]<len(DRONE.upgrades):
-                self.__LINK["shipData"]["scrap"]-=self.__calculateScrap(DRONE.upgrades[self.__sels[2]])/2
+                self.__gainScrap(-(self.__calculateScrap(DRONE.upgrades[self.__sels[2]])/2))
                 DRONE.upgrades[self.__sels[2]].damage = 0
                 DRONE.unloadUpgrades()
                 return 2
         elif self.__sels[-1]==3: #Fix an upgrade in reserved upgrades (inventory)
-            self.__LINK["shipData"]["scrap"]-=self.__calculateScrap(self.__LINK["shipData"]["invent"][self.__sels[2]])/2
+            self.__gainScrap(-(self.__calculateScrap(self.__LINK["shipData"]["invent"][self.__sels[2]])/2))
             self.__LINK["shipData"]["invent"][self.__sels[2]][1] = 0
             return 3
         self.__scrapCollected = self.__LINK["shipData"]["scrap"] #Scrap inside the ship
@@ -1290,7 +1435,7 @@ class Main:
                 A = self.__LINK["controller"].keyName["select"]
                 surf.blit(self.__LINK["font24"].render("Presss "+A+" to select",16,(255,255,255)),[(sx/2)-110,(sy/2)+15])
         if self.__loading[0]: #Loading screen
-            surf.blit(self.__loading[1],(self.__loading[2],0))
+            surf.blit(self.__loading[1],(int(self.__loading[2]),0))
             pygame.draw.rect(surf,(0,0,0),[50,int(self.__loading[5][1]*0.8),self.__loading[5][0]-100,40],4)
             pygame.draw.rect(surf,(0,0,0),[50,int(self.__loading[5][1]*0.8),self.__loading[5][0]-100,40])
             pygame.draw.rect(surf,(255,255,0),[49,int(self.__loading[5][1]*0.8)-1,self.__loading[5][0]-99,41],2)
@@ -1398,6 +1543,7 @@ class Main:
                 surf.blit(self.__LINK["font16"].render("Press D to dismantle selected upgrade/drone",16,(0,255*smult,255*smult)),[180,80])
                 surf.blit(self.__LINK["font16"].render("Press Return to move selected upgrade/drone to and from reserve area",16,(0,255*smult,255*smult)),[180,90])
                 surf.blit(self.__LINK["font16"].render("Hold Left CNTRL + arrow keys to move drone left or right",16,(0,255*smult,255*smult)),[180,100])
+                surf.blit(self.__LINK["font16"].render("Press A to refill an upgrade",16,(0,255*smult,255*smult)),[180,110])
             else:
                 F = self.__LINK["controller"].keyName["scem"]
                 D = self.__LINK["controller"].keyName["back"]
@@ -1407,6 +1553,7 @@ class Main:
                 surf.blit(self.__LINK["font16"].render("Press "+D+" to dismantle selected upgrade/drone",16,(0,255*smult,255*smult)),[180,80])
                 surf.blit(self.__LINK["font16"].render("Press "+A+" to move selected upgrade/drone to and from reserve area",16,(0,255*smult,255*smult)),[180,90])
                 surf.blit(self.__LINK["font16"].render("Hold "+A+" + arrow keys to move drone left or right",16,(0,255*smult,255*smult)),[180,100])
+                surf.blit(self.__LINK["font16"].render("Press "+A+" to refill an upgrade",16,(0,255*smult,255*smult)),[180,110])
         if active and self.__sels[-1]==0:
             pygame.draw.rect(surf,(255*smult,0,255*smult),[630,140,sx-640,sy-150],5)
             pygame.draw.line(surf,(255*smult,0,255*smult),[630,400],[sx-10,400],5)
@@ -1496,7 +1643,10 @@ class Main:
                                 pygame.draw.rect(surf,(255*smult,0,255*smult),[650+(i*150),270+(i2*30),120,25],3)
                             else:
                                 pygame.draw.rect(surf,(255*mult,255*mult,255*mult),[650+(i*150),270+(i2*30),120,25],2)
-                            surf.blit(self.__LINK["font24"].render(spl[0],16,col),[655+(i*150),270+(i2*30)])
+                            add = ""
+                            if len(spl)==3:
+                                add = " ("+spl[2]+")"
+                            surf.blit(self.__LINK["font24"].render(spl[0]+add,16,col),[655+(i*150),270+(i2*30)])
                 else:
                     for i2,b in enumerate(a.settings["upgrades"]):
                         if b[0]=="":
@@ -1513,11 +1663,14 @@ class Main:
                                 col = (255*mult,0,0)
                             else: #Unkown
                                 col = (255*mult,0,255*mult)
+                            add = ""
+                            if b[0] in MUXS:
+                                add = " ("+str(b[4][0])+")"
                             if self.__sels[-1]==2 and self.__sels[1]==i3 and self.__sels[2]==i2 and self.__sels[0]==2:
                                 pygame.draw.rect(surf,(255*smult,0,255*smult),[650+(i*150),270+(i2*30),120,25],3)
                             else:
                                 pygame.draw.rect(surf,(255*mult,255*mult,255*mult),[650+(i*150),270+(i2*30),120,25],2)
-                            surf.blit(self.__LINK["font24"].render(b[0],16,col),[655+(i*150),270+(i2*30)])
+                            surf.blit(self.__LINK["font24"].render(b[0]+add,16,col),[655+(i*150),270+(i2*30)])
         if scroll!=0: #There are drone slots behind, render arrow to show this.
             pygame.draw.polygon(surf,(255*mult,255*mult,255*mult),[(655,160),(655,380),(640,270)])
         x = 640
@@ -1555,7 +1708,14 @@ class Main:
                     col = (255*mult,255*mult,0)
                 elif upg[1]==2: #Upgrade has failed
                     col = (255*mul5,0,0)
-                surf.blit(self.__LINK["font16"].render(upg[0],16,col),[x+5,y+5])
+                add = ""
+                if upg[0] in MUXS:
+                    if self.__LINK["multi"]==1:
+                        if not self.__LINK["cli"].SYNC["U"+str(Nlink[i])]["A"]==-1:
+                            add = " ("+str(self.__LINK["cli"].SYNC["U"+str(Nlink[i])]["A"])+")"
+                    else:
+                        add = " ("+str(upg[4][0])+")"
+                surf.blit(self.__LINK["font16"].render(upg[0]+add,16,col),[x+5,y+5])
             y+=30 #Render next box below
             if y+25>sy-15: #Hit the bottom
                 y = 410 #Reset box Y to the top of the screen
@@ -1598,7 +1758,7 @@ class Main:
         for i in range(self.__LINK["shipData"]["maxShipUpgs"]): #Render ship upgrades
             tex = ""
             tcol = (255*mult,255*mult,255*mult)
-            if i>=MX: #Upgrade slot is empty
+            if i>=MX or MX==0: #Upgrade slot is empty
                 col = (100*mult,100*mult,100*mult)
             else: #Slot has an upgrade in it
                 col = (0,255*mult,0)

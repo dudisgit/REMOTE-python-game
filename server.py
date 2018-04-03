@@ -4,7 +4,7 @@ import entities.base as base
 VERSION = 0.3 #Version number, used so clients with incorrect versions cannot connect
 
 TCP_port = 3746 #Port for serious data transfer, e.g. chat messages
-TCP_BUF_SIZE = 4046 #Receiving buffer size
+TCP_BUF_SIZE = 512 #Receiving buffer size
 MAX_PLAYER = 60
 PING_INTERVAL = 5 #Seconds to send a ping interval again
 SLOW_UPDATE_SPEED = 0.1 #0.25 #Seconds between sending a slow update packet, (initaly syncing variables when joining a server or changing map) TCP connection.
@@ -546,10 +546,19 @@ def loadLINK(serv): #Loads all content
     LINK["splitScreen"] = False #Split screen is off because its a server
     LINK["backgroundStatic"] = False #Enable/disable background static
     LINK["viewDistort"] = False #Drone view distortion
-    LINK["names"] = ["Jeff","Tom","Nathan","Harry","Ben","Fred","Timmy","Potter","Stranger"] #Drone names
-    LINK["shipNames"] = ["Franks","Daron","Hassle","SETT","BENZYA"] #Ship names
+    LINK["controller"] = None
+    LINK["names"] = [] #Drone names
+    with open("droneNames.txt","r") as file:
+        for a in file:
+            if a!="":
+                LINK["names"].append(a.strip())
+    LINK["shipNames"] = [] #Ship names
+    with open("shipNames.txt","r") as file:
+        for a in file:
+            if a!="":
+                LINK["shipNames"].append(a.strip())
     LINK["shipData"] = {"fuel":5,"scrap":5,"shipUpgs":[],"maxShipUpgs":2,"reserveUpgs":[],"reserveMax":8,"invent":[],
-        "beforeMap":-1,"mapSaves":[],"maxScore":0,"reserve":[],"maxDrones":4,"maxReserve":2,"maxInvent":70,"doneMaps":[]} #Data about the players ship
+        "beforeMap":-1,"mapSaves":[],"maxScore":0,"reserve":[],"maxDrones":4,"maxReserve":2,"maxInvent":70,"doneMaps":[],"name":"Your ship","mxScrap":50} #Data about the players ship
     LINK["multi"] = 2 #Running as server
     #Screens
     files = os.listdir("screens")
@@ -724,6 +733,8 @@ class GameServer:
         self.serv.SYNC["MSS"] = self.LINK["shipData"]["reserveMax"]+0 #Maximum reserved ship upgrades
         self.serv.SYNC["MI"] = self.LINK["shipData"]["maxInvent"]+0 #Max inventory size
         self.serv.SYNC["DC"] = len(self.LINK["drones"])
+        self.serv.SYNC["SN"] = self.LINK["shipData"]["name"]
+        self.serv.SYNC["SCAP"] = self.LINK["shipData"]["mxScrap"]+0 #Max scrap
         self.serv.SYNC["UC"] = len(self.LINK["shipData"]["shipUpgs"])
         for i in range(0,self.LINK["shipData"]["maxDrones"]+self.LINK["shipData"]["maxReserve"]):
             self.serv.SYNC["D"+str(i)] = {}
@@ -766,10 +777,15 @@ class GameServer:
                     self.serv.SYNC["U"+str(i)]["P"] = i+1 #Point to the next upgrade
                 else:
                     self.serv.SYNC["U"+str(i)]["P"] = -1 #Set pointer as end
+                if len(A[4])==0:
+                    self.serv.SYNC["U"+str(i)]["A"] = -1
+                else:
+                    self.serv.SYNC["U"+str(i)]["A"] = A[4][0]+0
             else:
                 self.serv.SYNC["U"+str(i)]["E"] = False
                 self.serv.SYNC["U"+str(i)]["N"] = "Empty"
                 self.serv.SYNC["U"+str(i)]["D"] = 0
+                self.serv.SYNC["U"+str(i)]["A"] = -1
                 self.serv.SYNC["U"+str(i)]["P"] = -1 #Doesen't point to anything
         for i in range(0,self.LINK["shipData"]["maxShipUpgs"]+self.LINK["shipData"]["reserveMax"]):
             self.serv.SYNC["G"+str(i)] = {}
@@ -778,12 +794,14 @@ class GameServer:
             UPG = None
             if i>=self.LINK["shipData"]["maxShipUpgs"]: #Reserved ship upgrade
                 if i-self.LINK["shipData"]["maxShipUpgs"]<len(self.LINK["shipData"]["reserveUpgs"]):
+                    self.LINK["shipData"]["reserveUpgs"][i-self.LINK["shipData"]["maxShipUpgs"]][2] = i+0 #Give the upgrade an ID
                     self.serv.SYNC["G"+str(i)]["E"] = True
                     self.serv.SYNC["G"+str(i)]["N"] = self.LINK["shipData"]["reserveUpgs"][i-self.LINK["shipData"]["maxShipUpgs"]][0]
                     self.serv.SYNC["G"+str(i)]["D"] = self.LINK["shipData"]["reserveUpgs"][i-self.LINK["shipData"]["maxShipUpgs"]][1]+0
                     self.serv.SYNC["G"+str(i)]["I"] = self.LINK["shipData"]["reserveUpgs"][i-self.LINK["shipData"]["maxShipUpgs"]][2]+0
             else: #Ship upgrade
                 if i<len(self.LINK["shipData"]["shipUpgs"]):
+                    self.LINK["shipData"]["shipUpgs"][i][2] = i+0 #Give the upgrade an ID
                     self.serv.SYNC["G"+str(i)]["E"] = True
                     self.serv.SYNC["G"+str(i)]["N"] = self.LINK["shipData"]["shipUpgs"][i][0]
                     self.serv.SYNC["G"+str(i)]["D"] = self.LINK["shipData"]["shipUpgs"][i][1]+0
@@ -873,8 +891,9 @@ class GameServer:
         if not UserSock.getpeername()[0] in self.__MAP_DOWNLOAD: #Checking if the user isn't trying to request the map more than once
             self.__MAP_DOWNLOAD[UserSock.getpeername()[0]] = 0 #Begin sending the map
 
-def serverBackgroundTask(servIP,active): #Thread that is ran by a client when hosting a game
+def serverBackgroundTask(servIP,active,ready): #Thread that is ran by a client when hosting a game
     serv = GameServer(servIP)
+    ready.value = 1
     while active.value>time.time():
         serv.loop()
     print("Time exceed, stopping server")
@@ -882,7 +901,6 @@ def serverBackgroundTask(servIP,active): #Thread that is ran by a client when ho
 if __name__=="__main__": #If not imported the run as a server without a game running in the background.
     ERROR = enError
     IP = socket.gethostbyname(socket.gethostname())
-    IP = "127.0.1.1"
     Game = GameServer(IP)
     while True:
         Game.loop()

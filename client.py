@@ -2,7 +2,7 @@ import socket,select,pickle,time,os,traceback
 import multiprocessing as mp
 
 selfIp = socket.gethostbyname(socket.gethostname()) #"169.254.178.71"
-TCP_BUF_SIZE = 4046
+TCP_BUF_SIZE = 512
 MAX_KEEP = 60 # Maximum number of packets kept by the server when a packet was missed.
 UPDATE_RATE = 0.075 #Rate at which the client should sent updates to the server (UDP/TCP)
 

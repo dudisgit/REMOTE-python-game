@@ -1,12 +1,14 @@
-import pygame, random, math, time, mapGenerator, server, socket, pygame
+import pygame, random, math, time, mapGenerator, server, socket, pygame, pickle, webbrowser
 import multiprocessing as mp
 
-SERVERS = ["127.0.1.1"]#,"REserver_1","REserver_2","REserver_3","REserver_4","REserver_5","REserver_6"]#,"REserver_3","REserver_4","REserver_5","REserver_6","REserver_7","REserver_8","REserver_9","REserver_10"]
-#SERVERS = ["JordanG-PC"]
+SERVERS = []
 
 class Main:
     def __init__(self,LINK):
         self.__LINK = LINK
+        self.__restoreDefaults()
+        self.openSettings()
+        self.openServer()
         self.__sep = 2 #Seperation between text
         self.__title = pygame.Surface((500,150)) #Title surface
         self.__title.set_colorkey((0,0,0))
@@ -27,6 +29,7 @@ class Main:
         self.__maps = [0,0,random.randint(0,360),0] #Map position, angle and time storage
         self.__mapSim = None
         self.__backSurf = pygame.Surface(LINK["main"].get_size()) #Pygame surface to be used for effects when rendering the map
+        self.__clickBox = [0,0,0,0,False,False] #Area the user can click in to open the original game
         self.__IPType = ""
         self.__screen = 0
         #0: Main screen
@@ -41,9 +44,25 @@ class Main:
         #sx = 1000
         #sy = 700
         sx2 = sy*1.777
-        self.__loading = [pygame.transform.scale(LINK["content"]["loading"],(int(sx2),int(sy))),(sx2-sx)/-2,0,[sx,sy]]
+        sy2 = sy+0
+        if sx>1000:
+            sx2 = sx+0
+            sy2 = sx/1.777
+        self.__loading = [pygame.transform.scale(self.__LINK["content"]["loading"],(int(sx2),int(sy2))),(sx2-sx)/-2,0,[sx,sy]]
     def resized(self): #Game was resized
         self.__backSurf = pygame.Surface(self.__LINK["main"].get_size())
+    def saveSettings(self): #Save user settings
+        with open("settings.sav","wb") as file:
+            file.write(pickle.dumps([self.__LINK["showFPS"],self.__LINK["particles"],self.__LINK["floorScrap"],self.__LINK["popView"],self.__LINK["simpleModels"],self.__LINK["backgroundStatic"],self.__LINK["hints"],self.__LINK["threading"],self.__LINK["menuFade"]]))
+    def openSettings(self): #Save user settings
+        try:
+            with open("settings.sav","rb") as file:
+                d = pickle.loads(file.read())
+                self.__LINK["showFPS"],self.__LINK["particles"],self.__LINK["floorScrap"],self.__LINK["popView"],self.__LINK["simpleModels"],self.__LINK["backgroundStatic"],self.__LINK["hints"],self.__LINK["threading"],self.__LINK["menuFade"] = tuple(d)
+        except FileNotFoundError:
+            print("No saved settings")
+        except:
+            print("Failed to open settings save file")
     def displayLoadingScreen(self): #Display a loading screen
         surf = self.__LINK["main"]
         surf.blit(self.__loading[0],(self.__loading[1],0))
@@ -90,12 +109,15 @@ class Main:
         self.__LINK["shipEnt"] = self.__LINK["ents"]["ship"].Main(0,0,self.__LINK,-1)
         self.__LINK["shipEnt"].loadUpgrades()
         self.__LINK["shipData"] = {"fuel":5,"scrap":5,"shipUpgs":[],"maxShipUpgs":2,"reserveUpgs":[],"reserveMax":8,"invent":[],
-        "beforeMap":-1,"mapSaves":[],"maxScore":0,"reserve":[],"maxDrones":4,"maxReserve":2,"maxInvent":70,"doneMaps":[]} #Data about the players ship
+        "beforeMap":-1,"mapSaves":[],"maxScore":0,"reserve":[],"maxDrones":4,"maxReserve":2,"maxInvent":70,"doneMaps":[],"name":"Your ship","mxScrap":50} #Data about the players ship
     def __servInit(self): #Called when the server selecting screen is initilized
-        self.__scan = 0
-        self.__cli = self.__LINK["client"].Client(SERVERS[0],3746,False)
-        self.__LINK["cli"] = self.__cli
-        self.__cli.TRIGGER["pls"] = self.__servGetPly
+        if len(SERVERS)!=0:
+            self.__scan = 0
+            self.__cli = self.__LINK["client"].Client(SERVERS[0],3746,False)
+            self.__LINK["cli"] = self.__cli
+            self.__cli.TRIGGER["pls"] = self.__servGetPly
+        else:
+            self.__scan = -1
     def __servGetPly(self,pls): #Called when a server responds or the client socket fails to get info about a server
         if pls is None: #Connection failure
             self.__opts[self.__scan] = self.__opts[self.__scan] + " 4 / ERR "+self.__cli.errorReason
@@ -112,6 +134,18 @@ class Main:
             self.__cli = None
     def __initMultiplayer(self): #Multiplayer was initilized, load client settings
         self.__LINK["cli"].TRIGGER["lda"] = self.__LINK["loadScreen"] #Allow the server to load screens
+    def saveServer(self):
+        file = open("serverList.txt","w")
+        for a in SERVERS:
+            file.write(a+"\n")
+        file.close()
+    def openServer(self):
+        global SERVERS
+        file = open("serverList.txt","r")
+        for a in file:
+            if a.strip()!="":
+                SERVERS.append(a.strip())
+        file.close()
     def loop(self,mouse,kBuf,lag): #Called continuesly to update the title screen
         if time.time()>self.__buzz:
             for a in range(6): #Go through all the charicter introductions
@@ -119,12 +153,19 @@ class Main:
                     self.__intro[a]+=lag*4
                     if self.__intro[a]>=0:
                         self.__intro[a]=0
-        if self.__screen==1: #Servers
+        if self.__screen==1 and len(SERVERS)!=0: #Servers
             if not self.__cli is None:
                 self.__cli.loop()
                 if self.__scan!=-1:
                     if self.__cli.failConnect: #Connection failure
                         self.__servGetPly(None)
+        elif self.__screen==0: #Main menu
+            self.__clickBox[4] = mouse[1]>self.__clickBox[0] and mouse[2]>self.__clickBox[1] and mouse[1]<self.__clickBox[0]+self.__clickBox[2] and mouse[2]<self.__clickBox[1]+self.__clickBox[3]
+            if self.__clickBox[4] and mouse[0] and not self.__clickBox[5]:
+                webbrowser.open("http://duskers.misfits-attic.com/")
+                self.__clickBox[5] = True
+            elif not mouse[0]:
+                self.__clickBox[5] = False
         if not self.__LINK["controller"] is None:
             if self.__LINK["controller"].getMenuUpChange():
                 if self.__LINK["controller"].getMenuUp():
@@ -177,7 +218,7 @@ class Main:
                             self.__opts = [[self.__LINK["showFPS"],"FPS counter"],[self.__LINK["particles"],"Particles"],[self.__LINK["floorScrap"],"Floor scrap"],
                                            [self.__LINK["popView"],"pop view (make rooms pop into view, reduced CPU)"],[self.__LINK["simpleModels"],"Simplified 3D models"],
                                            [self.__LINK["backgroundStatic"],"Background static"],[self.__LINK["viewDistort"],"View distortion effects"],
-                                           [self.__LINK["hints"],"Hints"],[self.__LINK["threading"],"Multiplayer threading"],"Back"]
+                                           [self.__LINK["hints"],"Hints"],[self.__LINK["threading"],"Multiplayer threading"],[self.__LINK["menuFade"],"Menu effects"],"Back"]
                         elif self.__sel==2: #Map editor
                             self.__restoreDefaults()
                             self.__LINK["loadScreen"]("mapEdit")
@@ -188,12 +229,15 @@ class Main:
                         spl = self.__opts[self.__sel].split(" ")
                         if spl[0]=="Back": #Go back to main menu
                             self.__sel = 0
-                            self.__screen = 0
-                            self.__opts = ["Play","Options","Map designer","Quit"]
-                        elif self.__opts[self.__sel]=="Direct connect": #Go into direct connection window
+                            self.__screen = 5
+                            if self.__LINK["controller"] is None:
+                                self.__opts = ["Tutorial","Singleplayer","Multiplayer","Host multiplayer","Back"]
+                            else:
+                                self.__opts = ["Tutorial","Singleplayer","Multiplayer","Host multiplayer","Split screen","Back"]
+                        elif self.__opts[self.__sel]=="Enter IP": #Go into direct connection window
                             self.__sel = 0
                             self.__screen = 4
-                            self.__opts = ["Connect","Back"]
+                            self.__opts = ["Connect","Save to shortcut","Back"]
                         elif int(spl[1])<4: #Server is not full
                             self.__restoreDefaults()
                             self.displayLoadingScreen()
@@ -223,9 +267,12 @@ class Main:
                             self.__LINK["hints"] = self.__opts[7][0]==True
                         elif self.__sel==8: #Threading
                             self.__LINK["threading"] = self.__opts[8][0]==True
-                        elif self.__sel==9: #Back
+                        elif self.__sel==9: #Menu effects
+                            self.__LINK["menuFade"] = self.__opts[9][0] == True
+                        elif self.__sel==10: #Back
                             self.__sel = 0
                             self.__screen = 0
+                            self.saveSettings()
                             self.__opts = ["Play","Options","Map designer","Quit"]
                     elif self.__screen==4: #IP address entering
                         if self.__sel==0: #Connect to server
@@ -237,9 +284,13 @@ class Main:
                             self.__LINK["loadScreen"]("shipSelect")
                             return None
                         else: #Go back to main menu
+                            if self.__sel==1: #Save to shortcut
+                                SERVERS.append(self.__IPType)
+                                self.saveServer()
                             self.__sel = 0
-                            self.__screen = 0
-                            self.__opts = ["Play","Options","Map designer","Quit"]
+                            self.__screen = 1
+                            self.__opts = SERVERS.copy()+["Enter IP","Back"]
+                            self.__servInit()
                     elif self.__screen==5: #Game type selecting screen
                         if self.__sel==0: #Start tutorial
                             self.__restoreDefaults()
@@ -256,7 +307,7 @@ class Main:
                         elif self.__sel==2: #Play multiplayer
                             self.__screen = 1
                             self.__sel = 0
-                            self.__opts = SERVERS.copy()+["Direct connect","Back"]
+                            self.__opts = SERVERS.copy()+["Enter IP","Back"]
                             self.__servInit()
                         elif self.__sel==3: #Host multiplayer
                             self.__restoreDefaults()
@@ -264,8 +315,11 @@ class Main:
                             self.__LINK["IPADD"] = socket.gethostbyname(socket.gethostname())
                             pygame.display.set_caption("REMOTE, IP = "+self.__LINK["IPADD"])
                             self.__LINK["serverObj"] = mp.Value("i",int(time.time()+5))
-                            proc = mp.Process(target=server.serverBackgroundTask,args=(self.__LINK["IPADD"],self.__LINK["serverObj"]))
+                            wait = mp.Value("i",0)
+                            proc = mp.Process(target=server.serverBackgroundTask,args=(self.__LINK["IPADD"],self.__LINK["serverObj"],wait))
                             proc.start()
+                            while wait.value==0 and time.time()<self.__LINK["serverObj"].value:
+                                pass
                             self.__LINK["cli"] = self.__LINK["client"].Client(self.__LINK["IPADD"],3746,self.__LINK["threading"])
                             self.__LINK["multi"] = 1 #Set to client mode
                             self.__initMultiplayer()
@@ -316,13 +370,16 @@ class Main:
                 if random.randint(0,1)==1: #50% chance a random charicter will raise to the top
                     self.__intro[random.randint(0,len(self.__intro)-1)] = -20
         sx2,sy2 = self.__title.get_size()
-        BSUF = pygame.transform.rotozoom(self.__backSurf,0.6,0.9) #Rotate and zoom out of the previous frame of the map rendering
-        BSUF.set_alpha(200) #Darken it by 55
-        self.__backSurf.fill((0,0,0)) #Fill current frame with blackness
-        self.__backSurf.blit(BSUF,(10,10)) #Render the previous frame onto this one
-        self.__mapRend.render(self.__maps[0],self.__maps[1],2,self.__backSurf,False) #Draw the map
-        self.__backSurf.set_alpha(100) #Set its alpha down by 155
-        surf.blit(self.__backSurf,(0,0)) #Render the final result of the background map onto the screen
+        if self.__LINK["menuFade"]:
+            BSUF = pygame.transform.rotozoom(self.__backSurf,0.6,0.9) #Rotate and zoom out of the previous frame of the map rendering
+            BSUF.set_alpha(200) #Darken it by 55
+            self.__backSurf.fill((0,0,0)) #Fill current frame with blackness
+            self.__backSurf.blit(BSUF,(10,10)) #Render the previous frame onto this one
+            self.__mapRend.render(self.__maps[0],self.__maps[1],2,self.__backSurf,False) #Draw the map
+            self.__backSurf.set_alpha(100) #Set its alpha down by 155
+            surf.blit(self.__backSurf,(0,0)) #Render the final result of the background map onto the screen
+        else:
+            self.__mapRend.render(self.__maps[0],self.__maps[1],2,surf,False) #Draw the map
         surf.blit(self.__title,((sx/2)-(sx2/2),(sy*0.2)-(sy2/2) )) #Render cached title surface
         mult = abs(math.cos(time.time()*3)) #Box flashing
         scroll = 0
@@ -358,8 +415,25 @@ class Main:
             else:
                 surf.blit(Buf[i+scroll],(20,(sy*0.4)+(i*45)))
         if self.__screen==4: #In IP entering screen
-            tex = self.__LINK["font42"].render(self.__IPType,16,(255,255,255))
+            tex = None
+            if self.__IPType=="":
+                tex = self.__LINK["font42"].render("Type IP",16,(255,255,255))
+            else:
+                tex = self.__LINK["font42"].render(self.__IPType,16,(255,255,255))
             sx2,sy2 = tex.get_size()
             pygame.draw.rect(surf,(0,0,0),[(sx/2)-(sx2/2)-4,(sy*0.35)-4,sx2+8,sy2+8])
             pygame.draw.rect(surf,(0,255*mult,0),[(sx/2)-(sx2/2)-4,(sy*0.35)-4,sx2+8,sy2+8],2)
             surf.blit(tex,(int((sx/2)-(sx2/2)),int(sy*0.35)))
+        elif self.__screen==0: #Main screen
+            tex = self.__LINK["font42"].render("Get the original game",16,(255,0,255))
+            tex2 = self.__LINK["font64"].render("DUSKERS",16,(0,255,0))
+            sx2,sy2 = tex.get_size()
+            sx3,sy3 = tex2.get_size()
+            self.__clickBox = [(sx*0.8)-(sx2/2)-4,(sy*0.2)-4,sx2+8,sy2+sy3+8,self.__clickBox[4],self.__clickBox[5]]
+            pygame.draw.rect(surf,(0,0,0),[(sx*0.8)-(sx2/2)-4,(sy*0.2)-4,sx2+8,sy2+sy3+8])
+            if self.__clickBox[4]:
+                pygame.draw.rect(surf,(0,255*mult,0),[(sx*0.8)-(sx2/2)-4,(sy*0.2)-4,sx2+8,sy2+sy3+8],5)
+            else:
+                pygame.draw.rect(surf,(0,255*mult,0),[(sx*0.8)-(sx2/2)-4,(sy*0.2)-4,sx2+8,sy2+sy3+8],2)
+            surf.blit(tex,(int((sx*0.8)-(sx2/2)),int(sy*0.2)))
+            surf.blit(tex2,(int((sx*0.8)-(sx3/2)),int(sy*0.2)+40))

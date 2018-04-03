@@ -10,7 +10,7 @@ CONSOLE_SIZE = [440,205] #Size of the console (changed by reslution)
 DRONE_VIEW_SCALE = 3 #Drone view zoom in
 DEF_RES = [1000,700] #Default reslution, this will be used to scale up the screen if required
 MESH_BLOCK_SIZE = 125 #Size of a single mesh block
-DEFAULT_COMMANDS = ["open","close","help","navigate","say","name","dock","swap","pickup","flag","info","exit"] #Default commands other than upgrade ones
+DEFAULT_COMMANDS = ["open","close","help","navigate","say","name","dock","swap","pickup","flag","info","exit","status","commandeer"] #Default commands other than upgrade ones
 HELP_COMS = {"navigate":"Navigate a drone to a room, \nUsage: navigate <DRONE NUMBER> <ROOM>",
             "open":"Open a door or airlock \nUsage: open <DOOR/AIRLOCK>",
             "close":"Close a door or airlock \nUsage: close <DOOR/AIRLOCK>",
@@ -29,7 +29,9 @@ HELP_COMS = {"navigate":"Navigate a drone to a room, \nUsage: navigate <DRONE NU
             "overload":"Surges a room and kills anything electronic \nUsage: overload <ROOM>",
             "stealth":"Makes drone invisible to threats \nUsage: stealth",
             "tow":"Tows nearby drones/upgrades \nUsage: tow",
-            "exit":"Leaves the ship"}
+            "exit":"Leaves the ship",
+            "status":"Display currently docked ship infomation",
+            "commandeer":"Transfer equipment to the ship docked and exit to ship selecting screen"}
 COMPARAMS = {"open":"e",
             "close":"e",
             "say":"T",
@@ -55,9 +57,11 @@ COMPARAMS = {"open":"e",
             "help":"T",
             "exit":"",
             "defence":"",
-            "scan":""} #Paramiters for commands, (used for controllers)
-PRICE = {"gather":8,"generator":8,"interface":12,"lure":16,"motion":12,"overload":8,"pry":12,"remote power":12,"sensor":16,"stealth":12,"surveyor":8,"tow":8}
-OVERLAY_OPASITY = 30 #Opasity of the overlay (0-255)
+            "scan":"",
+            "status":"",
+            "commandeer":""} #Paramiters for commands, (used for controllers)
+PRICE = {"gather":8,"generator":8,"interface":12,"lure":16,"motion":12,"overload":8,"pry":12,"remote power":12,"sensor":16,"stealth":12,"surveyor":8,"tow":8,"speed":12}
+OVERLAY_OPASITY = 50 #Opasity of the overlay (0-255)
 COMMAND_HISTORY_LENGTH = 30 #Length of the command history
 
 def getMapMash(MAP): #Gets the map hash for the specific map
@@ -85,9 +89,11 @@ class GameEventHandle: #Used to simulate and handle the events of the game world
         self.drones = LINK["drones"] #All the drones used
         self.__startDrones = len(self.drones)
         self.__quiting = False #Is the user attempting to quit
+        self.__quits = [] #A list of people who have voted to exit the map
         self.exit = False #Should the game exit or not
         self.ship = LINK["shipEnt"] #The main ship of the map
         self.Mesh = {} #Used to speed up entitiy discovery, this is a 2D dictionary
+        self.__commandeer = False
         self.__IDMAX = -1
         LINK["mesh"] = self.Mesh #Set the global MESH to this classes one.
         LINK["create"] = self.createEnt #Create a new entity
@@ -239,6 +245,7 @@ class GameEventHandle: #Used to simulate and handle the events of the game world
                     defaultAir = self.Ref["a1"]
                 else:
                     self.__LINK["log"]("There are no airlocks on this map, an exception is about to raise")
+            self.ship.airlock = None #Make sure the ship isn't keeping a deleted airlock from the previous map alive
             self.Map.append(self.ship) #Add the main ship to the map
             self.ship.dockTo(defaultAir,True) #Dock the ship to an airlock
             self.ship.dockTime = 0 #Don't wait for docking
@@ -291,6 +298,8 @@ class GameEventHandle: #Used to simulate and handle the events of the game world
         out = "Unknown command '"+text+"'"
         col = (255,255,0)
         spl = text.split(" ")
+        while "" in spl:
+            spl.remove("")
         if len(text)==0:
             return out,col
         if spl[0]!="exit":
@@ -457,6 +466,9 @@ class GameEventHandle: #Used to simulate and handle the events of the game world
                 if self.__LINK["multi"]==2: #Is server
                     for a in self.__LINK["serv"].users:
                         self.__LINK["serv"].users[a].sendTrigger("dock",spl[1])
+        elif spl[0]=="status": #Display ship infomation
+            s = self.__LINK["shipData"]["mapSaves"][self.__LINK["shipData"]["beforeMap"]]
+            out = "Infomation about '"+s[0]+"'\n  Scrap capasity: "+str(s[3])+"\n  Threat types: "+str(s[4])
         elif spl[0]=="flag": #Flag a room
             if len(spl)==1:
                 out = "Expected a room"
@@ -476,6 +488,17 @@ class GameEventHandle: #Used to simulate and handle the events of the game world
                 out = HELP_COMS[spl[1]]
             else:
                 out = "No such command"
+        elif spl[0]=="commandeer":
+            for a in self.Map:
+                if a.isNPC and a.alive or not a.discovered:
+                    out = "All rooms must be fully explored and no threats must be present"
+                    break
+            else:
+                if not self.__commandeer:
+                    out = "Are you sure you want to commandeer this ship?"
+                    self.__commandeer = True
+                else:
+                    self.exit = True
         elif spl[0]=="exit":
             if not self.__quiting:
                 for a in self.drones:
@@ -488,7 +511,11 @@ class GameEventHandle: #Used to simulate and handle the events of the game world
             else:
                 self.__quiting = False
             if not self.__quiting:
-                self.exit = True
+                if self.__LINK["multi"]==2: #Running as a server
+                    if not usrObj.ip in self.__quits:
+                        self.__quits.append(usrObj.ip)
+                else:
+                    self.exit = True
         elif len(spl)!=0: #Process the command as an upgrade
             if drone<0 or drone>=len(self.drones): #In scematic view
                 for drone in self.drones+[self.ship]:
@@ -524,6 +551,8 @@ class GameEventHandle: #Used to simulate and handle the events of the game world
                         out = ""
                 else:
                     out = "Drone is disabled"
+        if self.__LINK["multi"]==2 and not self.exit: #Running as a server
+            self.exit = len(self.__quits)>=len(self.__LINK["serv"].users)
         return out,col
     def getScore(self): #Returns the score for the player (usualy called when exiting)
         Ents = self.Ref["r1"].EntitiesInside()
@@ -547,6 +576,25 @@ class GameEventHandle: #Used to simulate and handle the events of the game world
         score+=self.__LINK["fuelCollected"]*50
         return score
     def safeExit(self): #Safely exit
+        if self.__commandeer:
+            UpgC = 1
+            for a in self.Map:
+                UpgC += int(type(a)==self.getEnt("upgrade slot"))
+            self.__LINK["shipData"]["maxShipUpgs"] = UpgC+0
+            while len(self.__LINK["shipData"]["shipUpgs"])>UpgC:
+                if len(self.__LINK["shipData"]["reserveUpgs"])<self.__LINK["shipData"]["reserveMax"]:
+                    self.__LINK["shipData"]["reserveUpgs"].append(self.__LINK["shipData"]["shipUpgs"].pop())
+                else:
+                    a = self.__LINK["shipData"]["shipUpgs"].pop()
+                    self.__LINK["shipData"]["scrap"] += PRICE[a[0]]/(a[1]+1)
+            s = self.__LINK["shipData"]["mapSaves"][self.__LINK["shipData"]["beforeMap"]]
+            self.__LINK["shipData"]["name"] = s[0]
+            self.__LINK["shipData"]["mxScrap"] = s[3]+0
+        self.__LINK["shipEnt"].unloadUpgrades()
+        self.__LINK["shipData"]["shipUpgs"] = []
+        for a in self.__LINK["shipEnt"].settings["upgrades"]:
+            if not a[0]=="":
+                self.__LINK["shipData"]["shipUpgs"].append(a.copy())
         ENTS = self.clean() #Unload the map and return all entities inside the ship room
         self.drones = []
         self.__LINK["drones"] = []
@@ -572,6 +620,8 @@ class GameEventHandle: #Used to simulate and handle the events of the game world
             elif type(a)==ShipUpgradeReferenceObject: #Entity is a ship upgrade
                 if len(self.__LINK["shipData"]["reserveUpgs"])!=self.__LINK["shipData"]["reserveMax"]: #Put upgrade in inventory
                     self.__LINK["shipData"]["reserveUpgs"].append([a.type,0,-1,0])
+                elif len(self.__LINK["shipData"]["shipUpgs"])!=self.__LINK["shipData"]["maxShipUpgs"]: #Put upgrade in ship slot
+                    self.__LINK["shipData"]["shipUpgs"].append([a.type,0,-1,0])
         extrInfo = []
         for a in DeadDrones:
             if len(self.__LINK["drones"])>=self.__LINK["shipData"]["maxDrones"]: #Drone fleet is full
@@ -581,18 +631,18 @@ class GameEventHandle: #Used to simulate and handle the events of the game world
                     else:
                         self.__LINK["shipData"]["scrap"] += 8
                     if len(a.upgrades)==0:
-                        extrInfo.append["Dismantled drone "+a.settings["name"]+" due to drone storage overflow",(0,255,0)]
+                        extrInfo.append(["Dismantled drone "+a.settings["name"]+" due to drone storage overflow",(0,255,0)])
                     else:
-                        extrInfo.append["Dismantled drone "+a.settings["name"]+" due to drone storage overflow, it contains the following upgrades",(0,255,0)]
+                        extrInfo.append(["Dismantled drone "+a.settings["name"]+" due to drone storage overflow, it contains the following upgrades",(0,255,0)])
                     a.unloadUpgrades()
                     for b in a.settings["upgrades"]:
-                        if a.settings["upgrades"][b][0]!="": #Is an upgrade
+                        if b[0]!="": #Is an upgrade
                             if len(self.__LINK["shipData"]["invent"])<self.__LINK["shipData"]["maxInvent"]:
-                                self.__LINK["shipData"]["invent"].append(a.settings["upgrades"][b].copy())
-                                extrInfo.append(["    "+a.settings["upgrades"][b][0]+", moving to reserved area",(255,0,0)])
+                                self.__LINK["shipData"]["invent"].append(b.copy())
+                                extrInfo.append(["    "+b[0]+", moving to reserved area",(255,0,0)])
                             else:
-                                self.__LINK["shipData"]["scrap"] += PRICE[a.settings["upgrades"][b][0]]/(a.settings["upgrades"][b][1]+1)
-                                extrInfo.append(["    "+a.settings["upgrades"][b][0]+", dismantling",(0,255,0)])
+                                self.__LINK["shipData"]["scrap"] += PRICE[b[0]]/(b[1]+1)
+                                extrInfo.append(["    "+b[0]+", dismantling",(0,255,0)])
                 else:
                     self.__LINK["shipData"]["reserve"].append(a)
             else:
@@ -618,7 +668,6 @@ class GameEventHandle: #Used to simulate and handle the events of the game world
                 extrInfo.append(["    "+b.name+" upgrade is deteriorating, brake prob = "+str(b.brakeprob)+"%",(255,255,0)])
             elif b.damage==2:
                 extrInfo.append(["    "+b.name+" upgrade is destroyed",(255,0,0)])
-        self.__LINK["shipEnt"].unloadUpgrades()
         if self.__LINK["fuelCollected"]==0:
             extrInfo.append(["You collected no fuel",(255,0,0)])
         else:
@@ -681,8 +730,12 @@ class Main: #Used as the screen object for rendering and interaction
         #sx = 1000
         #sy = 700
         sx2 = sy*1.777
-        self.__loading = [False,pygame.transform.scale(LINK["content"]["loading"],(int(sx2),int(sy))),(sx2-sx)/-2,0,"Downloading variables",[sx,sy]]
-        self.__fail = [False,pygame.transform.scale(LINK["content"]["loading"],(int(sx2),int(sy))),(sx2-sx)/-2,[sx,sy],"Unknown error"]
+        sy2 = sy+0
+        if sx>1000:
+            sx2 = sx+0
+            sy2 = sx/1.777
+        self.__loading = [False,pygame.transform.scale(self.__LINK["content"]["loading"],(int(sx2),int(sy2))),(sx2-sx)/-2,0,"Downloading variables",[sx,sy]]
+        self.__fail = [False,pygame.transform.scale(LINK["content"]["loading"],(int(sx2),int(sy2))),(sx2-sx)/-2,[sx,sy],"Unknown error"]
         self.__extrInfo = [] #Extra info on a fail screen
         #syntax of loading = Active, pygame image, x offset, loading percentage, loading message, screen size
         self.__scemPos = [0,0] #Scematic position
@@ -724,6 +777,7 @@ class Main: #Used as the screen object for rendering and interaction
         self.__LINK["outputCommand"] = self.putLine #So other entiteis can output to their tab
         if LINK["backgroundStatic"]:
             print("Generating overlays")
+            sx,sy = LINK["main"].get_size()
             for a in range(3):
                 self.__cols.append(pygame.Surface((sx,sy)))
                 matr = pygame.PixelArray(self.__cols[-1])
@@ -832,6 +886,11 @@ class Main: #Used as the screen object for rendering and interaction
                     if self.tpart[0]<2:
                         self.tpart[0]+=1
                         self.tpart[3] = 0
+        for a in self.__Event.drones:
+            if not a.alive:
+                self.__fail[0] = True
+                self.__fail[4] = "Tutorial failed, try again"
+                self.tpart[0] = 36
         if not self.__LINK["controller"] is None:
             if self.tpart[0]<2 and self.__LINK["controller"].selectChange():
                 if self.__LINK["controller"].select():
@@ -1795,7 +1854,11 @@ class Main: #Used as the screen object for rendering and interaction
             self.__loading[3] = self.__LINK["cli"].getPercent()
             return 0
         if self.tutorial:
-            self.nextTutorial(kBuf)
+            try:
+                self.nextTutorial(kBuf)
+            except:
+                print("Error when processing tutorial triggers")
+                traceback.print_exc()
         if len(self.force)!=0: #A force function has taken over (e.g. swap menu)
             if len(self.force)!=self.__fChange: #Force has just started
                 self.__fChange = len(self.force)
@@ -2076,7 +2139,7 @@ class Main: #Used as the screen object for rendering and interaction
             surf = self.__LINK["main"]
         scale = ((self.__LINK["reslution"][0]/DEF_RES[0])+(self.__LINK["reslution"][1]/DEF_RES[1]))/2
         if self.__fail[0]: #Connection failure
-            surf.blit(self.__fail[1],(self.__fail[2],0))
+            surf.blit(self.__fail[1],(int(self.__fail[2]),0))
             #Error message
             fren = self.__LINK["font42"].render(self.__fail[4],16,(0,255,0))
             sx,sy = fren.get_size()
@@ -2097,7 +2160,7 @@ class Main: #Used as the screen object for rendering and interaction
             for i,a in enumerate(self.__extrInfo):
                 surf.blit(self.__LINK["font24"].render(a[0],16,a[1]),[self.__fail[3][0]/8,(self.__fail[3][1]/8)+(i*30)])
         elif self.__loading[0]: #Loading screen
-            surf.blit(self.__loading[1],(self.__loading[2],0))
+            surf.blit(self.__loading[1],(int(self.__loading[2]),0))
             pygame.draw.rect(surf,(0,0,0),[50,int(self.__loading[5][1]*0.8),self.__loading[5][0]-100,40],4)
             pygame.draw.rect(surf,(0,0,0),[50,int(self.__loading[5][1]*0.8),self.__loading[5][0]-100,40])
             pygame.draw.rect(surf,(255,255,0),[49,int(self.__loading[5][1]*0.8)-1,self.__loading[5][0]-99,41],2)

@@ -11,9 +11,10 @@ class Main(base.Main):
         self.__changeDrone = None
         self.damage = 0 #Damage to the upgrade.
     def moved(self,newD): #Changing drone
-        self.drone.speed -= 1 #Decrease prevous drone speed
-        self.__changeDrone = newD.ID + 0
-        newD.speed += 1 #Increase new drone speed
+        if self.damage!=2:
+            self.drone.speed -= 1 #Decrease prevous drone speed
+            self.__changeDrone = newD.ID + 0
+            newD.speed += 1 #Increase new drone speed
     def loop(self,lag): #Loop ran single player or server side
         if not self.__noSet and not self.drone is None and not self.damage==2: #Drone hasn't been sped up before
             self.drone.speed += 1

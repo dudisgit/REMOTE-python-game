@@ -5,9 +5,12 @@ import pygame,client,time,screenLib,math,os,sys,render,importlib,traceback,mapGe
 
 ControllerMoveRate = 0.1 #Times a second to move pointer when controller button is held
 class ControllerBase:
+    def __init__(self): #Make a fake controller
+        self.cont = None
+        self.init()
     def init(self):
         self.__hold = {} #Used to track controller holding
-        self.__change = {"Up":False,"Dw":False,"L":False,"R":False,"BD":False,"ND":False,"QO":False,"S":False,"B":False,"E":False}
+        self.__change = {"Up":False,"Dw":False,"L":False,"R":False,"BD":False,"ND":False,"QO":False,"S":False,"B":False,"E":False,"MU":False}
         self.keyName = {} #Used for command hints
         self.keyName["menuUp"] = "Up arrow"
         self.keyName["menuDown"] = "Down arrow"
@@ -21,7 +24,9 @@ class ControllerBase:
         self.keyName["scem"] = "Scematic view"
         self.keyName["mov"] = "Left trackball"
         self.keyName["aim"] = "Right trackball"
-        self.cont.init()
+        self.keyName["menu"] = "Start"
+        if not self.cont is None:
+            self.cont.init()
         for a in self.__change:
             self.__hold[a] = -1
     def __holding(self,key):
@@ -34,10 +39,36 @@ class ControllerBase:
         if self.__change[key] and self.__hold[key]==-1:
             self.__hold[key] = time.time()+0.4
         return False
+    def getMovement(self,inMenu=False):
+        return [0,0]
+    def getAim(self,inMenu=False):
+        return [0,0]
     def vibrate(self,duration,perc): #Vibrate the controller
         pass
     def loop(self):
         pass
+    def getMenuUp(self):
+        return False
+    def getMenuDown(self):
+        return False
+    def getMenuLeft(self):
+        return False
+    def getMenuRight(self):
+        return False
+    def beforeDrone(self):
+        return False
+    def nextDrone(self):
+        return False
+    def quickOpen(self):
+        return False
+    def select(self):
+        return False
+    def back(self):
+        return False
+    def enterScematicView(self):
+        return False
+    def getMenu(self):
+        return False
     def getMenuUpChange(self):
         if self.__change["Up"]!=self.getMenuUp():
             self.__change["Up"] = self.getMenuUp()
@@ -88,6 +119,11 @@ class ControllerBase:
             self.__change["E"] = self.enterScematicView()
             return True
         return self.__holding("E")
+    def getMenuChange(self):
+        if self.__change["MU"]!=self.getMenu():
+            self.__change["MU"] = self.getMenu()
+            return True
+        return self.__holding("MU")
 class XINPUT_VIBRATION(ctypes.Structure):
     _fields_ = [("wLeftMotorSpeed", ctypes.c_ushort),
                 ("wRightMotorSpeed", ctypes.c_ushort)]
@@ -116,6 +152,8 @@ class XBoxController(ControllerBase):
                 self.__vibStart = -1
         def test(self): #Test if controller has all its buttons
             return self.cont.get_numbuttons()==10 and self.cont.get_numhats()==1 and self.cont.get_numaxes()==5
+        def getMenu(self): #Get the menu access button
+            return self.cont.get_button(7)
         def getMovement(self,inMenu=False):
             return [self.cont.get_axis(0),self.cont.get_axis(1)]
         def getAim(self,inMenu=False):
@@ -167,6 +205,8 @@ class N64Controller(ControllerBase):
             return 0
         else:
             return self.cont.get_axis(0)
+    def getMenu(self):
+        return self.cont.get_button(9)
     def getMenuUp(self):
         return self.cont.get_axis(1)<-0.5
     def getMenuDown(self):
@@ -201,6 +241,8 @@ class PS3Controller(ControllerBase):
         return [self.cont.get_axis(0),self.cont.get_axis(1)]
     def getAim(self,inMenu=False):
         return [self.cont.get_axis(2),self.cont.get_axis(3)]
+    def getMenu(self):
+        return self.cont.get_button(11)
     def getMenuUp(self):
         x,y = self.cont.get_hat(0)
         return y>0.5
@@ -240,11 +282,20 @@ def reloadControllers(LINK):
         for i in range(conts): #Find a compatable controller
             controller = pygame.joystick.Joystick(i)
             if controller.get_name() in CONTROLLERS:
-                controllers.append( pygame.joystick.Joystick(i))
+                controllers.append( [controller.get_name(),pygame.joystick.Joystick(i)])
+            else: #Unknown controller, test its keys to find if it matches any preset controllers
+                for a in CONTROLLERS:
+                    test = CONTROLLERS[a](controller)
+                    if test.test():
+                        controllers.append( [a,controller] )
+                        print("Unknown controller controller assigned to "+a+" button layout")
+                        break
+                else:
+                    print("Unknown controller connected",controller.get_name())
         if len(controllers)!=0:
-            LINK["controller"] = CONTROLLERS[controllers[0].get_name()](controllers[0])
+            LINK["controller"] = CONTROLLERS[controllers[0][0]](controllers[0][1])
             if len(controllers)!=1: #More than 1 controller plugged in
-                LINK["controller2"] = CONTROLLERS[controllers[1].get_name()](controllers[1])
+                LINK["controller2"] = CONTROLLERS[controllers[1][0]](controllers[1][1])
 if name: #Is the main thread
     print("Loading pygame")
     pygame.init()
@@ -288,6 +339,7 @@ if name: #Is the main thread
     LINK["showRooms"] = False #Used by survayor upgade to show rooms and doors
     LINK["popView"] = False #Cause rooms to pop into view (reduced CPU load but ajasent rooms arn't rendered)
     LINK["splitScreen"] = False #Is the game running in split screen?
+    LINK["menuFade"] = True #Menu effects
     LINK["client"] = client
     LINK["hintDone"] = [] #List of hints that are shown
 
@@ -320,7 +372,7 @@ if name: #Is the main thread
     LINK["scrapCollected"] = 0 #Amount of scrap colected
     LINK["fuelCollected"] = 0 #Amount of fuel colected
     LINK["shipData"] = {"fuel":5,"scrap":50,"shipUpgs":[],"maxShipUpgs":2,"reserveUpgs":[],"reserveMax":8,"invent":[],
-        "beforeMap":-1,"mapSaves":[],"maxScore":0,"reserve":[],"maxDrones":4,"maxReserve":2,"maxInvent":70,"doneMaps":[]} #Data about the players ship
+        "beforeMap":-1,"mapSaves":[],"maxScore":0,"reserve":[],"maxDrones":4,"maxReserve":2,"maxInvent":70,"doneMaps":[],"name":"Your ship","mxScrap":50} #Data about the players ship
     #Reference:
     #'fuel' - Amount of fuel inside the ship
     #'scrap' - Amount of scrap insdie the ship
@@ -343,8 +395,16 @@ if name: #Is the main thread
     LINK["threading"] = False #Enable/disable cleint-side socket threading
     LINK["backgroundStatic"] = False #Enable/disable background static
     LINK["viewDistort"] = True #Drone view distortion
-    LINK["names"] = ["Jeff","Tom","Nathon","Harry","Ben","Fred","Timmy","Potter","Stranger"] #Drone names
-    LINK["shipNames"] = ["Franks","Daron","Hassle","SETT","BENZYA"] #Ship names
+    LINK["names"] = [] #Drone names
+    with open("droneNames.txt","r") as file:
+        for a in file:
+            if a!="":
+                LINK["names"].append(a.strip())
+    LINK["shipNames"] = [] #Ship names
+    with open("shipNames.txt","r") as file:
+        for a in file:
+            if a!="":
+                LINK["shipNames"].append(a.strip())
     LINK["backToMapEdit"] = "" #Play testing is over, go back to map editor
     LINK["simpleMovement"] = False #Simplified movement
     LINK["commandSelect"] = True #Command selecting window
@@ -441,10 +501,12 @@ if name: #Is the main thread
     if LINK["multi"]==1: #Client (tempory)
         CLI = client.Client("127.0.0.1",3746,LINK["threading"])
         LINK["cli"] = CLI
+    fakeController = ControllerBase()
     loadScreen("mainMenu") #Load the main game screen
     #currentScreen.open("level2.map")
     print("Going into event loop")
     run = True
+    ESC = None #Escape menu
     lastTime = time.time()-0.1
     while run:
         lag = (time.time()-lastTime)*30
@@ -452,11 +514,25 @@ if name: #Is the main thread
             lag = 6
         lastTime = time.time()
         KeyEvent = [] #A list of key events to send to all users
+        if not LINK["controller"] is None:
+            if LINK["controller"].getMenuChange():
+                if LINK["controller"].getMenu():
+                    pygame.event.post(pygame.event.Event(pygame.KEYDOWN,{"key":pygame.K_ESCAPE}))
+                else:
+                    pygame.event.post(pygame.event.Event(pygame.KEYUP,{"key":pygame.K_ESCAPE}))
         for event in pygame.event.get():
             if event.type == pygame.QUIT:
                 run = False
             if event.type == pygame.KEYDOWN or event.type == pygame.KEYUP or event.type==pygame.QUIT:
                 KeyEvent.append(event)
+                if event.type == pygame.KEYDOWN and ESC is None and not type(currentScreen)==LINK["screens"]["mainMenu"].Main:
+                    if event.key == pygame.K_ESCAPE:
+                        NO = False
+                        if type(currentScreen)==LINK["screens"]["game"].Main:
+                            if len(currentScreen.force)!=0:
+                                NO = True
+                        if not NO:
+                            ESC = LINK["screens"]["escape"].Main(LINK)
             if event.type == 6: #Mouse wheel
                 KeyEvent.append(event)
             if event.type==pygame.VIDEORESIZE:
@@ -470,12 +546,25 @@ if name: #Is the main thread
         mouseRaw = pygame.mouse.get_pressed()
         mouse = [mouseRaw[0]]+list(pygame.mouse.get_pos())+[mouseRaw[1],mouseRaw[2]]
         if LINK["multi"]==1:
-            LINK["cli"].loop()
+            try:
+                LINK["cli"].loop()
+            except:
+                if LINK["DEV"]:
+                    raise
+                ERROR("Error when running client loop",sys.exc_info())
         if not LINK["serverObj"] is None:
             LINK["serverObj"].value = int(time.time()+2)
         if not currentScreen is None:
             try:
-                currentScreen.loop(mouse,KeyEvent,lag)
+                if ESC is None:
+                    currentScreen.loop(mouse,KeyEvent,lag)
+                else:
+                    HOLD,LINK["controller"] = LINK["controller"],fakeController
+                    currentScreen.loop(mouse,[],lag)
+                    LINK["controller"] = HOLD
+                    ESC.loop(mouse,KeyEvent,lag)
+                    if ESC.exit:
+                        ESC = None
             except:
                 if LINK["DEV"]:
                     raise
@@ -492,6 +581,8 @@ if name: #Is the main thread
                 if LINK["DEV"]:
                     raise
                 ERROR("Error when rendering screen",sys.exc_info())
+        if not ESC is None:
+            ESC.render(main)
         if LINK["showFPS"]:
             main.blit(LINK["font24"].render("FPS: "+str(int(30/lag)),16,(255,255,255)),[0,0])
         pygame.display.flip()

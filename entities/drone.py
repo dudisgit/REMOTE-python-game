@@ -55,9 +55,8 @@ class Main(base.Main):
                 simp = "Simple"
             else:
                 simp = ""
-            self.__rModel = LINK["render"].Model(LINK,self.LINK["models"]["drone"+str(self.__model)+simp])
-            if self.__model==3:
-                self.__rModel2 = LINK["render"].Model(LINK,self.LINK["models"]["drone3Head"+simp])
+            self.__rModel = LINK["render"].Model(LINK,self.LINK["models"]["drone"+str(self.__model)+"base"+simp])
+            self.__rModel2 = LINK["render"].Model(LINK,self.LINK["models"]["drone"+str(self.__model)+"head"+simp])
         self.__SYNCChange = [] #Used to detect if the SYNC has changed
         self.__inRoom = False #Is true if the drone is inside a room
         self.__lastRoom = None #Last room this drone was found inside of
@@ -169,7 +168,7 @@ class Main(base.Main):
         elif R!=-1: #Inside map, mark position as last known inside a map
             self.__lastRoom = R
     def LoadFile(self,data,idRef): #Load from a file
-        self.pos = data[2]
+        self.pos = [data[2][0]+(self.size[0]/2),data[2][1]+(self.size[1]/2)]
         self.settings["angle"] = data[3]
         self.settings["health"] = data[4]+0
         self.health = data[4]+0
@@ -186,9 +185,8 @@ class Main(base.Main):
                     simp = "Simple"
                 else:
                     simp = ""
-                self.__rModel = self.LINK["render"].Model(self.LINK,self.LINK["models"]["drone"+str(self.__model)+simp])
-                if self.__model==3:
-                    self.__rModel2 = self.LINK["render"].Model(self.LINK,self.LINK["models"]["drone3Head"+simp])
+                self.__rModel = self.LINK["render"].Model(self.LINK,self.LINK["models"]["drone"+str(self.__model)+"base"+simp])
+                self.__rModel2 = self.LINK["render"].Model(self.LINK,self.LINK["models"]["drone"+str(self.__model)+"head"+simp])
         self.loadUpgrades()
         if self.settings["angle"]==0:
             self.angle = random.randint(0,360)
@@ -309,7 +307,10 @@ class Main(base.Main):
             self.overide = True
             self.allowed = True
     def loop(self,lag):
-        self.__hullRotate = (self.pos[0]+self.pos[1])%360 #Make hull rotate when in model 3
+        if self.__model==3: #Model is 3
+            self.__hullRotate = (self.pos[0]+self.pos[1])%360 #Make hull rotate when in model 3
+        elif self.LINK["controller"] is None:
+            self.aimTo((self.angle+90)%360,lag/2,True)
         if self.ID<0:
             if self.settings["health"]!=self.__healthBefore:
                 self.__healthBefore = self.settings["health"] + 0
@@ -400,27 +401,36 @@ class Main(base.Main):
                     self.__airParts[-1].renderParticle = self.__renderParticle #Particle render function
                     last = [c[0]+0,c[1]+0] #Make this point the last point for the next point
                 break
-    def aimTo(self,direction,lag): #Move in a direction
+    def aimTo(self,direction,lag,moveHull=False): #Move in a direction
         if self.aliveShow and self.allowed:
             dist2 = 0 #Angular distance from the entities angle and the targets angle
-            if direction > self.angle: #This is an algorithm for turning in a proper direction smothly
-                if direction - self.angle > 180:
-                    dist2 = 180 - (direction - 180 - self.angle)
-                    self.angle-=lag*(dist2**0.7)
-                else:
-                    dist2 = direction - self.angle
-                    self.angle+=lag*(dist2**0.7)
+            ang = 0
+            if moveHull:
+                ang = self.__hullRotate
             else:
-                if self.angle - direction > 180:
-                    dist2 = 180 - (self.angle - 180 - direction)
-                    self.angle+=lag*(dist2**0.7)
+                ang = self.angle
+            if direction > ang: #This is an algorithm for turning in a proper direction smothly
+                if direction - ang > 180:
+                    dist2 = 180 - (direction - 180 - ang)
+                    ang-=lag*(dist2**0.7)
                 else:
-                    dist2 = self.angle - direction
-                    self.angle-=lag*(dist2**0.7)
+                    dist2 = direction - ang
+                    ang+=lag*(dist2**0.7)
+            else:
+                if ang - direction > 180:
+                    dist2 = 180 - (ang - 180 - direction)
+                    ang+=lag*(dist2**0.7)
+                else:
+                    dist2 = ang - direction
+                    ang-=lag*(dist2**0.7)
             try:
-                self.angle = int(self.angle) % 360 #Make sure this entitys angle is not out of range
+                ang = int(ang) % 360 #Make sure this entitys angle is not out of range
             except:
-                self.angle = int(cmath.phase(self.angle)) % 360 #Do the same before but unconvert it from a complex number
+                ang = int(cmath.phase(ang)) % 360 #Do the same before but unconvert it from a complex number
+            if moveHull:
+                self.__hullRotate = ang
+            else:
+                self.angle = ang
     def turn(self,DIR): #Turn the drone is a specific direction
         if self.aliveShow and self.allowed and time.time()>self.pause: #Drone is alive
             self.angle += DIR
@@ -434,9 +444,11 @@ class Main(base.Main):
             if type(DIR)==list:
                 self.pos[0]+=DIR[0]*self.speed
                 self.pos[1]+=DIR[1]*self.speed
+                self.aimTo(((math.atan2(DIR[0],DIR[1])*180/math.pi)-90)%360,0.5,True)
             else:
                 self.pos[0]+=math.sin(self.angle/180*math.pi)*DIR*self.speed*-1
                 self.pos[1]+=math.cos(self.angle/180*math.pi)*DIR*self.speed*-1
+                self.aimTo((self.angle+90)%360,0.5,True)
             pS = [self.pos[0]+0,self.pos[1]+0]
             self.applyPhysics() #Apply hit-box detection
             self.colision = pS!=self.pos #Tell anything outside this drone that it has colided with something (used in stealth upgrade)
@@ -573,14 +585,15 @@ class Main(base.Main):
         #Get all the possible entities
         adding = ["Empty"]
         for a in self.LINK["upgrade"]:
-            if a!="base":
+            if not a in ["base","swap","pickup","info"]:
                 adding.append(a)
         #Put the contents of all the upgrade widgets back into the default upgrade slots.
-        for i,a in enumerate(self.__upgrades):
+        self.unloadUpgrades()
+        """for i,a in enumerate(self.__upgrades):
             if a.select==0:
-                self.settings["upgrades"][i] = ["",0]
+                self.settings["upgrades"][i] = ["",0,-1,0,[]]
             else:
-                self.settings["upgrades"][i][0] = adding[a.select]+""
+                self.settings["upgrades"][i][0] = adding[a.select]+"" """
         self.__upgrades = None
     def editMove(self,ents): #Fuel outlet is being moved
         self.__inRoom = type(self.insideRoom(ents)) != bool
@@ -657,11 +670,8 @@ class Main(base.Main):
             col = (255,255,0)
         if isActive:
             col = (col[0]*0.25,col[1]*0.25,col[2]*0.25)
-        if self.__model!=3: #Drone model is not 3
-            self.__rModel.render(PS[0],PS[1],self.angle-90,scale/1.75,surf,col,Rang2,eAng2,arcSiz)
-        else: #Drone model is 3
-            self.__rModel.render(PS[0],PS[1],self.__hullRotate,scale/1.75,surf,col,Rang2,eAng2,arcSiz)
-            self.__rModel2.render(PS[0],PS[1],self.angle-90,scale/1.75,surf,col,Rang2,eAng2,arcSiz)
+        self.__rModel.render(PS[0],PS[1],self.__hullRotate,scale/1.75,surf,col,Rang2,eAng2,arcSiz)
+        self.__rModel2.render(PS[0],PS[1],self.angle-90,scale/1.75,surf,col,Rang2,eAng2,arcSiz)
         for a in self.__airParts: #Render all air particles
             a.render(x-((self.pos[0]-a.pos[0])*scale),y-((self.pos[1]-a.pos[1])*scale),scale,Rang,eAng,surf)
         if self.ID <= -1 and self.aliveShow: # Is a player drone
